@@ -10,11 +10,13 @@
 
 pub mod db;
 pub mod error;
+pub mod query;
 pub mod schema;
 
 pub use db::migrate::CURRENT_FORMAT_VERSION;
 pub use db::{Workspace, MAGIC};
 pub use error::AppError;
+pub use query::{Cells, Row, RowPage, SqlColumn, SqlResult, ViewResult};
 pub use schema::{
     Choice, ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, FilterNode, FilterOp, FilterRule,
     FormulaOpts, FormulaResultType, GridConfig, LogicOp, NewColumn, NewView, PlainOpts,

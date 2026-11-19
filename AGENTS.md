@@ -26,6 +26,11 @@ crates/nothing-core/     存储内核（纯 Rust，M1/M2 的主战场）
       formula.rs         公式白名单编译器（递归下降 → SQL 表达式）
       fts.rs             FTS5 外部内容表 + 触发器（trigram 分词，支持中文子串）
       view.rs            grid/SQL 视图 CRUD、SQL 语句白名单校验
+    query/
+      mod.rs             Row/RowPage/SqlResult 类型、JSON↔SQLite 值转换
+      compiler.rs        grid 视图筛选树/排序 → 参数化 SQL（值永不进 SQL 文本）
+      rows.rs            行 CRUD、junction 关系写入、批量更新
+      run.rs             run_view/run_sql/search、关联批量标题解析（防 N+1）
   tests/                 集成测试（直接操作真实加密临时库）
 src-tauri/               （M3 添加）Tauri 薄壳：commands/ 只做参数校验与转发
 /                        （M3 添加）前端 React + TS + Vite
@@ -104,4 +109,6 @@ pnpm tauri build          # 打包（M5）
 
 M1 存储内核 → M2 查询层 → M3 UI 骨架 → M4 视图 UI → M5 收尾打包。当前进度见 README 路线图。在里程碑未完成前，不要提前实现后续里程碑的功能（例如 M1 阶段不要开始写前端）。
 
-**当前状态：M1 已完成**（nothing-core：加密库、`_nothing` 清单与迁移框架、表/列/视图 DDL、公式白名单编译器、FTS5、junction 关联与级联、47 个测试全绿）。下一步 M2：行 CRUD、grid 视图 JSON→参数化 SQL 编译器、FTS 搜索接口（trigram 需 ≥3 字符，短词回退 LIKE）、SQL 视图只读执行、关联批量标题解析（防 N+1）。
+**当前状态：M1、M2 已完成**（62 个测试全绿，clippy 零警告）。M2 交付：行 CRUD（类型校验 + junction 关系写入 + 批量更新）、grid 视图编译器（17 种筛选操作符按列类型分派、排序 NULLS LAST、稳定分页）、FTS 搜索（≥3 字符走 trigram 索引，短词回退转义 LIKE）、SQL 视图/ad-hoc 查询在**独立 query_only 只读连接**上执行、关联单元格批量标题解析（每页每关联列一次查询）。10 万行性能冒烟（release，`cargo test --release --test query perf_100k -- --ignored --nocapture`）：筛选视图 236ms、FTS 搜索 1.7ms、聚合 64ms。
+
+下一步 M3（UI 骨架）：需先安装 Tauri Linux 系统依赖（webkit2gtk-4.1 等）；搭 src-tauri 薄壳（commands 只做参数校验与转发，Workspace 存入 Tauri State）+ React/Vite/Glide Data Grid 前端。

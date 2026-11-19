@@ -177,7 +177,9 @@ fn tokenize(src: &str) -> Result<Vec<Tok>> {
                     ('>', _) => (">".to_string(), 1),
                     ('=', _) => ("=".to_string(), 1),
                     _ => {
-                        return Err(AppError::InvalidInput("公式包含非法字符: ! (只能使用 !=)".to_string()))
+                        return Err(AppError::InvalidInput(
+                            "公式包含非法字符: ! (只能使用 !=)".to_string(),
+                        ))
                     }
                 };
                 out.push(Tok::Op(op));

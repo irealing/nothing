@@ -448,9 +448,7 @@ impl Workspace {
                 ensure_column_name_free(conn, table_id, &name, Some(col_id))?;
             }
 
-            if old.is_reverse
-                && (patch.col_type.is_some() || patch.opts.is_some())
-            {
+            if old.is_reverse && (patch.col_type.is_some() || patch.opts.is_some()) {
                 return Err(AppError::Rejected(
                     "反向关联列只能修改名称/宽度/可见性/位置".into(),
                 ));
@@ -482,15 +480,13 @@ impl Workspace {
             let choices_changed = !type_changed
                 && matches!(new_type, ColumnType::Select | ColumnType::MultiSelect)
                 && new_opts != old.opts;
-            let formula_changed = !type_changed
-                && new_type == ColumnType::Formula
-                && new_opts != old.opts;
+            let formula_changed =
+                !type_changed && new_type == ColumnType::Formula && new_opts != old.opts;
             let needs_rebuild = type_changed || choices_changed || formula_changed;
 
             let relation_target_changed = new_type == ColumnType::Relation
                 && !old.is_reverse
-                && old.opts.relation()?.target_table_id
-                    != new_opts.relation()?.target_table_id;
+                && old.opts.relation()?.target_table_id != new_opts.relation()?.target_table_id;
             let relation_single_tightened = new_type == ColumnType::Relation
                 && !old.is_reverse
                 && !old.opts.relation()?.single
@@ -499,10 +495,8 @@ impl Workspace {
             // Formula columns depending on this column break on type change.
             if type_changed {
                 let dependents = formula_dependents(&all, &old)?;
-                let dependents: Vec<String> = dependents
-                    .into_iter()
-                    .filter(|n| *n != old.name)
-                    .collect();
+                let dependents: Vec<String> =
+                    dependents.into_iter().filter(|n| *n != old.name).collect();
                 if !dependents.is_empty() {
                     return Err(formula_dependency_error(&old.name, &dependents));
                 }
@@ -554,25 +548,27 @@ impl Workspace {
                     let cols = load_columns(tx, table_id)?;
                     let mut conversions = HashMap::new();
                     if (type_changed || choices_changed)
-                        && new_meta.is_physical() && old.is_physical() {
-                            let base = quote_ident(&old.sql_name);
-                            // Preserve data across select ↔ multi_select.
-                            let source = match (old.col_type, new_type) {
-                                (ColumnType::Select, ColumnType::MultiSelect) => format!(
-                                    "CASE WHEN {base} IS NULL THEN '[]' ELSE json_array({base}) END"
-                                ),
-                                (ColumnType::MultiSelect, ColumnType::Select) => format!(
-                                    "CASE WHEN json_valid({base}) AND json_array_length({base}) > 0 \
+                        && new_meta.is_physical()
+                        && old.is_physical()
+                    {
+                        let base = quote_ident(&old.sql_name);
+                        // Preserve data across select ↔ multi_select.
+                        let source = match (old.col_type, new_type) {
+                            (ColumnType::Select, ColumnType::MultiSelect) => format!(
+                                "CASE WHEN {base} IS NULL THEN '[]' ELSE json_array({base}) END"
+                            ),
+                            (ColumnType::MultiSelect, ColumnType::Select) => format!(
+                                "CASE WHEN json_valid({base}) AND json_array_length({base}) > 0 \
                                      THEN json_extract({base}, '$[0]') ELSE NULL END"
-                                ),
-                                (ColumnType::Checkbox, ColumnType::Text) => format!(
-                                    "CASE {base} WHEN 1 THEN 'true' WHEN 0 THEN 'false' ELSE NULL END"
-                                ),
-                                _ => base,
-                            };
-                            let expr = conversion_expr(new_type, &new_opts, &source)?;
-                            conversions.insert(old.sql_name.clone(), expr);
-                        }
+                            ),
+                            (ColumnType::Checkbox, ColumnType::Text) => format!(
+                                "CASE {base} WHEN 1 THEN 'true' WHEN 0 THEN 'false' ELSE NULL END"
+                            ),
+                            _ => base,
+                        };
+                        let expr = conversion_expr(new_type, &new_opts, &source)?;
+                        conversions.insert(old.sql_name.clone(), expr);
+                    }
                     rebuild_table(tx, &table, &cols, &conversions)?;
                 }
 

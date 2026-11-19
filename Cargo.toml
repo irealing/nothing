@@ -9,10 +9,11 @@ license = "MIT"
 authors = ["nothing contributors"]
 
 [workspace.dependencies]
-rusqlite = { version = "0.37", features = ["bundled-sqlcipher"] }
+rusqlite = { version = "0.37", features = ["bundled-sqlcipher", "column_decltype"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ulid = { version = "1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3"
+base64 = "0.22"

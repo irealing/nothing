@@ -29,11 +29,15 @@ const BUSY_TIMEOUT_MS: i32 = 5_000;
 /// An open nothing workspace (one encrypted SQLite file).
 ///
 /// Clone-free by design: a single writer connection serializes all mutations
-/// (铁律 9). All schema operations live in [`crate::schema`].
+/// (铁律 9). Reads go through a *separate* connection that is permanently
+/// `PRAGMA query_only = ON` (铁律 4) — SQL views and user queries can never
+/// mutate data even if a bug slipped one through, and WAL lets readers and
+/// the writer proceed concurrently.
 #[derive(Debug)]
 pub struct Workspace {
     path: PathBuf,
     conn: Mutex<Connection>,
+    read: Mutex<Connection>,
 }
 
 impl Workspace {
@@ -58,9 +62,11 @@ impl Workspace {
         conn.pragma_update(None, "key", password)?;
         apply_connection_pragmas(&conn)?;
         migrate::bootstrap(&mut conn)?;
+        let read = open_read_conn(&path, password)?;
         Ok(Self {
             path,
             conn: Mutex::new(conn),
+            read: Mutex::new(read),
         })
     }
 
@@ -96,10 +102,12 @@ impl Workspace {
             .map_err(|_| AppError::WrongPassword)?;
         apply_connection_pragmas(&conn)?;
         migrate::verify_and_migrate(&mut conn)?;
+        let read = open_read_conn(&path, password)?;
 
         Ok(Self {
             path,
             conn: Mutex::new(conn),
+            read: Mutex::new(read),
         })
     }
 
@@ -113,7 +121,8 @@ impl Workspace {
         self.with_conn(|conn| migrate::read_format_version(conn))
     }
 
-    /// Re-encrypt the whole file with a new password (`PRAGMA rekey`).
+    /// Re-encrypt the whole file with a new password (`PRAGMA rekey`), then
+    /// reopen the read-only connection with the new key.
     pub fn change_password(&self, new_password: &str) -> Result<()> {
         if new_password.is_empty() {
             return Err(AppError::InvalidInput("密码不能为空".into()));
@@ -121,7 +130,15 @@ impl Workspace {
         self.with_conn(|conn| {
             conn.pragma_update(None, "rekey", new_password)?;
             Ok(())
-        })
+        })?;
+        // The old read connection still caches the old key — replace it.
+        let new_read = open_read_conn(&self.path, new_password)?;
+        let mut guard = self
+            .read
+            .lock()
+            .map_err(|_| AppError::Internal("只读连接锁已损坏".into()))?;
+        *guard = new_read;
+        Ok(())
     }
 
     /// Run `f` with exclusive access to the write connection.
@@ -131,6 +148,15 @@ impl Workspace {
             .lock()
             .map_err(|_| AppError::Internal("数据库连接锁已损坏".into()))?;
         f(&mut guard)
+    }
+
+    /// Run `f` on the read-only (`query_only = ON`) connection.
+    pub(crate) fn with_read<R>(&self, f: impl FnOnce(&Connection) -> Result<R>) -> Result<R> {
+        let guard = self
+            .read
+            .lock()
+            .map_err(|_| AppError::Internal("只读连接锁已损坏".into()))?;
+        f(&guard)
     }
 
     /// Run `f` inside a single transaction (铁律 1); rolls back on any error.
@@ -150,4 +176,14 @@ fn apply_connection_pragmas(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     Ok(())
+}
+
+/// Open the dedicated read-only connection (铁律 4).
+fn open_read_conn(path: &Path, password: &str) -> Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.pragma_update(None, "key", password)?;
+    conn.pragma_update(None, "busy_timeout", BUSY_TIMEOUT_MS)?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.pragma_update(None, "query_only", "ON")?;
+    Ok(conn)
 }

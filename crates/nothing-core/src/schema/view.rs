@@ -43,6 +43,12 @@ pub(crate) fn validate_sql_statement(conn: &Connection, sql: &str) -> Result<Str
         ));
     }
 
+    // Validate under query_only so nothing can execute even by accident.
+    // The previous value is restored: on the dedicated read connection
+    // query_only must stay ON permanently.
+    let prev_query_only: i64 = conn
+        .pragma_query_value(None, "query_only", |r| r.get(0))
+        .unwrap_or(0);
     conn.pragma_update(None, "query_only", "ON")?;
     let check = (|| -> Result<()> {
         // prepare validates syntax + referenced objects without executing.
@@ -56,7 +62,11 @@ pub(crate) fn validate_sql_statement(conn: &Connection, sql: &str) -> Result<Str
         );
         Ok(())
     })();
-    conn.pragma_update(None, "query_only", "OFF")?;
+    conn.pragma_update(
+        None,
+        "query_only",
+        if prev_query_only != 0 { "ON" } else { "OFF" },
+    )?;
     check?;
     Ok(statement.to_string())
 }
