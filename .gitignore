@@ -1,0 +1,22 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node / frontend (M3+)
+node_modules/
+dist/
+.vite/
+
+# Tauri
+src-tauri/gen/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local workspace data files (never commit user databases)
+*.nothing
+*.nothing-wal
+*.nothing-shm
