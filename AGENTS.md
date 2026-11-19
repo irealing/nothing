@@ -109,6 +109,10 @@ pnpm tauri build          # 打包（M5）
 
 M1 存储内核 → M2 查询层 → M3 UI 骨架 → M4 视图 UI → M5 收尾打包。当前进度见 README 路线图。在里程碑未完成前，不要提前实现后续里程碑的功能（例如 M1 阶段不要开始写前端）。
 
-**当前状态：M1、M2 已完成**（62 个测试全绿，clippy 零警告）。M2 交付：行 CRUD（类型校验 + junction 关系写入 + 批量更新）、grid 视图编译器（17 种筛选操作符按列类型分派、排序 NULLS LAST、稳定分页）、FTS 搜索（≥3 字符走 trigram 索引，短词回退转义 LIKE）、SQL 视图/ad-hoc 查询在**独立 query_only 只读连接**上执行、关联单元格批量标题解析（每页每关联列一次查询）。10 万行性能冒烟（release，`cargo test --release --test query perf_100k -- --ignored --nocapture`）：筛选视图 236ms、FTS 搜索 1.7ms、聚合 64ms。
+**当前状态：M1、M2、M3 已完成**。
 
-下一步 M3（UI 骨架）：需先安装 Tauri Linux 系统依赖（webkit2gtk-4.1 等）；搭 src-tauri 薄壳（commands 只做参数校验与转发，Workspace 存入 Tauri State）+ React/Vite/Glide Data Grid 前端。
+- M1/M2（nothing-core）：62 个内核测试全绿，clippy 零警告；另有 11 个前端 vitest。10 万行性能冒烟（release，`cargo test --release --test query perf_100k -- --ignored --nocapture`）：筛选视图 236ms、FTS 搜索 1.7ms、聚合 64ms。
+- M3（src-tauri + 前端）：Tauri v2 薄壳 27 个 command；React 18 + TS 严格模式 + Glide Data Grid v6（类型化单元格、行选择、尾行新增、列宽持久化）；Welcome 开库/建库、侧边栏表树/视图树、FTS 搜索框、SQL 视图只读结果表；`src/ipc` 唯一后端入口，vitest 11/11。无头冒烟通过：xvfb 下 `tauri dev` 编译、启动、WebKit 进程稳定运行 55 分钟，日志零 panic/error。
+- 无头冒烟脚本：`/tmp/opencode/smoke.sh`（注意其检测正则未处理 ANSI 颜色码，以日志尾部与进程存活为准）。
+
+下一步 M4（视图 UI）：筛选/排序配置面板（FilterNode 树编辑）、视图 Tab 切换与创建（grid + SQL）、CodeMirror 6 SQL 编辑器、公式列编辑对话框（白名单语法提示）、关联单元格选择器（搜索目标表标题列，用 `search` command）、单选/多选下拉编辑器、隐藏列管理。
