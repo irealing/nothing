@@ -33,6 +33,7 @@ nothing 是一个只做一件事并把它做好的桌面应用：**表格**。�
 
 - [Rust](https://rustup.rs/)（stable）
 - [Node.js](https://nodejs.org/) ≥ 20 与 pnpm
+- Windows 下需要一个**原生 Windows Perl**（vendored OpenSSL 源码构建使用），见下文 Windows 打包一节
 - Linux 下需要 Tauri 的系统依赖（webkit2gtk 等），见 [Tauri 官方文档](https://tauri.app/start/prerequisites/)
 
 ### 开发
@@ -42,7 +43,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-> 首次构建会静态编译 SQLCipher，耗时较长（数分钟），属正常现象。
+> 首次构建会静态编译 SQLCipher 与 OpenSSL（`bundled-sqlcipher-vendored-openssl`，无需系统预装 OpenSSL），耗时较长（可达十余分钟），属正常现象。机器上没有 nasm 时 OpenSSL 自动以 `no-asm` 模式构建，不影响正确性。
 
 ### 打包
 
@@ -56,6 +57,9 @@ Tauri **不支持交叉打包**——必须在目标操作系统上构建。打�
 2. Visual Studio Build Tools（含「使用 C++ 的桌面开发」工作负载）
 3. WebView2 Runtime —— Windows 10/11 通常已预装；旧系统从 [微软官网](https://developer.microsoft.com/microsoft-edge/webview2/) 安装
 4. Node.js ≥ 20 + pnpm
+5. 原生 Windows Perl —— vendored OpenSSL 的 `Configure` 脚本使用，二选一：
+   - msys2：`pacman -S mingw-w64-x86_64-perl`（**必须是 mingw64 版**，msys 层的 `perl` 不行，见下文排错）
+   - [Strawberry Perl](https://strawberryperl.com/)
 
 ```powershell
 pnpm install
@@ -63,6 +67,17 @@ pnpm tauri build
 ```
 
 产物在 `src-tauri\target\release\bundle\`：`msi\`（MSI 安装包）与 `nsis\`（NSIS 安装程序）。绿色版可执行文件在 `src-tauri\target\release\nothing-app.exe`。
+
+##### Windows 构建排错（OpenSSL / msys2）
+
+| 症状 | 原因 | 处理 |
+|---|---|---|
+| `Missing environment variable OPENSSL_DIR` | rusqlite 的 feature 被改回了 `bundled-sqlcipher`（该模式要求系统预装 OpenSSL） | 保持根 `Cargo.toml` 中 feature 为 `bundled-sqlcipher-vendored-openssl`，无需安装任何 OpenSSL |
+| OpenSSL Configure 报 `This perl implementation doesn't produce Windows like paths` | PATH 里的 `perl` 是 msys 层 Perl（如 `C:\msys64\usr\bin\perl.exe`，`x86_64-msys` 构建），生成 Unix 风格路径，无法用于 `VC-WIN64A` 目标 | 安装原生 win32 Perl（`pacman -S mingw-w64-x86_64-perl` 或 Strawberry Perl），并确保其目录（如 `C:\msys64\mingw64\bin`）在 PATH 中**先于** `C:\msys64\usr\bin`；用 `perl -v` 验证输出含 `MSWin32-x64` |
+| `perl.exe`（或 g++ 等 mingw64 程序）启动即退出，退出码 `0xC0000139`（STATUS_ENTRYPOINT_NOT_FOUND） | mingw64 环境新旧包混装：典型为升级 gcc 后，新 `libstdc++-6.dll` 需要新版 `libwinpthread-1.dll` 的 time64 符号（`clock_gettime64` 等），而后者仍是旧版 | msys2 是滚动发行版，**不支持部分升级**。执行完整升级（两阶段：第一阶段升级 msys2-runtime 后会要求关闭所有 MSYS2 终端，之后继续第二阶段）：`pacman -Syu` → 关闭终端重开 → `pacman -Su` |
+| 构建日志出现 `no-asm`、OpenSSL 编译很慢 | 机器上没有 nasm，openssl-src 自动退回纯 C 构建 | 正常现象，无需处理；对本项目的加密吞吐量无感知差异 |
+
+排错时可用 `where.exe perl` 与 `perl -v` 快速确认当前解析到的 Perl；用 `pacman -Qs winpthread`、`pacman -Q mingw-w64-x86_64-gcc-libs` 检查 mingw64 运行时包版本是否一致。
 
 #### Linux
 
