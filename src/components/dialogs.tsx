@@ -127,49 +127,6 @@ export function CreateTableDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function AddColumnDialog({ onClose }: { onClose: () => void }) {
-  const addColumn = useWorkspace((s) => s.addColumn);
-  const [name, setName] = useState("");
-  const [type, setType] = useState<ColumnType>("text");
-
-  const submit = async () => {
-    if (!name.trim()) return;
-    await addColumn({ name: name.trim(), type });
-    onClose();
-  };
-
-  return (
-    <Modal title="添加列" onClose={onClose}>
-      <form
-        className="form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-      >
-        <label>
-          列名
-          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-        </label>
-        <label>
-          类型
-          <select value={type} onChange={(e) => setType(e.target.value as ColumnType)}>
-            {BASIC_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="hint">单选 / 关联 / 公式等类型的编辑界面将在后续里程碑提供。</p>
-        <button type="submit" className="btn primary">
-          添加
-        </button>
-      </form>
-    </Modal>
-  );
-}
-
 export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
   const changePassword = useWorkspace((s) => s.changePassword);
   const [pw, setPw] = useState("");

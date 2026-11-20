@@ -109,10 +109,11 @@ pnpm tauri build          # 打包（M5）
 
 M1 存储内核 → M2 查询层 → M3 UI 骨架 → M4 视图 UI → M5 收尾打包。当前进度见 README 路线图。在里程碑未完成前，不要提前实现后续里程碑的功能（例如 M1 阶段不要开始写前端）。
 
-**当前状态：M1、M2、M3 已完成**。
+**当前状态：M1、M2、M3、M4 已完成**。
 
-- M1/M2（nothing-core）：62 个内核测试全绿，clippy 零警告；另有 11 个前端 vitest。10 万行性能冒烟（release，`cargo test --release --test query perf_100k -- --ignored --nocapture`）：筛选视图 236ms、FTS 搜索 1.7ms、聚合 64ms。
-- M3（src-tauri + 前端）：Tauri v2 薄壳 27 个 command；React 18 + TS 严格模式 + Glide Data Grid v6（类型化单元格、行选择、尾行新增、列宽持久化）；Welcome 开库/建库、侧边栏表树/视图树、FTS 搜索框、SQL 视图只读结果表；`src/ipc` 唯一后端入口，vitest 11/11。无头冒烟通过：xvfb 下 `tauri dev` 编译、启动、WebKit 进程稳定运行 55 分钟，日志零 panic/error。
-- 无头冒烟脚本：`/tmp/opencode/smoke.sh`（注意其检测正则未处理 ANSI 颜色码，以日志尾部与进程存活为准）。
+- M1/M2（nothing-core）：62 个内核测试全绿，clippy 零警告；另有前端 vitest。10 万行性能冒烟（release，`cargo test --release --test query perf_100k -- --ignored --nocapture`）：筛选视图 236ms、FTS 搜索 1.7ms、聚合 64ms。
+- M3（src-tauri + 前端骨架）：Tauri v2 薄壳 27 个 command；React 18 + TS 严格模式 + Glide Data Grid v6；`src/ipc` 唯一后端入口。无头冒烟通过（xvfb，日志零 panic/error）。
+- M4（视图 UI）：ViewTabs（网格 + SQL 视图 Tab、建/删/重命名，表无视图时自动创建「默认视图」）；FilterSortPanel（AND/OR 嵌套筛选树、操作符按列类型过滤、排序、隐藏列）；CellEditors（单选/多选下拉气泡、关联选择器：搜索目标表标题列 + 单/多选，反向列同样可编辑）；ColumnDialogs（全类型列编辑：选项列表、关联配置、公式编辑器带列引用 chips 与白名单帮助）；SqlViewPanel（CodeMirror 6，运行=只读预览 / 保存=重建真实 VIEW）；列头右键菜单（编辑/设为标题列/复制 SQL 引用名/删除）。vitest 14/14（含视图流程 3 例）。
+- 无头冒烟脚本：`/tmp/opencode/smoke.sh`（检测 `target/debug/nothing-app` 出现 + 进程存活，结束自动清理进程组）。
 
-下一步 M4（视图 UI）：筛选/排序配置面板（FilterNode 树编辑）、视图 Tab 切换与创建（grid + SQL）、CodeMirror 6 SQL 编辑器、公式列编辑对话框（白名单语法提示）、关联单元格选择器（搜索目标表标题列，用 `search` command）、单选/多选下拉编辑器、隐藏列管理。
+下一步 M5（收尾打包）：正式应用图标（当前为占位）、bundle 配置（AppImage/dmg/msi，`bundle.active=true`）、大表滚动窗口化加载（当前一次拉取 1000 行）、日期选择器与富文本等编辑器打磨、错误提示细化、端到端手工验收清单。

@@ -534,3 +534,427 @@ select:focus {
   justify-content: center;
   color: var(--text-weak);
 }
+
+/* ---------- M4: view tabs ---------- */
+
+.view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-side);
+  position: relative;
+  overflow-x: auto;
+}
+
+.view-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-weak);
+  border: 1px solid transparent;
+  border-bottom: none;
+  white-space: nowrap;
+  user-select: none;
+  position: relative;
+}
+
+.view-tab:hover {
+  background: var(--bg-hover);
+}
+
+.view-tab.active {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+  border-color: var(--border);
+  margin-bottom: -1px;
+  padding-bottom: 7px;
+}
+
+.view-tab-icon {
+  color: var(--text-weak);
+}
+
+.tab-menu-btn {
+  padding: 0 2px;
+}
+
+.view-tabs-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 6px;
+}
+
+.view-tabs-add {
+  position: relative;
+  margin-left: 4px;
+}
+
+/* ---------- dropdown menus ---------- */
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  min-width: 150px;
+  z-index: 400;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-menu.positioned {
+  position: fixed;
+}
+
+.dropdown-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.dropdown-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.dropdown-menu button.danger {
+  color: var(--danger);
+}
+
+.tab-menu {
+  top: 30px;
+  left: auto;
+  right: 8px;
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 350;
+}
+
+/* ---------- filter/sort panel ---------- */
+
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 15, 15, 0.25);
+  z-index: 300;
+  display: flex;
+  justify-content: center;
+  padding-top: 70px;
+}
+
+.panel {
+  width: 680px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 110px);
+  background: var(--bg);
+  border-radius: 10px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 8px;
+}
+
+.panel-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.panel-body {
+  padding: 4px 16px;
+  overflow-y: auto;
+}
+
+.panel-body section {
+  margin-bottom: 14px;
+}
+
+.panel-body h4 {
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--text-weak);
+  font-weight: 600;
+}
+
+.panel-foot {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.filter-group {
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  margin: 4px 0;
+}
+
+.filter-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.filter-children {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-rule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-col {
+  width: 130px;
+  flex-shrink: 0;
+}
+
+.filter-op {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.filter-value {
+  flex: 1;
+  min-width: 100px;
+}
+
+.filter-empty {
+  color: var(--text-weak);
+  font-size: 12px;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.filter-root-adds {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.hidden-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.hidden-col {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---------- popovers (select editor) ---------- */
+
+.popover {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.popover-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-weak);
+  padding: 4px 8px;
+}
+
+.popover-item {
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.popover-item:hover {
+  background: var(--bg-hover);
+}
+
+.popover-item.selected {
+  background: rgba(35, 131, 226, 0.1);
+  color: var(--accent);
+}
+
+.popover-item.clear {
+  color: var(--text-weak);
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  border-radius: 0 0 4px 4px;
+}
+
+.popover-empty {
+  padding: 10px;
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+.popover-check {
+  width: 16px;
+  text-align: center;
+}
+
+/* ---------- relation picker ---------- */
+
+.relation-modal {
+  width: 460px;
+}
+
+.relation-results {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.relation-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-weak);
+}
+
+/* ---------- column dialog extras ---------- */
+
+.choices-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ref-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  background: var(--bg-side);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.checkline {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+  font-size: 13px !important;
+  color: var(--text) !important;
+}
+
+.form textarea {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  resize: vertical;
+}
+
+/* ---------- sql view panel ---------- */
+
+.sql-view-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.sql-editor-wrap {
+  padding: 10px 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sql-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.sql-result-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sql-error {
+  margin: 8px 14px 0;
+}
+
+.sql-rowcount {
+  padding: 6px 2px;
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+/* ---------- sidebar extras ---------- */
+
+.nav-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  font-size: 13px;
+}
+
+.nav-hint {
+  font-size: 11px;
+  color: var(--text-weak);
+  padding: 4px 8px;
+  margin: 4px 0 0;
+}

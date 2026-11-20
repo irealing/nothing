@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../ipc");
 
 import * as ipc from "../ipc";
-import type { ColumnMeta, RowPage, TableMeta } from "../types";
+import type { ColumnMeta, RowPage, TableMeta, ViewMeta } from "../types";
 import { useWorkspace } from "./workspace";
 
 // The real IpcError is automocked away by vi.mock("../ipc"); the store only
@@ -137,6 +137,92 @@ describe("updateCell", () => {
     const s = useWorkspace.getState();
     expect(s.error).toContain("有效选项");
     expect(s.page?.rows[0].cells.c1).toBe("a");
+  });
+});
+
+describe("view actions", () => {
+  const GRID_V: ViewMeta = {
+    id: "v1",
+    table_id: "t1",
+    name: "默认视图",
+    kind: "grid",
+    config: { kind: "grid", filters: null, sorts: [], hidden_columns: [] },
+    position: 0,
+    created_at: "",
+  };
+  const GRID_V2: ViewMeta = { ...GRID_V, id: "v2", name: "视图 2" };
+  const SQL_V: ViewMeta = {
+    id: "vs",
+    table_id: null,
+    name: "统计",
+    kind: "sql",
+    config: { kind: "sql", statement: "SELECT 1" },
+    position: 0,
+    created_at: "",
+  };
+  const gridResult = { kind: "grid" as const, ...page() };
+
+  it("auto-creates a default grid view when the table has none", async () => {
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList)
+      .mockResolvedValueOnce([]) // activateTable initial fetch
+      .mockResolvedValue([GRID_V]); // after creation / loadTableData
+    vi.mocked(ipc.viewCreate).mockResolvedValue(GRID_V);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult);
+
+    await useWorkspace.getState().selectTable("t1");
+
+    expect(ipc.viewCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ table_id: "t1", kind: "grid", name: "默认视图" }),
+    );
+    const s = useWorkspace.getState();
+    expect(s.activeViewId).toBe("v1");
+    expect(s.page?.rows.length).toBe(1);
+  });
+
+  it("deleteView falls back to the first remaining grid view", async () => {
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      columns: [COL],
+      views: [GRID_V, GRID_V2],
+      activeViewId: "v1",
+      page: page(),
+    });
+    vi.mocked(ipc.viewDelete).mockResolvedValue(undefined);
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V2]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult);
+
+    await useWorkspace.getState().deleteView("v1");
+
+    expect(useWorkspace.getState().activeViewId).toBe("v2");
+    expect(ipc.viewCreate).not.toHaveBeenCalled(); // v2 exists, no auto-create
+  });
+
+  it("createSqlView activates the view and stores its result", async () => {
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      columns: [COL],
+      views: [GRID_V],
+      activeViewId: "v1",
+    });
+    vi.mocked(ipc.viewCreate).mockResolvedValue(SQL_V);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V, SQL_V]);
+    vi.mocked(ipc.viewRun).mockResolvedValue({
+      kind: "sql",
+      columns: [{ name: "n", decl_type: "INTEGER" }],
+      rows: [[1]],
+    });
+
+    await useWorkspace.getState().createSqlView("统计", "SELECT count(*) AS n FROM t_x");
+
+    const s = useWorkspace.getState();
+    expect(s.activeViewId).toBe("vs");
+    expect(s.sqlResult?.rows).toEqual([[1]]);
   });
 });
 

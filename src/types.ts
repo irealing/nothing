@@ -97,7 +97,7 @@ export type FilterOp =
 export interface FilterRule {
   column_id: string;
   op: FilterOp;
-  value: unknown;
+  value: Json;
 }
 
 export interface FilterGroup {
@@ -116,13 +116,14 @@ export interface SortSpec {
   desc: boolean;
 }
 
+export interface GridConfig {
+  filters: FilterNode | null;
+  sorts: SortSpec[];
+  hidden_columns: string[];
+}
+
 export type ViewConfig =
-  | {
-      kind: "grid";
-      filters: FilterNode | null;
-      sorts: SortSpec[];
-      hidden_columns: string[];
-    }
+  | ({ kind: "grid" } & GridConfig)
   | { kind: "sql"; statement: string };
 
 export interface ViewMeta {
