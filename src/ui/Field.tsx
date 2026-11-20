@@ -2,7 +2,13 @@
 // app. Existing pages keep their `.form` layout; only the controls change.
 
 import * as SelectPrimitive from "@radix-ui/react-select";
-import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import {
+  forwardRef,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from "react";
 import { IconCheck, IconChevronDown } from "../components/icons";
 import { t } from "../i18n";
 
@@ -35,18 +41,43 @@ export function Field({
   );
 }
 
-export function Input({
-  invalid,
-  ...rest
-}: InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
-  return <input className="ui-input" aria-invalid={invalid || undefined} {...rest} />;
-}
+export const Input = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }
+>(function Input({ invalid, ...rest }, ref) {
+  return <input ref={ref} className="ui-input" aria-invalid={invalid || undefined} {...rest} />;
+});
 
-export function Textarea({
-  invalid,
-  ...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
-  return <textarea className="ui-input ui-textarea" aria-invalid={invalid || undefined} {...rest} />;
+export const Textarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }
+>(function Textarea({ invalid, ...rest }, ref) {
+  return (
+    <textarea ref={ref} className="ui-input ui-textarea" aria-invalid={invalid || undefined} {...rest} />
+  );
+});
+
+/**
+ * Form-level Enter policy shared by multi-field dialogs.
+ *
+ * Browser implicit submission fires from *any* single-line input, which used to
+ * save a half-finished column while the user was still typing options. Only
+ * fields marked `data-enter-submit` may submit; IME candidate confirmation,
+ * textareas (newlines), buttons and native-Enter controls are left alone.
+ */
+export function handleFormEnter(e: KeyboardEvent<HTMLElement>, submit: () => void) {
+  if (e.key !== "Enter") return;
+  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+  const el = e.target as HTMLElement;
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLButtonElement) return;
+  if (
+    el instanceof HTMLInputElement &&
+    (el.type === "checkbox" || el.type === "radio" || el.type === "date")
+  ) {
+    return;
+  }
+  e.preventDefault();
+  if (el instanceof HTMLInputElement && el.dataset.enterSubmit === "true") submit();
 }
 
 export interface SelectOption {

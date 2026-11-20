@@ -64,7 +64,7 @@ export function readGridTheme(): Theme {
  * Per-column theme override for a palette color.
  *
  * Header and cells are tinted, but text color is left to the base theme (the
- * palette only changes backgrounds). Hover variants are explicit — without
+ * palette only changes backgrounds). Hover variants are explicit 鈥?without
  * them Glide falls back to the global surface and flashes on hover.
  */
 export function tagThemeOverride(color: ColumnColor): Partial<Theme> {
@@ -84,4 +84,9 @@ export function tagChipStyle(color: ColumnColor): { background: string; color: s
     background: cssVar(`--tag-${color}-header-bg`),
     color: cssVar(`--tag-${color}-header-fg`),
   };
+}
+
+/** Cell background matching a palette column (used by the header preview). */
+export function tagCellStyle(color: ColumnColor): { background: string } {
+  return { background: cssVar(`--tag-${color}-cell-bg`) };
 }

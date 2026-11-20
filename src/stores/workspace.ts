@@ -140,8 +140,9 @@ interface WorkspaceState {
   renameTable: (id: string, name: string) => Promise<void>;
   setTableIcon: (id: string, icon: string | null) => Promise<void>;
   setTitleColumn: (colId: string) => Promise<void>;
-  addColumn: (col: NewColumn) => Promise<void>;
-  updateColumn: (colId: string, patch: ColumnPatch) => Promise<void>;
+  /** Resolves false when the backend rejected the change; the reason is in `error`. */
+  addColumn: (col: NewColumn) => Promise<boolean>;
+  updateColumn: (colId: string, patch: ColumnPatch) => Promise<boolean>;
   deleteColumn: (colId: string) => Promise<void>;
 
   // views
@@ -586,19 +587,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     addColumn: async (col) => {
-      await guard(set, get, async () => {
+      const ok = await guard(set, get, async () => {
         const { activeTableId } = get();
-        if (!activeTableId) return;
+        if (!activeTableId) return false;
         await ipc.columnAdd(activeTableId, col);
         set({ columns: await ipc.columnList(activeTableId) });
         await afterWrite();
+        return true;
       });
+      return ok === true;
     },
 
     updateColumn: async (colId, patch) => {
-      await guard(set, get, async () => {
+      const ok = await guard(set, get, async () => {
         const { activeTableId } = get();
-        if (!activeTableId) return;
+        if (!activeTableId) return false;
         await ipc.columnUpdate(activeTableId, colId, patch);
         const columns = await ipc.columnList(activeTableId);
         set({ columns });
@@ -619,7 +622,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
             rowsVersion: s.rowsVersion + 1,
           }));
         }
+        return true;
       });
+      return ok === true;
     },
 
     deleteColumn: async (colId) => {

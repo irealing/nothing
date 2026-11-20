@@ -7,6 +7,7 @@ import type { ColumnColor } from "../types";
 import { TAG_COLORS, tagChipStyle } from "../theme/grid";
 import { IconCheck, IconX } from "../components/icons";
 import { t } from "../i18n";
+import { Popover as PopoverShell } from "./Popover";
 
 export const EMOJI_CHOICES = [
   "📝", "✅", "🔥", "⭐", "📌", "📅", "⏰", "🎯",
@@ -198,5 +199,49 @@ export function ColorSwatches({
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Folded single-dot color entry: the palette only appears on demand, which
+ * keeps the column editor's identity row one line tall.
+ */
+export function ColorPicker({
+  value,
+  onChange,
+}: {
+  value: ColumnColor | null;
+  onChange: (color: ColumnColor | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <PopoverShell
+      open={open}
+      onOpenChange={setOpen}
+      className="ui-color-popover"
+      trigger={
+        <button
+          type="button"
+          className="ui-color-trigger"
+          aria-label={t("column.color")}
+          title={t("column.color")}
+        >
+          <span
+            className={value ? "ui-color-dot" : "ui-color-dot none"}
+            style={value ? tagChipStyle(value) : undefined}
+          >
+            {!value && <IconX size={10} />}
+          </span>
+        </button>
+      }
+    >
+      <ColorSwatches
+        value={value}
+        onChange={(color) => {
+          onChange(color);
+          setOpen(false);
+        }}
+      />
+    </PopoverShell>
   );
 }

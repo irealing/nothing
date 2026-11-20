@@ -1215,6 +1215,8 @@ input[type="checkbox"] {
 }
 
 .panel-box {
+  display: flex;
+  flex-direction: column;
   background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1394,102 +1396,116 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
-.csv-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
+.form .csv-toggle-inline {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-mid);
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.csv-toggle input {
-  margin-top: 3px;
+.form .csv-toggle-inline input {
   accent-color: var(--accent);
+  margin: 0;
 }
 
-.csv-toggle-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.csv-table-name {
+  max-width: 280px;
 }
 
-.csv-toggle-label {
-  font-size: 12.5px;
-  color: var(--text);
-}
-
-.csv-toggle-hint {
-  font-size: 11.5px;
-  color: var(--text-weak);
-  line-height: 1.4;
-}
-
-.csv-columns {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 2px 2px 6px;
-}
-
-.csv-col {
-  flex: 0 0 170px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.csv-col-note {
-  font-size: 11px;
-  color: var(--text-weak);
-  line-height: 1.35;
-}
-
-.csv-preview-wrap {
+.csv-grid-wrap {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface-sunken);
   overflow: auto;
-  max-height: 240px;
+  max-height: 360px;
 }
 
-.csv-preview {
-  border-collapse: collapse;
+.csv-table {
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12px;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
 }
 
-.csv-preview th,
-.csv-preview td {
+.csv-table th,
+.csv-table td {
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
   text-align: left;
-  white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  vertical-align: top;
 }
 
-.csv-preview th {
-  background: var(--bg);
-  font-weight: 600;
-  color: var(--text-mid);
+.csv-table th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
+  width: 176px;
+  min-width: 176px;
+  padding: 8px;
+  background: var(--surface-sunken);
+  font-weight: 600;
+  color: var(--text-mid);
+  white-space: nowrap;
 }
 
-.csv-preview tr:last-child td {
+.csv-table td {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-mid);
+}
+
+.csv-table tbody tr:last-child td {
   border-bottom: none;
 }
 
-.csv-preview th:last-child,
-.csv-preview td:last-child {
+.csv-table th:last-child,
+.csv-table td:last-child {
   border-right: none;
+}
+
+.csv-head-cell {
+  vertical-align: top;
+}
+
+.csv-head-name {
+  height: 28px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+
+.csv-head-type {
+  display: block;
+}
+
+.csv-head-type .ui-input {
+  height: 28px;
+  font-size: 12px;
+}
+
+.csv-table td.csv-table-empty {
+  color: var(--text-weak);
+  white-space: normal;
+}
+
+.csv-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.csv-foot .hint {
+  flex: 1;
+  min-width: 0;
 }
 
 .csv-result {
@@ -2996,27 +3012,202 @@ input[type="checkbox"] {
   pointer-events: none;
 }
 
-/* ---------- column presentation row ---------- */
+/* ---------- column editor: header-mirroring layout ---------- */
 
-.appearance-row {
+.column-identity {
   display: flex;
-  align-items: flex-end;
-  gap: 20px;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
-  padding: 10px 12px;
+}
+
+.column-identity .ui-emoji-field {
+  flex-shrink: 0;
+}
+
+.column-name-input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.column-type {
+  flex: 0 0 146px;
+  min-width: 0;
+}
+
+.column-preview {
+  flex: 0 0 172px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.column-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-mid);
+  background: var(--bg-side);
+  overflow: hidden;
+}
+
+.column-preview-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.column-preview-emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.column-preview-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-preview-caret {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.column-preview-cell {
+  display: block;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  line-height: 30px;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.column-preview-value {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.column-align-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.column-align {
+  width: 170px;
+}
+
+/* Inline default-value row: the control stays visible but disabled (and dimmed)
+   when the column does not use a default, so nothing jumps around. */
+.default-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface-sunken);
 }
 
-.appearance-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.default-row .checkline {
+  flex-shrink: 0;
 }
 
-.appearance-item .field-label {
+.default-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  max-width: 300px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.default-value .default-editor {
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+}
+
+.default-date-mode {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.default-value .default-editor > .ui-input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.default-value .ref-chips {
+  width: 100%;
+}
+
+.default-row[data-off='true'] .default-value {
+  opacity: 0.45;
+}
+
+.default-note {
   font-size: 12px;
+  color: var(--text-weak);
+}
+
+/* ---------- color trigger (folded palette) ---------- */
+
+.ui-color-trigger {
+  width: var(--control-h);
+  height: var(--control-h);
+  flex-shrink: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.ui-color-trigger:hover {
+  border-color: var(--border-strong);
+}
+
+.ui-color-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.ui-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  display: grid;
+  place-items: center;
+}
+
+.ui-color-dot.none {
+  background: var(--surface-sunken);
+  color: var(--text-weak);
+}
+
+.ui-color-popover {
+  padding: 10px;
 }.panel-layer {
   position: fixed;
   inset: 0;

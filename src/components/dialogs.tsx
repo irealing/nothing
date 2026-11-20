@@ -3,7 +3,7 @@ import { useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import type { ColumnType, NewColumn } from "../types";
 import { Dialog } from "../ui/Dialog";
-import { Field, Input } from "../ui/Field";
+import { Field, Input, handleFormEnter } from "../ui/Field";
 import { Menu, MenuItem } from "../ui/Menu";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconX } from "./icons";
 import { EmojiPicker } from "../ui/ColumnPickers";
@@ -112,6 +112,7 @@ export function CreateTableDialog({ onClose }: { onClose: () => void }) {
           e.preventDefault();
           void submit();
         }}
+        onKeyDown={(e) => handleFormEnter(e, () => void submit())}
       >
         <div className="form-grid">
           <Field label={t("createTable.tableName")}>
@@ -119,6 +120,7 @@ export function CreateTableDialog({ onClose }: { onClose: () => void }) {
               <EmojiPicker value={icon} onChange={setIcon} />
               <Input
                 value={name}
+                data-enter-submit="true"
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("createTable.tableNamePlaceholder")}
                 autoFocus

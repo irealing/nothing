@@ -1,5 +1,7 @@
-// CSV import confirmation: shows the first record as an editable header row,
-// lets the user pick column types, then imports into a brand-new table.
+// CSV import confirmation: shows the first record as an editable header row
+// inside the data preview, lets the user pick column types, then imports into a
+// brand-new table. Header name + type sit in the preview table's sticky header
+// so every editor stays aligned with the column it belongs to.
 
 import { useEffect, useMemo, useState } from "react";
 import * as ipc from "../ipc";
@@ -189,106 +191,110 @@ export default function ImportCsvDialog({ path, onClose }: { path: string; onClo
             </span>
           </div>
 
-          <div className="form-grid">
-            <Field label={t("importCsv.tableName")}>
-              <Input
-                value={tableName}
-                onChange={(e) => setTableName(e.target.value)}
-                placeholder={t("importCsv.tableNamePlaceholder")}
-                autoFocus
-              />
-            </Field>
-            <label className="csv-toggle">
-              <input
-                type="checkbox"
-                checked={useHeader}
-                onChange={(e) => toggleHeader(e.target.checked)}
-              />
-              <span className="csv-toggle-text">
-                <span className="csv-toggle-label">{t("importCsv.useHeader")}</span>
-                <span className="csv-toggle-hint">{t("importCsv.useHeaderHint")}</span>
-              </span>
-            </label>
-          </div>
+          <Field label={t("importCsv.tableName")}>
+            <Input
+              className="ui-input csv-table-name"
+              value={tableName}
+              onChange={(e) => setTableName(e.target.value)}
+              placeholder={t("importCsv.tableNamePlaceholder")}
+              autoFocus
+            />
+          </Field>
 
           <div className="builder">
             <div className="builder-head">
               <span>{t("importCsv.headerRow")}</span>
+              <label className="csv-toggle-inline">
+                <input
+                  type="checkbox"
+                  checked={useHeader}
+                  onChange={(e) => toggleHeader(e.target.checked)}
+                />
+                {t("importCsv.useHeader")}
+              </label>
             </div>
-            <div className="csv-columns">
-              {headers.map((h, i) => (
-                <div className="csv-col" key={i}>
-                  <Input
-                    value={h}
-                    invalid={!h.trim() || duplicateNames.has(h.trim())}
-                    aria-label={t("importCsv.columnFallback", { n: i + 1 })}
-                    onChange={(e) =>
-                      setHeaders((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
-                    }
-                  />
-                  <Select
-                    value={types[i] ?? "text"}
-                    onChange={(v) => toggleType(i, v)}
-                    disabled={i === 0}
-                    ariaLabel={t("importCsv.columnFallback", { n: i + 1 })}
-                    options={IMPORT_TYPES.map((value) => ({
-                      value,
-                      label: t(`types.${value}`),
-                      leading: <ColumnTypeIcon type={value} size={13} />,
-                    }))}
-                  />
-                  {i === 0 && <span className="csv-col-note">{t("importCsv.titleLocked")}</span>}
-                </div>
-              ))}
-            </div>
-            <p className="hint">{t("importCsv.headerRowHint")}</p>
-            {headerError && <div className="form-error">{headerError}</div>}
-          </div>
 
-          {preview.ragged && (
-            <p className="hint note">
-              <IconAlert size={13} />
-              {t("importCsv.ragged")}
-            </p>
-          )}
-
-          <div className="builder-head">
-            <span>{t("importCsv.preview")}</span>
-            {dataRows.length > 0 && (
-              <span className="builder-count">
-                {t("importCsv.previewMore", { count: dataRows.length, total: dataCount })}
-              </span>
-            )}
-          </div>
-          {dataRows.length === 0 ? (
-            <p className="hint">{t("importCsv.previewEmpty")}</p>
-          ) : (
-            <div className="csv-preview-wrap">
-              <table className="csv-preview">
+            <div className="csv-grid-wrap">
+              <table className="csv-table">
                 <thead>
                   <tr>
                     {headers.map((h, i) => (
-                      <th key={i}>{h.trim() || t("importCsv.columnFallback", { n: i + 1 })}</th>
+                      <th key={i} className="csv-head-cell">
+                        <Input
+                          className="ui-input csv-head-name"
+                          value={h}
+                          invalid={!h.trim() || duplicateNames.has(h.trim())}
+                          aria-label={t("importCsv.columnFallback", { n: i + 1 })}
+                          onChange={(e) =>
+                            setHeaders((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
+                          }
+                        />
+                        <span
+                          className="csv-head-type"
+                          title={i === 0 ? t("importCsv.titleLocked") : undefined}
+                        >
+                          <Select
+                            value={types[i] ?? "text"}
+                            onChange={(v) => toggleType(i, v)}
+                            disabled={i === 0}
+                            ariaLabel={t("importCsv.columnFallback", { n: i + 1 })}
+                            options={IMPORT_TYPES.map((value) => ({
+                              value,
+                              label: t(`types.${value}`),
+                              leading: <ColumnTypeIcon type={value} size={13} />,
+                            }))}
+                          />
+                        </span>
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {dataRows.map((row, ri) => (
-                    <tr key={ri}>
-                      {headers.map((_, ci) => {
-                        const cell = row[ci] ?? "";
-                        return (
-                          <td key={ci} title={cell}>
-                            {cell}
-                          </td>
-                        );
-                      })}
+                  {dataRows.length === 0 ? (
+                    <tr>
+                      <td className="csv-table-empty" colSpan={Math.max(headers.length, 1)}>
+                        {t("importCsv.previewEmpty")}
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    dataRows.map((row, ri) => (
+                      <tr key={ri}>
+                        {headers.map((_, ci) => {
+                          const cell = row[ci] ?? "";
+                          return (
+                            <td key={ci} title={cell}>
+                              {cell}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
-          )}
+
+            <div className="csv-foot">
+              <p className="hint">
+                {useHeader ? t("importCsv.headerRowHint") : t("importCsv.useHeaderHint")}
+                {" · "}
+                {t("importCsv.titleLocked")}
+              </p>
+              {dataRows.length > 0 && (
+                <span className="builder-count">
+                  {t("importCsv.previewMore", { count: dataRows.length, total: dataCount })}
+                </span>
+              )}
+            </div>
+
+            {preview.ragged && (
+              <p className="hint note">
+                <IconAlert size={13} />
+                {t("importCsv.ragged")}
+              </p>
+            )}
+            {headerError && <div className="form-error">{headerError}</div>}
+          </div>
 
           {error && <div className="form-error">{error}</div>}
 
