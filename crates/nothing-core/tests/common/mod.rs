@@ -37,6 +37,8 @@ pub fn col(name: &str, t: ColumnType) -> NewColumn {
         name: name.into(),
         col_type: t,
         opts: None,
+        icon: None,
+        color: None,
     }
 }
 
@@ -53,6 +55,8 @@ pub fn select_col(name: &str, choices: &[&str]) -> NewColumn {
                 })
                 .collect(),
         })),
+        icon: None,
+        color: None,
     }
 }
 
@@ -69,6 +73,8 @@ pub fn multi_select_col(name: &str, choices: &[&str]) -> NewColumn {
                 })
                 .collect(),
         })),
+        icon: None,
+        color: None,
     }
 }
 
@@ -81,6 +87,8 @@ pub fn relation_col(name: &str, target_table_id: &str, reverse_name: Option<&str
             single: false,
             reverse_name: reverse_name.map(String::from),
         })),
+        icon: None,
+        color: None,
     }
 }
 
@@ -92,6 +100,8 @@ pub fn formula_col(name: &str, expr: &str, result_type: FormulaResultType) -> Ne
             expr: expr.into(),
             result_type,
         })),
+        icon: None,
+        color: None,
     }
 }
 

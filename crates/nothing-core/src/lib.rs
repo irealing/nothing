@@ -18,8 +18,8 @@ pub use db::{Workspace, MAGIC};
 pub use error::AppError;
 pub use query::{Cells, Row, RowPage, SqlColumn, SqlResult, ViewResult};
 pub use schema::{
-    Choice, ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, FilterNode, FilterOp, FilterRule,
-    FormulaOpts, FormulaResultType, GridConfig, LogicOp, NewColumn, NewView, PlainOpts,
+    Choice, ColumnColor, ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, FilterNode, FilterOp,
+    FilterRule, FormulaOpts, FormulaResultType, GridConfig, LogicOp, NewColumn, NewView, PlainOpts,
     RelationOpts, SelectOpts, SortSpec, SqlConfig, TableMeta, ViewConfig, ViewKind, ViewMeta,
     ViewPatch,
 };

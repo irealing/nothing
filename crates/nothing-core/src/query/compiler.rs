@@ -455,6 +455,8 @@ mod tests {
             visible: true,
             is_reverse: false,
             reverse_of: None,
+            icon: None,
+            color: None,
             created_at: String::new(),
         }
     }

@@ -10,12 +10,12 @@ use nothing_core::{AppError, Workspace, MAGIC};
 fn create_then_open_roundtrip() {
     let (dir, ws) = common::create_ws("a.nothing");
     let path = db_path(&dir, "a.nothing");
-    assert_eq!(ws.format_version().unwrap(), 1);
+    assert_eq!(ws.format_version().unwrap(), 2);
     assert_eq!(ws.path(), path.as_path());
     drop(ws);
 
     let ws2 = Workspace::open(&path, PASSWORD).unwrap();
-    assert_eq!(ws2.format_version().unwrap(), 1);
+    assert_eq!(ws2.format_version().unwrap(), 2);
 }
 
 #[test]

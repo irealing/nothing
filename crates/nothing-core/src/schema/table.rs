@@ -136,6 +136,8 @@ fn setup_relation(conn: &Connection, src_table: &TableMeta, col: &ColumnMeta) ->
             visible: true,
             is_reverse: true,
             reverse_of: Some(col.id.clone()),
+            icon: None,
+            color: None,
             created_at: now_iso(),
         };
         super::insert_column(conn, &reverse)?;
@@ -508,6 +510,14 @@ impl Workspace {
                 opts: new_opts.clone(),
                 width: patch.width.unwrap_or(old.width),
                 visible: patch.visible.unwrap_or(old.visible),
+                icon: match &patch.icon {
+                    Some(raw) => super::normalize_column_icon(Some(raw))?,
+                    None => old.icon.clone(),
+                },
+                color: match &patch.color {
+                    Some(raw) => super::normalize_column_color(Some(raw))?,
+                    None => old.color,
+                },
                 ..old.clone()
             };
 
@@ -516,7 +526,8 @@ impl Workspace {
                 // 1. metadata first — rebuild derives DDL from metadata
                 tx.execute(
                     r#"UPDATE "_columns"
-                       SET "name" = ?1, "type" = ?2, "opts" = ?3, "width" = ?4, "visible" = ?5
+                       SET "name" = ?1, "type" = ?2, "opts" = ?3, "width" = ?4, "visible" = ?5,
+                           "icon" = ?7, "color" = ?8
                        WHERE "id" = ?6"#,
                     rusqlite::params![
                         new_meta.name,
@@ -525,6 +536,8 @@ impl Workspace {
                         new_meta.width,
                         new_meta.visible as i64,
                         col_id,
+                        new_meta.icon,
+                        new_meta.color.map(|c| c.as_str()),
                     ],
                 )
                 .map_err(map_sqlite_err)?;

@@ -81,6 +81,86 @@ impl ColumnType {
 }
 
 /// Declared result type of a formula (generated) column.
+/// Presentation-only color of a column (header tint + cell background tint).
+///
+/// Stored as a palette **token** (never a hex value) so the light and dark
+/// themes can each resolve it to their own shades.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColumnColor {
+    Gray,
+    Blue,
+    Green,
+    Yellow,
+    Orange,
+    Red,
+    Purple,
+    Pink,
+    Brown,
+}
+
+impl ColumnColor {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ColumnColor::Gray => "gray",
+            ColumnColor::Blue => "blue",
+            ColumnColor::Green => "green",
+            ColumnColor::Yellow => "yellow",
+            ColumnColor::Orange => "orange",
+            ColumnColor::Red => "red",
+            ColumnColor::Purple => "purple",
+            ColumnColor::Pink => "pink",
+            ColumnColor::Brown => "brown",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        Ok(match s {
+            "gray" => ColumnColor::Gray,
+            "blue" => ColumnColor::Blue,
+            "green" => ColumnColor::Green,
+            "yellow" => ColumnColor::Yellow,
+            "orange" => ColumnColor::Orange,
+            "red" => ColumnColor::Red,
+            "purple" => ColumnColor::Purple,
+            "pink" => ColumnColor::Pink,
+            "brown" => ColumnColor::Brown,
+            other => return Err(AppError::InvalidInput(format!("未知的列颜色: {other}"))),
+        })
+    }
+}
+
+/// Longest accepted icon payload. Emoji can be a ZWJ sequence of a few
+/// scalars, so the limit is generous but still keeps the metadata sane.
+const MAX_ICON_BYTES: usize = 32;
+
+/// Normalize a column icon: trim, empty → `None`, reject control characters
+/// and absurdly long blobs (the UI only offers a curated emoji list).
+pub fn normalize_column_icon(raw: Option<&str>) -> Result<Option<String>> {
+    let Some(raw) = raw else { return Ok(None) };
+    let icon = raw.trim();
+    if icon.is_empty() {
+        return Ok(None);
+    }
+    if icon.len() > MAX_ICON_BYTES {
+        return Err(AppError::InvalidInput("列图标过长".into()));
+    }
+    if icon.chars().any(|c| c.is_control()) {
+        return Err(AppError::InvalidInput("列图标不能包含控制字符".into()));
+    }
+    Ok(Some(icon.to_string()))
+}
+
+/// Normalize a column color token; empty string clears it.
+pub fn normalize_column_color(raw: Option<&str>) -> Result<Option<ColumnColor>> {
+    let Some(raw) = raw else { return Ok(None) };
+    let token = raw.trim();
+    if token.is_empty() {
+        return Ok(None);
+    }
+    ColumnColor::parse(token).map(Some)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FormulaResultType {
@@ -286,6 +366,10 @@ pub struct ColumnMeta {
     pub is_reverse: bool,
     /// For reverse columns: the id of the source relation column.
     pub reverse_of: Option<String>,
+    /// Optional emoji shown before the column name in grid headers.
+    pub icon: Option<String>,
+    /// Optional palette token tinting the header and the column's cells.
+    pub color: Option<ColumnColor>,
     pub created_at: String,
 }
 
@@ -304,9 +388,17 @@ pub struct NewColumn {
     pub col_type: ColumnType,
     #[serde(default)]
     pub opts: Option<ColumnOpts>,
+    /// Emoji shown in the header; `None`/empty means "use the type icon only".
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Palette token; `None`/empty means "no tint".
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 /// Partial update of a column. `None` fields keep their current value.
+///
+/// `icon`/`color` are raw strings so that an empty string clears them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ColumnPatch {
     pub name: Option<String>,
@@ -316,6 +408,8 @@ pub struct ColumnPatch {
     pub position: Option<i64>,
     pub width: Option<i64>,
     pub visible: Option<bool>,
+    pub icon: Option<String>,
+    pub color: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +578,13 @@ pub(crate) fn column_from_row(r: &Row<'_>) -> rusqlite::Result<ColumnMeta> {
     })?;
     let visible: i64 = r.get("visible")?;
     let is_reverse: i64 = r.get("is_reverse")?;
+    let color_str: Option<String> = r.get("color")?;
+    let color = match color_str.as_deref() {
+        Some(token) => Some(ColumnColor::parse(token).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?),
+        None => None,
+    };
     Ok(ColumnMeta {
         id: r.get("id")?,
         table_id: r.get("table_id")?,
@@ -496,6 +597,8 @@ pub(crate) fn column_from_row(r: &Row<'_>) -> rusqlite::Result<ColumnMeta> {
         visible: visible != 0,
         is_reverse: is_reverse != 0,
         reverse_of: r.get("reverse_of")?,
+        icon: r.get("icon")?,
+        color,
         created_at: r.get("created_at")?,
     })
 }
@@ -522,7 +625,7 @@ pub(crate) fn view_from_row(r: &Row<'_>) -> rusqlite::Result<ViewMeta> {
 
 pub(crate) const TABLE_COLS: &str =
     r#""id","name","sql_name","title_col_id","icon","position","created_at","updated_at""#;
-const COLUMN_COLS: &str = r#""id","table_id","name","sql_name","type","opts","position","width","visible","is_reverse","reverse_of","created_at""#;
+const COLUMN_COLS: &str = r#""id","table_id","name","sql_name","type","opts","position","width","visible","is_reverse","reverse_of","icon","color","created_at""#;
 pub(crate) const VIEW_COLS: &str =
     r#""id","table_id","name","kind","config","position","created_at""#;
 
@@ -583,7 +686,7 @@ pub(crate) fn insert_column(conn: &Connection, c: &ColumnMeta) -> Result<()> {
     conn.execute(
         &format!(
             r#"INSERT INTO "_columns" ({COLUMN_COLS})
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)"#
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)"#
         ),
         rusqlite::params![
             c.id,
@@ -597,6 +700,8 @@ pub(crate) fn insert_column(conn: &Connection, c: &ColumnMeta) -> Result<()> {
             c.visible as i64,
             c.is_reverse as i64,
             c.reverse_of,
+            c.icon,
+            c.color.map(|c| c.as_str()),
             c.created_at,
         ],
     )?;
@@ -632,6 +737,8 @@ pub(crate) fn build_column_meta(
         .clone()
         .unwrap_or_else(|| ColumnOpts::default_for(new.col_type));
     validate_opts(new.col_type, &opts)?;
+    let icon = normalize_column_icon(new.icon.as_deref())?;
+    let color = normalize_column_color(new.color.as_deref())?;
     let id = new_id();
     Ok(ColumnMeta {
         id: id.clone(),
@@ -645,6 +752,8 @@ pub(crate) fn build_column_meta(
         visible: true,
         is_reverse: false,
         reverse_of: None,
+        icon,
+        color,
         created_at: now_iso(),
     })
 }

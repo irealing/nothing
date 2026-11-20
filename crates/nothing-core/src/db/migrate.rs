@@ -10,7 +10,7 @@ use crate::error::{AppError, Result};
 use crate::schema::ident::now_iso;
 
 /// Format version understood by this build of nothing-core.
-pub const CURRENT_FORMAT_VERSION: u32 = 1;
+pub const CURRENT_FORMAT_VERSION: u32 = 2;
 
 /// Full DDL for format version 1 (manifest + metadata tables).
 ///
@@ -62,7 +62,9 @@ CREATE TABLE "_views" (
 ) STRICT;
 "#;
 
-/// Create the full v1 metadata schema in a fresh (empty) encrypted database.
+/// Create the v1 metadata schema in a fresh (empty) encrypted database, then
+/// run the same step migrations an existing workspace would run. Fresh files
+/// and old files therefore travel through one code path.
 pub fn bootstrap(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute_batch(V1_SCHEMA)?;
@@ -72,15 +74,38 @@ pub fn bootstrap(conn: &mut Connection) -> Result<()> {
              ('format_version', ?2),
              ('created_at', ?3),
              ('created_by', ?4)"#,
-        rusqlite::params![
-            MAGIC,
-            CURRENT_FORMAT_VERSION.to_string(),
-            now_iso(),
-            format!("nothing {APP_VERSION}"),
-        ],
+        rusqlite::params![MAGIC, "1", now_iso(), format!("nothing {APP_VERSION}"),],
     )?;
     tx.commit()?;
+    verify_and_migrate(conn)
+}
+
+/// v1 → v2: presentation metadata for columns (emoji icon + palette color).
+///
+/// Idempotent: each column is added only when `PRAGMA table_info` does not
+/// already report it, so a half-applied or re-run step is harmless.
+fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
+    for (name, decl) in [("icon", "TEXT"), ("color", "TEXT")] {
+        if !has_column(conn, "_columns", name)? {
+            conn.execute_batch(&format!(
+                r#"ALTER TABLE "_columns" ADD COLUMN "{name}" {decl}"#
+            ))?;
+        }
+    }
     Ok(())
+}
+
+/// Whether `table` already has `column` (used to keep migrations idempotent).
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
+            rusqlite::params![table, column],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    Ok(exists)
 }
 
 /// Verify the file is a nothing workspace and migrate it to the current
@@ -90,23 +115,36 @@ pub fn verify_and_migrate(conn: &mut Connection) -> Result<()> {
     if magic.as_deref() != Some(MAGIC) {
         return Err(AppError::NotANothingDb);
     }
-    let version = read_format_version(conn)?;
+    let mut version = read_format_version(conn)?;
     if version > CURRENT_FORMAT_VERSION {
         return Err(AppError::FormatTooNew(version));
     }
-    if version < CURRENT_FORMAT_VERSION {
-        // Step migrations land here as the format evolves (铁律 7): each step
-        // runs in its own transaction, is idempotent, and bumps
-        // format_version by one, e.g.:
-        //
-        //   let tx = conn.transaction()?;
-        //   migrate_1_to_2(&tx)?;
-        //   tx.execute(r#"UPDATE "_nothing" SET "value" = '2' WHERE "key" = 'format_version'"#, [])?;
-        //   tx.commit()?;
-        return Err(AppError::Internal(format!(
-            "缺少从格式版本 v{version} 升级的迁移脚本"
-        )));
+    // 铁律 7: one transactional, idempotent step per version, applied in
+    // order so any old workspace upgrades level by level.
+    while version < CURRENT_FORMAT_VERSION {
+        let next = version + 1;
+        let tx = conn.transaction()?;
+        match version {
+            1 => migrate_v1_to_v2(&tx)?,
+            other => {
+                return Err(AppError::Internal(format!(
+                    "缺少从格式版本 v{other} 升级的迁移脚本"
+                )))
+            }
+        }
+        set_format_version(&tx, next)?;
+        tx.commit()?;
+        version = next;
     }
+    Ok(())
+}
+
+/// Write `format_version` (only ever called inside a migration transaction).
+fn set_format_version(conn: &Connection, version: u32) -> Result<()> {
+    conn.execute(
+        r#"UPDATE "_nothing" SET "value" = ?1 WHERE "key" = 'format_version'"#,
+        [version.to_string()],
+    )?;
     Ok(())
 }
 
