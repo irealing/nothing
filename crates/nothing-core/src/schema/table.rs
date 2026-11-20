@@ -154,8 +154,10 @@ pub(crate) fn create_table_tx(
     conn: &Connection,
     name: &str,
     columns: Vec<NewColumn>,
+    icon: Option<&str>,
 ) -> Result<TableMeta> {
     let name = validate_user_name("表名", name)?;
+    let icon = super::normalize_icon(icon)?;
     if columns.is_empty() {
         return Err(AppError::InvalidInput("表至少需要一列".into()));
     }
@@ -214,8 +216,16 @@ pub(crate) fn create_table_tx(
     conn.execute(
         r#"INSERT INTO "_tables"
              ("id","name","sql_name","title_col_id","icon","position","created_at","updated_at")
-           VALUES (?1,?2,?3,?4,NULL,?5,?6,?6)"#,
-        rusqlite::params![table_id, name, sql_name, title_col_id, position, now],
+           VALUES (?1,?2,?3,?4,?5,?6,?7,?7)"#,
+        rusqlite::params![
+            table_id,
+            name,
+            sql_name,
+            title_col_id,
+            icon.as_deref(),
+            position,
+            now
+        ],
     )
     .map_err(map_sqlite_err)?;
     for m in &metas {
@@ -229,7 +239,7 @@ pub(crate) fn create_table_tx(
             name: name.clone(),
             sql_name: sql_name.clone(),
             title_col_id: Some(title_col_id.clone()),
-            icon: None,
+            icon: icon.clone(),
             position,
             created_at: now.clone(),
             updated_at: now.clone(),
@@ -252,7 +262,17 @@ impl Workspace {
     /// The first column must be a text column — it becomes the table's title
     /// column (used by relation pickers as the row display name).
     pub fn create_table(&self, name: &str, columns: Vec<NewColumn>) -> Result<TableMeta> {
-        self.with_tx(|conn| create_table_tx(conn, name, columns))
+        self.with_tx(|conn| create_table_tx(conn, name, columns, None))
+    }
+
+    /// Create a table with its presentation emoji in the same transaction.
+    pub fn create_table_with_icon(
+        &self,
+        name: &str,
+        columns: Vec<NewColumn>,
+        icon: Option<&str>,
+    ) -> Result<TableMeta> {
+        self.with_tx(|conn| create_table_tx(conn, name, columns, icon))
     }
 
     pub fn list_tables(&self) -> Result<Vec<TableMeta>> {
@@ -372,6 +392,19 @@ impl Workspace {
             conn.execute(
                 r#"UPDATE "_tables" SET "title_col_id" = ?1, "updated_at" = ?2 WHERE "id" = ?3"#,
                 rusqlite::params![col_id, now_iso(), table_id],
+            )?;
+            load_table(conn, table_id)
+        })
+    }
+
+    /// Set or clear the table's emoji icon (presentation only, no DDL).
+    pub fn set_table_icon(&self, table_id: &str, icon: Option<&str>) -> Result<TableMeta> {
+        let icon = super::normalize_icon(icon)?;
+        self.with_tx(|conn| {
+            load_table(conn, table_id)?;
+            conn.execute(
+                r#"UPDATE "_tables" SET "icon" = ?1, "updated_at" = ?2 WHERE "id" = ?3"#,
+                rusqlite::params![icon, now_iso(), table_id],
             )?;
             load_table(conn, table_id)
         })
@@ -521,7 +554,7 @@ impl Workspace {
                 width: patch.width.unwrap_or(old.width),
                 visible: patch.visible.unwrap_or(old.visible),
                 icon: match &patch.icon {
-                    Some(raw) => super::normalize_column_icon(Some(raw))?,
+                    Some(raw) => super::normalize_icon(Some(raw))?,
                     None => old.icon.clone(),
                 },
                 color: match &patch.color {

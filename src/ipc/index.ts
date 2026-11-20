@@ -64,8 +64,8 @@ export const workspaceChangePassword = (newPassword: string) =>
 
 export const tableList = () => call<TableMeta[]>("table_list");
 
-export const tableCreate = (name: string, columns: NewColumn[]) =>
-  call<TableMeta>("table_create", { name, columns });
+export const tableCreate = (name: string, columns: NewColumn[], icon?: string | null) =>
+  call<TableMeta>("table_create", { name, columns, icon: icon ?? null });
 
 export const tableRename = (tableId: string, newName: string) =>
   call<TableMeta>("table_rename", { tableId, newName });
@@ -75,6 +75,9 @@ export const tableDelete = (tableId: string) =>
 
 export const tableSetTitle = (tableId: string, colId: string) =>
   call<TableMeta>("table_set_title", { tableId, colId });
+
+export const tableSetIcon = (tableId: string, icon: string | null) =>
+  call<TableMeta>("table_set_icon", { tableId, icon });
 
 export const columnList = (tableId: string) =>
   call<ColumnMeta[]>("column_list", { tableId });

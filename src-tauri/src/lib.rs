@@ -24,6 +24,7 @@ pub fn run() {
             commands::table_rename,
             commands::table_delete,
             commands::table_set_title,
+            commands::table_set_icon,
             // columns
             commands::column_list,
             commands::column_add,

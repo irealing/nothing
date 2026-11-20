@@ -203,6 +203,44 @@ fn invalid_presentation_values_are_rejected() {
 }
 
 #[test]
+fn table_icon_round_trip_and_clear() {
+    let (_dir, ws) = common::create_ws("table-icon.nothing");
+    let table = ws
+        .create_table_with_icon("项目", vec![col("标题", ColumnType::Text)], Some("📊"))
+        .unwrap();
+    assert_eq!(table.icon.as_deref(), Some("📊"));
+    assert_eq!(ws.get_table(&table.id).unwrap().icon.as_deref(), Some("📊"));
+
+    // Whitespace-only clears; a later value sticks and is visible via list.
+    let cleared = ws.set_table_icon(&table.id, Some("   ")).unwrap();
+    assert!(cleared.icon.is_none());
+    let updated = ws.set_table_icon(&table.id, Some("🚀")).unwrap();
+    assert_eq!(updated.icon.as_deref(), Some("🚀"));
+    assert_eq!(ws.list_tables().unwrap()[0].icon.as_deref(), Some("🚀"));
+
+    // Invalid payloads are rejected before touching the row.
+    let err = ws
+        .set_table_icon(&table.id, Some(&"x".repeat(64)))
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+    assert_eq!(ws.get_table(&table.id).unwrap().icon.as_deref(), Some("🚀"));
+}
+
+#[test]
+fn create_table_with_invalid_icon_rolls_back() {
+    let (_dir, ws) = common::create_ws("table-icon-bad.nothing");
+    let err = ws
+        .create_table_with_icon(
+            "坏表",
+            vec![col("标题", ColumnType::Text)],
+            Some(&"x".repeat(64)),
+        )
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+    assert!(ws.list_tables().unwrap().is_empty());
+}
+
+#[test]
 fn create_table_rejects_unknown_color() {
     let (_dir, ws) = common::create_ws("bad2.nothing");
     let err = ws

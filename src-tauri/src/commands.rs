@@ -165,13 +165,16 @@ pub fn table_create(
     state: State<AppState>,
     name: String,
     columns: Vec<NewColumn>,
+    icon: Option<String>,
 ) -> CmdResult<TableMeta> {
     if columns.is_empty() {
         return Err(CommandError::from(nothing_core::AppError::InvalidInput(
             "表至少需要一列".into(),
         )));
     }
-    with_ws(&state, |ws| ws.create_table(&name, columns))
+    with_ws(&state, |ws| {
+        ws.create_table_with_icon(&name, columns, icon.as_deref())
+    })
 }
 
 #[tauri::command]
@@ -195,6 +198,15 @@ pub fn table_set_title(
     col_id: String,
 ) -> CmdResult<TableMeta> {
     with_ws(&state, |ws| ws.set_title_column(&table_id, &col_id))
+}
+
+#[tauri::command]
+pub fn table_set_icon(
+    state: State<AppState>,
+    table_id: String,
+    icon: Option<String>,
+) -> CmdResult<TableMeta> {
+    with_ws(&state, |ws| ws.set_table_icon(&table_id, icon.as_deref()))
 }
 
 #[tauri::command]

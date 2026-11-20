@@ -134,19 +134,20 @@ impl ColumnColor {
 /// scalars, so the limit is generous but still keeps the metadata sane.
 const MAX_ICON_BYTES: usize = 32;
 
-/// Normalize a column icon: trim, empty → `None`, reject control characters
-/// and absurdly long blobs (the UI only offers a curated emoji list).
-pub fn normalize_column_icon(raw: Option<&str>) -> Result<Option<String>> {
+/// Normalize an emoji icon (column or table): trim, empty → `None`, reject
+/// control characters and absurdly long blobs (the UI only offers a curated
+/// emoji list).
+pub fn normalize_icon(raw: Option<&str>) -> Result<Option<String>> {
     let Some(raw) = raw else { return Ok(None) };
     let icon = raw.trim();
     if icon.is_empty() {
         return Ok(None);
     }
     if icon.len() > MAX_ICON_BYTES {
-        return Err(AppError::InvalidInput("列图标过长".into()));
+        return Err(AppError::InvalidInput("图标过长".into()));
     }
     if icon.chars().any(|c| c.is_control()) {
-        return Err(AppError::InvalidInput("列图标不能包含控制字符".into()));
+        return Err(AppError::InvalidInput("图标不能包含控制字符".into()));
     }
     Ok(Some(icon.to_string()))
 }
@@ -737,7 +738,7 @@ pub(crate) fn build_column_meta(
         .clone()
         .unwrap_or_else(|| ColumnOpts::default_for(new.col_type));
     validate_opts(new.col_type, &opts)?;
-    let icon = normalize_column_icon(new.icon.as_deref())?;
+    let icon = normalize_icon(new.icon.as_deref())?;
     let color = normalize_column_color(new.color.as_deref())?;
     let id = new_id();
     Ok(ColumnMeta {

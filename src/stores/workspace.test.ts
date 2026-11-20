@@ -204,6 +204,39 @@ describe("importCsv", () => {
   });
 });
 
+describe("table icons", () => {
+  it("setTableIcon refreshes the table list without refetching rows", async () => {
+    useWorkspace.setState({ ...dataState, rowsCache: new Map(), tables: [T1], activeTableId: "t1" });
+    const withIcon: TableMeta = { ...T1, icon: "📊" };
+    vi.mocked(ipc.tableSetIcon).mockResolvedValue(withIcon);
+    vi.mocked(ipc.tableList).mockResolvedValue([withIcon]);
+
+    await useWorkspace.getState().setTableIcon("t1", "📊");
+
+    const s = useWorkspace.getState();
+    expect(ipc.tableSetIcon).toHaveBeenCalledWith("t1", "📊");
+    expect(s.tables[0].icon).toBe("📊");
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+    expect(s.error).toBeNull();
+  });
+
+  it("createTable forwards the initial emoji to the backend", async () => {
+    const created: TableMeta = { ...T1, id: "t2", icon: "🚀" };
+    vi.mocked(ipc.tableCreate).mockResolvedValue(created);
+    vi.mocked(ipc.tableList).mockResolvedValue([created]);
+    vi.mocked(ipc.columnList).mockResolvedValue([{ ...COL, table_id: "t2" }]);
+    vi.mocked(ipc.viewList).mockResolvedValue([{ ...GRID_V, table_id: "t2" }]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().createTable("项目", [COL], "🚀");
+
+    expect(ipc.tableCreate).toHaveBeenCalledWith("项目", [COL], "🚀");
+    const s = useWorkspace.getState();
+    expect(s.activeTableId).toBe("t2");
+    expect(s.tables[0].icon).toBe("🚀");
+  });
+});
+
 describe("windowed loading", () => {
   async function openWithTotal(total: number) {
     vi.mocked(ipc.workspaceOpen).mockResolvedValue({ path: "/a.nothing", format_version: 1 });

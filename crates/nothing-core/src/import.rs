@@ -428,7 +428,7 @@ impl Workspace {
 
         let table_name = options.table_name.clone();
         let table = self.with_tx(|conn| {
-            let table = create_table_tx(conn, &table_name, columns)?;
+            let table = create_table_tx(conn, &table_name, columns, None)?;
             let cols = load_columns(conn, &table.id)?;
             if cols.len() != width {
                 return Err(AppError::Internal(

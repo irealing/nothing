@@ -452,6 +452,24 @@ body,
   color: var(--accent);
 }
 
+/* Table emoji button sits where the decorative nav icon used to be. */
+.nav-icon-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  height: 16px;
+  cursor: pointer;
+}
+
+.nav-icon-btn:hover {
+  color: var(--text);
+}
+
+.nav-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
 .nav-label {
   flex: 1;
   white-space: nowrap;
@@ -566,6 +584,40 @@ body,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.table-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-weak);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.table-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.table-emoji {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.table-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-name-row > .ui-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .toolbar-count {
@@ -2491,6 +2543,27 @@ input[type="checkbox"] {
 
 .ui-emoji:hover {
   background: var(--bg-hover);
+}
+
+.ui-emoji-clear {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 8px 4px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: transparent;
+  color: var(--text-mid);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ui-emoji-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .ui-swatches {

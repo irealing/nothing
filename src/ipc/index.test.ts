@@ -10,7 +10,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { csvImport, csvPreview, IpcError, rowUpdate, viewRun, workspaceOpen } from "./index";
+import { csvImport, csvPreview, IpcError, rowUpdate, tableCreate, tableSetIcon, viewRun, workspaceOpen } from "./index";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -62,6 +62,22 @@ describe("ipc argument mapping", () => {
     await csvImport({ ...options, types: [...options.types] });
     expect(mockInvoke).toHaveBeenCalledWith("csv_import", {
       options: { ...options, types: [...options.types] },
+    });
+  });
+
+  it("forwards the initial table icon and later icon edits", async () => {
+    mockInvoke.mockResolvedValue({});
+    await tableCreate("项目", [], "📊");
+    expect(mockInvoke).toHaveBeenCalledWith("table_create", {
+      name: "项目",
+      columns: [],
+      icon: "📊",
+    });
+
+    await tableSetIcon("t1", null);
+    expect(mockInvoke).toHaveBeenCalledWith("table_set_icon", {
+      tableId: "t1",
+      icon: null,
     });
   });
 });

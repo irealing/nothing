@@ -85,10 +85,11 @@ interface WorkspaceState {
   refresh: () => Promise<void>;
 
   // tables & columns
-  createTable: (name: string, columns: NewColumn[]) => Promise<void>;
+  createTable: (name: string, columns: NewColumn[], icon?: string | null) => Promise<void>;
   importCsv: (options: ImportCsvOptions) => Promise<ImportReport | null>;
   deleteTable: (id: string) => Promise<void>;
   renameTable: (id: string, name: string) => Promise<void>;
+  setTableIcon: (id: string, icon: string | null) => Promise<void>;
   setTitleColumn: (colId: string) => Promise<void>;
   addColumn: (col: NewColumn) => Promise<void>;
   updateColumn: (colId: string, patch: ColumnPatch) => Promise<void>;
@@ -370,9 +371,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       });
     },
 
-    createTable: async (name, columns) => {
+    createTable: async (name, columns, icon) => {
       await guard(set, get, async () => {
-        const t = await ipc.tableCreate(name, columns);
+        const t = await ipc.tableCreate(name, columns, icon);
         set({ tables: await ipc.tableList() });
         await activateTable(t.id);
       });
@@ -421,6 +422,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     renameTable: async (id, name) => {
       await guard(set, get, async () => {
         await ipc.tableRename(id, name);
+        set({ tables: await ipc.tableList() });
+      });
+    },
+
+    setTableIcon: async (id, icon) => {
+      await guard(set, get, async () => {
+        await ipc.tableSetIcon(id, icon);
+        // Presentation-only: refresh the table list, don't refetch rows.
         set({ tables: await ipc.tableList() });
       });
     },

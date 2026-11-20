@@ -26,6 +26,7 @@ import FilterSortPanel from "./FilterSortPanel";
 import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
 import { InlineCellEditor } from "./GridEditors";
+import { EmojiMenu } from "../ui/ColumnPickers";
 import {
   IconCopy,
   IconPencil,
@@ -214,6 +215,7 @@ export default function TableView() {
   const deleteColumn = useWorkspace((s) => s.deleteColumn);
   const updateColumn = useWorkspace((s) => s.updateColumn);
   const setTitleColumn = useWorkspace((s) => s.setTitleColumn);
+  const setTableIcon = useWorkspace((s) => s.setTableIcon);
   const searchRows = useWorkspace((s) => s.searchRows);
 
   const [localQuery, setLocalQuery] = useState("");
@@ -221,6 +223,7 @@ export default function TableView() {
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [colMenu, setColMenu] = useState<{ col: ColumnMeta; x: number; y: number } | null>(null);
+  const [headerEmoji, setHeaderEmoji] = useState<{ col: ColumnMeta; x: number; y: number } | null>(null);
   const [colDialog, setColDialog] = useState<{ existing: ColumnMeta | null } | null>(null);
   const [gridSelection, setGridSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
@@ -243,6 +246,7 @@ export default function TableView() {
   useEffect(() => {
     setEditor(null);
     setPicker(null);
+    setHeaderEmoji(null);
   }, [activeTableId, activeViewId]);
 
   const columns = visibleColumns;
@@ -254,7 +258,8 @@ export default function TableView() {
         title: `${c.icon ? `${c.icon} ` : ""}${c.name}${c.is_reverse ? t("column.reverseSuffix") : ""}`,
         id: c.id,
         width: c.width || 160,
-        icon: headerIcon(c),
+        // A custom emoji replaces the default type icon in the header.
+        icon: c.icon ? undefined : headerIcon(c),
         hasMenu: true,
         ...(c.color ? { themeOverride: tagThemeOverride(c.color) } : {}),
       })),
@@ -437,6 +442,21 @@ export default function TableView() {
     [columns],
   );
 
+  // Clicking the leading glyph (emoji or default type icon) edits the emoji.
+  // The glyph occupies the first ~28px; the title starts right after it.
+  const onHeaderClicked = useCallback(
+    (colIndex: number, event: HeaderClickedEventArgs) => {
+      const meta = columns[colIndex];
+      if (!meta || event.localEventX > 28) return;
+      event.preventDefault();
+      setEditor(null);
+      setPicker(null);
+      const b = event.bounds;
+      setHeaderEmoji({ col: meta, x: b.x + 8, y: b.y + b.height });
+    },
+    [columns],
+  );
+
   const selectedRids = useMemo(() => {
     const out: string[] = [];
     for (const i of gridSelection.rows) {
@@ -466,6 +486,24 @@ export default function TableView() {
     <div className="table-view">
       <div className="toolbar">
         <div className="toolbar-title-group">
+          <EmojiMenu
+            value={table.icon}
+            onChange={(icon) => void setTableIcon(table.id, icon)}
+            trigger={
+              <button
+                type="button"
+                className="table-icon-btn"
+                aria-label={t("table.icon")}
+                title={t("table.icon")}
+              >
+                {table.icon ? (
+                  <span className="table-emoji">{table.icon}</span>
+                ) : (
+                  <IconTable size={15} />
+                )}
+              </button>
+            }
+          />
           <h2 className="toolbar-title">{table.name}</h2>
           <span className="pill-count">{t("table.rows", { count: total })}</span>
           {searchQuery && <span className="pill-filter">{t("table.searching", { query: searchQuery })}</span>}
@@ -543,6 +581,7 @@ export default function TableView() {
           onCellEdited={onCellEdited}
           onCellClicked={onCellClicked}
           onCellActivated={onCellActivated}
+          onHeaderClicked={onHeaderClicked}
           onHeaderContextMenu={onHeaderContextMenu}
           onVisibleRegionChanged={onVisibleRegionChanged}
           rowMarkers={{ kind: "both" }}
@@ -598,6 +637,24 @@ export default function TableView() {
             : []}
           onCommit={(rids) => void updateCell(pickerRow.rid, picker.col.id, rids)}
           onClose={() => setPicker(null)}
+        />
+      )}
+
+      {headerEmoji && (
+        <EmojiMenu
+          open
+          value={headerEmoji.col.icon}
+          onChange={(icon) => void updateColumn(headerEmoji.col.id, { icon: icon ?? "" })}
+          onOpenChange={(open) => {
+            if (!open) setHeaderEmoji(null);
+          }}
+          trigger={
+            <span
+              className="virtual-anchor"
+              style={{ left: headerEmoji.x, top: headerEmoji.y }}
+              aria-hidden
+            />
+          }
         />
       )}
 

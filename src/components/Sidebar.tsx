@@ -16,6 +16,7 @@ import {
 } from "./icons";
 import { ThemeSwitch } from "../ui/ThemeSwitch";
 import { Tooltip } from "../ui/Tooltip";
+import { EmojiMenu } from "../ui/ColumnPickers";
 
 function baseName(p: string): string {
   const parts = p.split(/[\\/]/);
@@ -28,6 +29,7 @@ export default function Sidebar() {
   const activeTableId = useWorkspace((s) => s.activeTableId);
   const selectTable = useWorkspace((s) => s.selectTable);
   const renameTable = useWorkspace((s) => s.renameTable);
+  const setTableIcon = useWorkspace((s) => s.setTableIcon);
   const deleteTable = useWorkspace((s) => s.deleteTable);
   const closeWorkspace = useWorkspace((s) => s.closeWorkspace);
 
@@ -100,9 +102,26 @@ export default function Sidebar() {
                 setRenameValue(table.name);
               }}
             >
-              <span className="nav-icon">
-                <IconTable size={14} />
-              </span>
+              <EmojiMenu
+                value={table.icon}
+                onChange={(icon) => void setTableIcon(table.id, icon)}
+                trigger={
+                  <button
+                    type="button"
+                    className="nav-icon nav-icon-btn"
+                    aria-label={t("table.icon")}
+                    title={t("table.icon")}
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                  >
+                    {table.icon ? (
+                      <span className="nav-emoji">{table.icon}</span>
+                    ) : (
+                      <IconTable size={14} />
+                    )}
+                  </button>
+                }
+              />
               {renaming === table.id ? (
                 <input
                   className="nav-rename"

@@ -222,6 +222,7 @@ export const zh = {
     copySqlRef: "复制 SQL 引用名",
     deleteColumn: "删除列",
     selectAllHint: "全选",
+    icon: "修改表图标",
   },
   cell: {
     inputPlaceholder: "输入…",

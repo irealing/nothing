@@ -6,6 +6,7 @@ import { Dialog } from "../ui/Dialog";
 import { Field, Input } from "../ui/Field";
 import { Menu, MenuItem } from "../ui/Menu";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconX } from "./icons";
+import { EmojiPicker } from "../ui/ColumnPickers";
 
 /** Modal shell (kept as an alias so call sites stay terse). */
 export const Modal = Dialog;
@@ -66,6 +67,7 @@ function newExtra(): ExtraCol {
 export function CreateTableDialog({ onClose }: { onClose: () => void }) {
   const createTable = useWorkspace((s) => s.createTable);
   const [name, setName] = useState("");
+  const [icon, setIcon] = useState<string | null>(null);
   const [titleCol, setTitleCol] = useState(t("createTable.titleColumnPlaceholder"));
   const [extras, setExtras] = useState<ExtraCol[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +94,7 @@ export function CreateTableDialog({ onClose }: { onClose: () => void }) {
           return { name: e.name.trim(), type: e.type };
         }),
       ];
-      await createTable(name.trim(), columns);
+      await createTable(name.trim(), columns, icon);
       onClose();
     } finally {
       setBusy(false);
@@ -113,12 +115,15 @@ export function CreateTableDialog({ onClose }: { onClose: () => void }) {
       >
         <div className="form-grid">
           <Field label={t("createTable.tableName")}>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t("createTable.tableNamePlaceholder")}
-              autoFocus
-            />
+            <div className="table-name-row">
+              <EmojiPicker value={icon} onChange={setIcon} />
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t("createTable.tableNamePlaceholder")}
+                autoFocus
+              />
+            </div>
           </Field>
           <Field label={t("createTable.titleColumn")}>
             <Input
