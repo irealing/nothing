@@ -92,7 +92,11 @@ pub struct WorkspaceInfo {
 }
 
 #[tauri::command]
-pub fn workspace_create(state: State<AppState>, path: String, password: String) -> CmdResult<WorkspaceInfo> {
+pub fn workspace_create(
+    state: State<AppState>,
+    path: String,
+    password: String,
+) -> CmdResult<WorkspaceInfo> {
     let ws = Workspace::create(&path, &password).map_err(CommandError::from)?;
     let info = WorkspaceInfo {
         path: ws.path().to_string_lossy().into_owned(),
@@ -103,7 +107,11 @@ pub fn workspace_create(state: State<AppState>, path: String, password: String) 
 }
 
 #[tauri::command]
-pub fn workspace_open(state: State<AppState>, path: String, password: String) -> CmdResult<WorkspaceInfo> {
+pub fn workspace_open(
+    state: State<AppState>,
+    path: String,
+    password: String,
+) -> CmdResult<WorkspaceInfo> {
     let ws = Workspace::open(&path, &password).map_err(CommandError::from)?;
     let info = WorkspaceInfo {
         path: ws.path().to_string_lossy().into_owned(),
@@ -167,7 +175,11 @@ pub fn table_create(
 }
 
 #[tauri::command]
-pub fn table_rename(state: State<AppState>, table_id: String, new_name: String) -> CmdResult<TableMeta> {
+pub fn table_rename(
+    state: State<AppState>,
+    table_id: String,
+    new_name: String,
+) -> CmdResult<TableMeta> {
     with_ws(&state, |ws| ws.rename_table(&table_id, &new_name))
 }
 
@@ -177,7 +189,11 @@ pub fn table_delete(state: State<AppState>, table_id: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub fn table_set_title(state: State<AppState>, table_id: String, col_id: String) -> CmdResult<TableMeta> {
+pub fn table_set_title(
+    state: State<AppState>,
+    table_id: String,
+    col_id: String,
+) -> CmdResult<TableMeta> {
     with_ws(&state, |ws| ws.set_title_column(&table_id, &col_id))
 }
 
@@ -187,7 +203,11 @@ pub fn column_list(state: State<AppState>, table_id: String) -> CmdResult<Vec<Co
 }
 
 #[tauri::command]
-pub fn column_add(state: State<AppState>, table_id: String, col: NewColumn) -> CmdResult<ColumnMeta> {
+pub fn column_add(
+    state: State<AppState>,
+    table_id: String,
+    col: NewColumn,
+) -> CmdResult<ColumnMeta> {
     with_ws(&state, |ws| ws.add_column(&table_id, col))
 }
 
@@ -269,7 +289,11 @@ pub fn view_create(state: State<AppState>, view: NewView) -> CmdResult<ViewMeta>
 }
 
 #[tauri::command]
-pub fn view_update(state: State<AppState>, view_id: String, patch: ViewPatch) -> CmdResult<ViewMeta> {
+pub fn view_update(
+    state: State<AppState>,
+    view_id: String,
+    patch: ViewPatch,
+) -> CmdResult<ViewMeta> {
     with_ws(&state, |ws| ws.update_view(&view_id, patch))
 }
 
