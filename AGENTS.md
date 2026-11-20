@@ -32,7 +32,7 @@ crates/nothing-core/     存储内核（纯 Rust，M1/M2 的主战场）
       rows.rs            行 CRUD、junction 关系写入、批量更新
       run.rs             run_view/run_sql/search、关联批量标题解析（防 N+1）
   tests/                 集成测试（直接操作真实加密临时库）
-src-tauri/               （M3 添加）Tauri 薄壳：commands/ 只做参数校验与转发
+src-tauri/               （M3 添加）Tauri 薄壳：commands/ 只做参数校验与转发；settings.rs 存应用级偏好（最近文件、上次表/视图），与工作区数据无关
 /                        （M3 添加）前端 React + TS + Vite
   src/components/        业务组件（表格、视图标签、弹窗内容、筛选面板…）
   src/ui/                浮层与表单原语（Radix 驱动的 Dialog/Menu/Popover/Tooltip/Field）
@@ -132,6 +132,7 @@ M1 存储内核 → M2 查询层 → M3 UI 骨架 → M4 视图 UI → M5 收尾
 - M4（视图 UI）：ViewTabs / FilterSortPanel（嵌套筛选树）/ CellEditors（单选/多选气泡、关联选择器）/ ColumnDialogs（全类型列编辑含公式编辑器）/ SqlViewPanel（CodeMirror 6）/ 列头右键菜单。
 - M5（收尾）：正式图标（AI 生成 → `tauri icon` 全套尺寸，bundle.active=true）；README 三平台打包文档（Windows 为主要目标）；**大表窗口化加载**——store 重构为 `rowsCache(Map<行号,Row>) + total + dataVersion` 模型，200 行/页按需拉取 + overscan 预取 + 过期响应丢弃，TableView `rows={total}` + Loading cell；同时修复隐藏列 bug（网格改用后端返回的 `visibleColumns`）。
 - M6（前端体验）：Radix 原语层 `src/ui/`；亮/暗/跟随系统主题与 token 化；表 / 列 emoji 图标（创建表、侧边栏与列头点击修改）与 9 色调色板（format v2 迁移）；表单控件统一；zh 单语言 i18n 字典 + 日期格式化；修复视图标签页「＋」菜单被 `overflow` 裁剪（此前看起来没有新建视图入口）。
+- 最近文件与文件关联（post-M6）：`settings.rs` 把「上次打开的工作区 + 最近 8 个 + 每个工作区最后表/视图」明文存进 OS app config 目录的 `settings.json`（不进加密库，不触发 `format_version`）；启动参数与第二实例的 `.nothing` 路径经 `take_open_request` / `open-request` 事件交给前端；`.nothing` 关联只在 NSIS 安装时建立（HKCU，卸载自动清除），不做运行时注册。
 - 质量门禁：tsc 零错误、vitest 全绿、vite build 通过。
 - 无头冒烟脚本：`/tmp/opencode/smoke.sh`（Linux；检测 `target/debug/nothing-app` 出现 + 进程存活，结束自动清理进程组）。
 

@@ -106,6 +106,10 @@ const dataState = {
   visibleColumns: [],
   views: [],
   activeViewId: null,
+  lastWorkspace: null,
+  recent: [],
+  pendingPath: null,
+  booted: false,
   source: { kind: "none" as const },
   total: 0,
   rowsCache: new Map<number, Row>(),
@@ -143,6 +147,42 @@ describe("openWorkspace", () => {
     expect(ipc.viewRun).toHaveBeenCalledWith("v1", PAGE_SIZE, 0);
   });
 
+  it("restores the last table and view recorded for the file", async () => {
+    const T2: TableMeta = { ...T1, id: "t2", name: "项目" };
+    const V22: ViewMeta = { ...GRID_V, id: "v22", table_id: "t2", name: "项目视图" };
+    vi.mocked(ipc.workspaceOpen).mockResolvedValue({ path: "/a.nothing", format_version: 2 });
+    vi.mocked(ipc.tableList).mockResolvedValue([T1, T2]);
+    vi.mocked(ipc.settingsUi).mockResolvedValue({ table_id: "t2", view_id: "v22" });
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([V22]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().openWorkspace("/a.nothing", "pw");
+
+    const s = useWorkspace.getState();
+    expect(ipc.settingsUi).toHaveBeenCalledWith("/a.nothing");
+    expect(s.activeTableId).toBe("t2");
+    expect(s.activeViewId).toBe("v22");
+    // The restored selection is written back (it may have been repaired).
+    expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t2", "v22");
+  });
+
+  it("falls back to the first table when the recorded ids are stale", async () => {
+    vi.mocked(ipc.workspaceOpen).mockResolvedValue({ path: "/a.nothing", format_version: 2 });
+    vi.mocked(ipc.tableList).mockResolvedValue([T1]);
+    vi.mocked(ipc.settingsUi).mockResolvedValue({ table_id: "gone", view_id: "gone" });
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V2, GRID_V]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().openWorkspace("/a.nothing", "pw");
+
+    const s = useWorkspace.getState();
+    expect(s.activeTableId).toBe("t1");
+    expect(s.activeViewId).toBe("v2");
+    expect(s.error).toBeNull();
+  });
+
   it("captures WrongPassword as error state without opening", async () => {
     vi.mocked(ipc.workspaceOpen).mockRejectedValue(
       new FakeIpcError("WrongPassword", "密码错误，无法解密该文件"),
@@ -152,6 +192,37 @@ describe("openWorkspace", () => {
     expect(s.info).toBeNull();
     expect(s.error).toContain("密码不正确");
     expect(s.loading).toBe(false);
+  });
+});
+
+describe("boot", () => {
+  it("loads recents and a queued shell open request", async () => {
+    const last = { path: "/a.nothing", opened_at: "2026-01-01T00:00:00Z", exists: true };
+    vi.mocked(ipc.settingsGet).mockResolvedValue({
+      last_workspace: last,
+      recent: [last, { path: "/b.nothing", opened_at: "2026-01-01T00:00:00Z", exists: false }],
+    });
+    vi.mocked(ipc.takeOpenRequest).mockResolvedValue("/c.nothing");
+
+    await useWorkspace.getState().boot();
+
+    const s = useWorkspace.getState();
+    expect(s.booted).toBe(true);
+    expect(s.lastWorkspace?.path).toBe("/a.nothing");
+    expect(s.recent.map((r) => r.path)).toEqual(["/a.nothing", "/b.nothing"]);
+    expect(s.pendingPath).toBe("/c.nothing");
+  });
+
+  it("still finishes booting when the settings file is unavailable", async () => {
+    vi.mocked(ipc.settingsGet).mockRejectedValue(new Error("no config dir"));
+    vi.mocked(ipc.takeOpenRequest).mockRejectedValue(new Error("no state"));
+
+    await useWorkspace.getState().boot();
+
+    const s = useWorkspace.getState();
+    expect(s.booted).toBe(true);
+    expect(s.lastWorkspace).toBeNull();
+    expect(s.error).toBeNull();
   });
 });
 
@@ -442,6 +513,26 @@ describe("view actions", () => {
     const s = useWorkspace.getState();
     expect(s.activeViewId).toBe("vs");
     expect(s.sqlResult?.rows).toEqual([[1]]);
+    expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "vs");
+  });
+
+  it("selectView records the new active view for the workspace", async () => {
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      columns: [COL],
+      views: [GRID_V, GRID_V2],
+      activeViewId: "v1",
+    });
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V, GRID_V2]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().selectView("v2");
+
+    expect(useWorkspace.getState().activeViewId).toBe("v2");
+    expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "v2");
   });
 });
 

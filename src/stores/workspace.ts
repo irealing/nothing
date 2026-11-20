@@ -18,6 +18,7 @@ import type {
   Json,
   NewColumn,
   NewView,
+  RecentWorkspace,
   Row,
   RowPage,
   SqlResult,
@@ -26,9 +27,25 @@ import type {
   ViewMeta,
   ViewPatch,
   WorkspaceInfo,
+  WorkspaceUiState,
 } from "../types";
 
 export const PAGE_SIZE = 200;
+
+/** File name part of a path (workspaces are identified by it in the UI). */
+export function baseName(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] || path;
+}
+
+/** Windows paths are case-insensitive; POSIX ones are not. */
+export function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const unified = p.replace(/\\/g, "/");
+    return /^[a-zA-Z]:\//.test(unified) ? unified.toLowerCase() : unified;
+  };
+  return norm(a) === norm(b);
+}
 
 export function defaultGridConfig(): GridConfig {
   return { filters: null, sorts: [], hidden_columns: [] };
@@ -53,6 +70,14 @@ interface WorkspaceState {
   views: ViewMeta[];
   activeViewId: string | null;
 
+  // recent files (from the plain-text settings file, not the encrypted db)
+  lastWorkspace: RecentWorkspace | null;
+  recent: RecentWorkspace[];
+  /** A `.nothing` path the shell asked us to open (file association). */
+  pendingPath: string | null;
+  /** Settings and any queued open request have been loaded. */
+  booted: boolean;
+
   // windowed row data
   source: Source;
   total: number;
@@ -73,6 +98,8 @@ interface WorkspaceState {
   fetchWindow: (start: number, end: number) => Promise<void>;
 
   // workspace lifecycle
+  boot: () => Promise<void>;
+  requestPath: (path: string | null) => void;
   openWorkspace: (path: string, password: string) => Promise<void>;
   createWorkspace: (path: string, password: string) => Promise<void>;
   closeWorkspace: () => Promise<void>;
@@ -192,6 +219,37 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     await fetchWindowInternal(0, PAGE_SIZE);
   }
 
+  /** Refresh the recent-file snapshot from the settings file. */
+  async function syncSettings() {
+    try {
+      const s = await ipc.settingsGet();
+      if (!s) return;
+      set({ lastWorkspace: s.last_workspace ?? null, recent: s.recent ?? [] });
+    } catch {
+      // Settings are a convenience: never surface a failure here.
+    }
+  }
+
+  /** Last table/view for a workspace, or null when unknown/stale. */
+  async function loadUi(path: string): Promise<WorkspaceUiState | null> {
+    try {
+      return (await ipc.settingsUi(path)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Remember the active table/view for the open workspace. */
+  async function persistUi() {
+    const { info, activeTableId, activeViewId } = get();
+    if (!info || !activeTableId) return;
+    try {
+      await ipc.settingsSetUi(info.path, activeTableId, activeViewId);
+    } catch {
+      // Presentation-only; a failure must not interrupt navigation.
+    }
+  }
+
   /** Load columns + views for a table and activate a view (Notion-style:
    * every table always has at least one grid view). */
   async function loadTableData(tableId: string, viewId: string | null) {
@@ -217,7 +275,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     await prime({ kind: "table", tableId });
   }
 
-  async function activateTable(tableId: string) {
+  async function activateTable(tableId: string, preferredViewId: string | null = null) {
     const columns = await ipc.columnList(tableId);
     let views = await ipc.viewList(tableId);
     set({ activeTableId: tableId, columns, views, searchQuery: "" });
@@ -233,7 +291,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       set({ views });
       gridViews = views.filter((v) => v.kind === "grid");
     }
-    await loadTableData(tableId, gridViews[0]?.id ?? null);
+    // Restored selection wins when it still exists; otherwise the first grid view.
+    const preferred = preferredViewId ? views.find((v) => v.id === preferredViewId) : undefined;
+    await loadTableData(tableId, preferred?.id ?? gridViews[0]?.id ?? null);
+    await persistUi();
+  }
+
+  /** Window title mirrors the open file so the taskbar is meaningful. */
+  function syncTitle(info: WorkspaceInfo | null) {
+    if (typeof document === "undefined") return;
+    document.title = info ? `${baseName(info.path)} — nothing` : "nothing";
   }
 
   /** After a write: drop the cache and re-prime the current source. */
@@ -265,6 +332,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     visibleColumns: [],
     views: [],
     activeViewId: null,
+    lastWorkspace: null,
+    recent: [],
+    pendingPath: null,
+    booted: false,
     source: { kind: "none" },
     total: 0,
     rowsCache: new Map(),
@@ -288,6 +359,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     clearError: () => set({ error: null }),
 
+    boot: async () => {
+      await syncSettings();
+      // A cold start with a file association queues the path in Rust; take it
+      // now so the welcome screen can unlock straight away.
+      try {
+        const pending = await ipc.takeOpenRequest();
+        if (pending) set({ pendingPath: pending });
+      } catch {
+        // No request is a fine outcome.
+      }
+      set({ booted: true });
+    },
+
+    requestPath: (path) => set({ pendingPath: path }),
+
     openWorkspace: async (path, password) => {
       await guard(set, get, async () => {
         const info = await ipc.workspaceOpen(path, password);
@@ -304,8 +390,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           titles: {},
           sqlResult: null,
           source: { kind: "none" },
+          pendingPath: null,
         });
-        if (tables.length > 0) await activateTable(tables[0].id);
+        syncTitle(info);
+        // The core just recorded this open; mirror it locally so closing the
+        // workspace immediately still shows the right "last opened" entry.
+        await syncSettings();
+        if (tables.length > 0) {
+          const ui = await loadUi(info.path);
+          const table = tables.find((x) => x.id === ui?.table_id) ?? tables[0];
+          await activateTable(table.id, ui?.view_id ?? null);
+        }
       });
     },
 
@@ -325,7 +420,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           sqlResult: null,
           searchQuery: "",
           source: { kind: "none" },
+          pendingPath: null,
         });
+        syncTitle(info);
+        await syncSettings();
       });
     },
 
@@ -347,6 +445,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           searchQuery: "",
           source: { kind: "none" },
         });
+        syncTitle(null);
       });
     },
 
@@ -361,7 +460,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     selectView: async (viewId) => {
       const { activeTableId } = get();
       if (!activeTableId) return;
-      await guard(set, get, () => loadTableData(activeTableId, viewId));
+      await guard(set, get, async () => {
+        await loadTableData(activeTableId, viewId);
+        await persistUi();
+      });
     },
 
     refresh: async () => {
@@ -492,6 +594,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           config: { kind: "grid", ...defaultGridConfig() },
         });
         await loadTableData(activeTableId, v.id);
+        await persistUi();
       });
     },
 
@@ -511,6 +614,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         if (result.kind === "sql") {
           set({ sqlResult: result, source: { kind: "none" }, rowsCache: new Map(), total: 0 });
         }
+        await persistUi();
       });
     },
 

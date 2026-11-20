@@ -10,10 +10,24 @@ use nothing_core::{
 use serde::Serialize;
 use tauri::State;
 
+use crate::settings;
+
 #[derive(Default)]
 pub struct AppState {
     /// The single open workspace (one window = one `.nothing` file in M3).
     ws: Mutex<Option<Workspace>>,
+    /// A `.nothing` path handed to us by the shell (file association, drag onto
+    /// the executable, or a second instance). Drained by the frontend so an
+    /// already-open window can offer to switch.
+    pending_open: Mutex<Option<String>>,
+}
+
+impl AppState {
+    pub fn queue_open(&self, path: String) {
+        if let Ok(mut slot) = self.pending_open.lock() {
+            *slot = Some(path);
+        }
+    }
 }
 
 /// Structured error for the frontend (`kind` for branching, `message` is
@@ -93,6 +107,7 @@ pub struct WorkspaceInfo {
 
 #[tauri::command]
 pub fn workspace_create(
+    app: tauri::AppHandle,
     state: State<AppState>,
     path: String,
     password: String,
@@ -102,12 +117,14 @@ pub fn workspace_create(
         path: ws.path().to_string_lossy().into_owned(),
         format_version: ws.format_version().map_err(CommandError::from)?,
     };
+    settings::remember_path(&app, &info.path);
     store_ws(&state, ws)?;
     Ok(info)
 }
 
 #[tauri::command]
 pub fn workspace_open(
+    app: tauri::AppHandle,
     state: State<AppState>,
     path: String,
     password: String,
@@ -117,6 +134,8 @@ pub fn workspace_open(
         path: ws.path().to_string_lossy().into_owned(),
         format_version: ws.format_version().map_err(CommandError::from)?,
     };
+    // Recorded only on success, so a wrong password never reorders recents.
+    settings::remember_path(&app, &info.path);
     store_ws(&state, ws)?;
     Ok(info)
 }
@@ -149,6 +168,41 @@ pub fn workspace_info(state: State<AppState>) -> CmdResult<Option<WorkspaceInfo>
 #[tauri::command]
 pub fn workspace_change_password(state: State<AppState>, new_password: String) -> CmdResult<()> {
     with_ws(&state, |ws| ws.change_password(&new_password))
+}
+
+// ---------------------------------------------------------------------------
+// App settings (recent files, last table/view) & shell open requests
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn settings_get(app: tauri::AppHandle) -> CmdResult<settings::SettingsView> {
+    Ok(settings::view(&app))
+}
+
+#[tauri::command]
+pub fn settings_ui(app: tauri::AppHandle, path: String) -> CmdResult<Option<settings::UiState>> {
+    Ok(settings::ui_for(&app, &path))
+}
+
+#[tauri::command]
+pub fn settings_set_ui(
+    app: tauri::AppHandle,
+    path: String,
+    table_id: Option<String>,
+    view_id: Option<String>,
+) -> CmdResult<()> {
+    settings::set_ui(&app, &path, table_id, view_id);
+    Ok(())
+}
+
+/// Take (and clear) a `.nothing` path queued by the shell.
+#[tauri::command]
+pub fn take_open_request(state: State<AppState>) -> CmdResult<Option<String>> {
+    let mut guard = state
+        .pending_open
+        .lock()
+        .map_err(|_| CommandError::internal("待打开文件状态锁已损坏"))?;
+    Ok(guard.take())
 }
 
 // ---------------------------------------------------------------------------

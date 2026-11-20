@@ -2,6 +2,7 @@
 // Components and stores import from here; direct `invoke` elsewhere is banned.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { t } from "../i18n";
 import type {
@@ -16,12 +17,14 @@ import type {
   NewView,
   Row,
   RowPage,
+  SettingsView,
   SqlResult,
   TableMeta,
   ViewMeta,
   ViewPatch,
   ViewResult,
   WorkspaceInfo,
+  WorkspaceUiState,
 } from "../types";
 
 /** Error thrown by every ipc call; `kind` mirrors the Rust AppError variant. */
@@ -59,6 +62,23 @@ export const workspaceInfo = () => call<WorkspaceInfo | null>("workspace_info");
 
 export const workspaceChangePassword = (newPassword: string) =>
   call<void>("workspace_change_password", { newPassword });
+
+// ---- app settings & shell open requests ----
+
+export const settingsGet = () => call<SettingsView>("settings_get");
+
+export const settingsUi = (path: string) => call<WorkspaceUiState | null>("settings_ui", { path });
+
+export const settingsSetUi = (path: string, tableId: string | null, viewId: string | null) =>
+  call<void>("settings_set_ui", { path, tableId, viewId });
+
+/** Take (and clear) a `.nothing` path queued by the shell. */
+export const takeOpenRequest = () => call<string | null>("take_open_request");
+
+/** Subscribe to `.nothing` files opened while the app is running. */
+export function onOpenRequest(handler: (path: string) => void): Promise<UnlistenFn> {
+  return listen<string>("open-request", (event) => handler(event.payload));
+}
 
 // ---- tables & columns ----
 

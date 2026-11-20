@@ -1,6 +1,6 @@
 import { useState } from "react";
 import * as ipc from "../ipc";
-import { useWorkspace } from "../stores/workspace";
+import { baseName, useWorkspace } from "../stores/workspace";
 import { ChangePasswordDialog, CreateTableDialog } from "./dialogs";
 import ImportCsvDialog from "./ImportCsvDialog";
 import { confirm } from "../ui/ConfirmDialog";
@@ -17,11 +17,6 @@ import {
 import { ThemeSwitch } from "../ui/ThemeSwitch";
 import { Tooltip } from "../ui/Tooltip";
 import { EmojiMenu } from "../ui/ColumnPickers";
-
-function baseName(p: string): string {
-  const parts = p.split(/[\\/]/);
-  return parts[parts.length - 1] || p;
-}
 
 export default function Sidebar() {
   const info = useWorkspace((s) => s.info);

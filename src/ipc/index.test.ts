@@ -10,7 +10,18 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { csvImport, csvPreview, IpcError, rowUpdate, tableCreate, tableSetIcon, viewRun, workspaceOpen } from "./index";
+import {
+  csvImport,
+  csvPreview,
+  IpcError,
+  rowUpdate,
+  settingsSetUi,
+  tableCreate,
+  tableSetIcon,
+  takeOpenRequest,
+  viewRun,
+  workspaceOpen,
+} from "./index";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -79,6 +90,19 @@ describe("ipc argument mapping", () => {
       tableId: "t1",
       icon: null,
     });
+  });
+
+  it("maps settings reads/writes and shell open requests", async () => {
+    mockInvoke.mockResolvedValue({});
+    await settingsSetUi("D:\\data\\a.nothing", "t1", null);
+    expect(mockInvoke).toHaveBeenCalledWith("settings_set_ui", {
+      path: "D:\\data\\a.nothing",
+      tableId: "t1",
+      viewId: null,
+    });
+
+    await takeOpenRequest();
+    expect(mockInvoke).toHaveBeenCalledWith("take_open_request", {});
   });
 });
 

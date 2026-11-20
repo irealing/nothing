@@ -1,16 +1,47 @@
 //! Tauri shell for nothing.
 //!
 //! Thin by design (AGENTS.md): commands validate parameters, forward to
-//! `nothing_core`, and map errors. All logic lives in the core crate.
+//! `nothing_core`, and map errors. All logic lives in the core crate; the only
+//! shell-level logic is `settings` (recent files / last table-view) and the
+//! command-line plumbing for the installed `.nothing` file association.
 
 mod commands;
+mod settings;
 
 use commands::AppState;
+use tauri::{Emitter, Manager};
+
+/// Emitted when a running instance is asked to open another workspace file.
+const OPEN_REQUEST_EVENT: &str = "open-request";
+
+/// The `.nothing` path passed on a cold start, if any.
+fn startup_path() -> Option<String> {
+    settings::pick_workspace_arg(std::env::args_os().map(|a| a.to_string_lossy().into_owned()))
+}
 
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin registered so it wins the race against the
+        // rest of the setup for the second instance's arguments.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(path) = settings::pick_workspace_arg(args) {
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.queue_open(path.clone());
+                }
+                let _ = app.emit(OPEN_REQUEST_EVENT, path);
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .setup(|app| {
+            if let Some(path) = startup_path() {
+                app.state::<AppState>().queue_open(path);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // workspace
             commands::workspace_create,
@@ -18,6 +49,11 @@ pub fn run() {
             commands::workspace_close,
             commands::workspace_info,
             commands::workspace_change_password,
+            // app settings & shell open requests
+            commands::settings_get,
+            commands::settings_ui,
+            commands::settings_set_ui,
+            commands::take_open_request,
             // tables
             commands::table_list,
             commands::table_create,

@@ -17,6 +17,7 @@ nothing 是一个只做一件事并把它做好的桌面应用：**表格**。�
 - ⚡ **高性能网格**：Glide Data Grid canvas 渲染 + 200 行/页窗口化懒加载，10 万行表流畅滚动
 - 🎨 **外观与表/列样式**：浅色 / 深色 / 跟随系统；表和每列都可选 emoji 图标，列另有 9 色调色板（列头与单元格底色），颜色随主题自动适配
 - 🈶 **中文优先**：全部界面文案集中管理，日期按区域格式化（后续可低成本接入其它语言）
+- 🗂️ **接着上次用**：安装版会把 `.nothing` 关联到本应用（双击即开）；启动时直接列出上次打开的工作区，只需输入密码，并可一键回到上次的表与视图
 
 ## 界面与编辑
 
@@ -79,6 +80,10 @@ pnpm tauri build
 ```
 
 产物在 workspace 根的 `target\release\bundle\`：`msi\`（MSI 安装包）与 `nsis\`（NSIS 安装程序）。绿色版可执行文件在 `target\release\nothing-app.exe`。
+
+> **文件关联只由安装包建立**，开发运行与绿色版都不写注册表。安装后 `.nothing` 会关联到 nothing，双击即打开（NSIS 安装程序在安装时写入 `HKCU\Software\Classes\.nothing`，卸载时自动清除）；MSI 只把 nothing 注册为「打开方式」候选，若系统里 `.nothing` 已被其它程序占用，需要在 Windows 设置里手动指定默认应用。
+>
+> 最近打开的工作区与每个工作区上次停留的表 / 视图记录在 `%APPDATA%\app.nothing.desktop\settings.json`（明文，等同于系统「最近使用的文档」）。删掉该文件只会丢失最近列表，不影响任何工作区数据。
 
 ##### Windows 构建排错（OpenSSL / msys2）
 

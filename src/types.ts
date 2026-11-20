@@ -208,6 +208,25 @@ export interface WorkspaceInfo {
   format_version: number;
 }
 
+// ---- app settings (plain-text `settings.json` in the OS app config dir) ----
+
+export interface RecentWorkspace {
+  path: string;
+  opened_at: string;
+  /** False when the file is gone or its drive is off-line right now. */
+  exists: boolean;
+}
+
+export interface SettingsView {
+  last_workspace: RecentWorkspace | null;
+  recent: RecentWorkspace[];
+}
+
+export interface WorkspaceUiState {
+  table_id: string | null;
+  view_id: string | null;
+}
+
 // ---- CSV import ----
 
 export interface CsvPreview {
