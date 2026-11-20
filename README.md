@@ -66,7 +66,7 @@ pnpm install
 pnpm tauri build
 ```
 
-产物在 `src-tauri\target\release\bundle\`：`msi\`（MSI 安装包）与 `nsis\`（NSIS 安装程序）。绿色版可执行文件在 `src-tauri\target\release\nothing-app.exe`。
+产物在 workspace 根的 `target\release\bundle\`：`msi\`（MSI 安装包）与 `nsis\`（NSIS 安装程序）。绿色版可执行文件在 `target\release\nothing-app.exe`。
 
 ##### Windows 构建排错（OpenSSL / msys2）
 
@@ -87,7 +87,7 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 pnpm install && pnpm tauri build
 ```
 
-产物：`src-tauri/target/release/bundle/` 下的 `appimage\`（AppImage）与 `deb\`（.deb）。
+产物：workspace 根的 `target/release/bundle/` 下的 `appimage\`（AppImage）与 `deb\`（.deb）。
 
 #### macOS
 
@@ -96,7 +96,7 @@ xcode-select --install
 pnpm install && pnpm tauri build
 ```
 
-产物：`src-tauri/target/release/bundle/dmg\` 与 `macos\`（.app）。Apple Silicon 与 Intel 需分别在对应架构上构建（或用 `--target` 指定已安装的 Rust 目标）。
+产物：workspace 根的 `target/release/bundle/dmg\` 与 `macos\`（.app）。Apple Silicon 与 Intel 需分别在对应架构上构建（或用 `--target` 指定已安装的 Rust 目标）。
 
 ### 测试
 
