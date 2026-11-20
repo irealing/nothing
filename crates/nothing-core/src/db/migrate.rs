@@ -10,7 +10,7 @@ use crate::error::{AppError, Result};
 use crate::schema::ident::now_iso;
 
 /// Format version understood by this build of nothing-core.
-pub const CURRENT_FORMAT_VERSION: u32 = 2;
+pub const CURRENT_FORMAT_VERSION: u32 = 3;
 
 /// Full DDL for format version 1 (manifest + metadata tables).
 ///
@@ -95,6 +95,21 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// v2 → v3: column alignment and default values.
+///
+/// Additive only (two nullable TEXT columns), so the step stays idempotent and
+/// needs no data backfill.
+fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
+    for (name, decl) in [("align", "TEXT"), ("default_value", "TEXT")] {
+        if !has_column(conn, "_columns", name)? {
+            conn.execute_batch(&format!(
+                r#"ALTER TABLE "_columns" ADD COLUMN "{name}" {decl}"#
+            ))?;
+        }
+    }
+    Ok(())
+}
+
 /// Whether `table` already has `column` (used to keep migrations idempotent).
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     let exists: bool = conn
@@ -126,6 +141,7 @@ pub fn verify_and_migrate(conn: &mut Connection) -> Result<()> {
         let tx = conn.transaction()?;
         match version {
             1 => migrate_v1_to_v2(&tx)?,
+            2 => migrate_v2_to_v3(&tx)?,
             other => {
                 return Err(AppError::Internal(format!(
                     "缺少从格式版本 v{other} 升级的迁移脚本"

@@ -25,6 +25,9 @@ export type ColumnColor =
   | "pink"
   | "brown";
 
+/** Explicit cell alignment; `null` on a column means "by type". */
+export type ColumnAlign = "left" | "center" | "right";
+
 export interface Choice {
   id: string;
   name: string;
@@ -69,6 +72,13 @@ export interface ColumnMeta {
   icon: string | null;
   /** Optional palette token tinting the header and cells. */
   color: ColumnColor | null;
+  /** Explicit alignment; `null` means "by type" (numbers right, rest left). */
+  align: ColumnAlign | null;
+  /**
+   * Value written to new rows when the cell is not supplied.
+   * Date columns also accept the dynamic `{ kind: "now" }` token.
+   */
+  default_value: Json | null;
   created_at: string;
 }
 
@@ -78,9 +88,11 @@ export interface NewColumn {
   opts?: ColumnOpts;
   icon?: string | null;
   color?: ColumnColor | null;
+  align?: ColumnAlign | null;
+  default_value?: Json | null;
 }
 
-/** `icon`/`color` accept "" to clear them. */
+/** `icon`/`color`/`align` accept "" to clear them. */
 export interface ColumnPatch {
   name?: string;
   type?: ColumnType;
@@ -90,6 +102,12 @@ export interface ColumnPatch {
   visible?: boolean;
   icon?: string;
   color?: string;
+  align?: string;
+  /** New default; omission keeps the current one (JSON null cannot signal
+   * "clear" because it deserializes to a missing field). */
+  default_value?: Json;
+  /** Remove the current default value. */
+  clear_default?: boolean;
 }
 
 // ---- views ----

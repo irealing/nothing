@@ -69,6 +69,7 @@ src-tauri/               Tauri 薄壳：commands/ 只做参数校验与转发；
 - `_columns.sql_name`：物理列名 `c_xxxx`，与 UI 列名（`_columns.name`）解耦
 - `_columns.opts`：JSON，按类型存选项（单选选项、公式表达式、关联目标表、是否单选等）
 - `_columns.icon` / `_columns.color`：列外观（format v2 起）。`icon` 为 emoji，`color` 为调色板 token；仅影响展示，不参与 SQL
+- `_columns.align` / `_columns.default_value`：列对齐（`left`/`center`/`right`，NULL = 按类型）与新行默认值（JSON；日期列额外接受 `{"kind":"now"}`，插入时才求值）。二者都只是元数据，绝不参与物理 DDL（format v3 起）
 - `_columns` 反向关联列：`is_reverse: true` + `reverse_of: <column_id>`，与源列共享同一张 `r_xxxx` 表
 - `_views.kind`：`grid`（config 存筛选树/排序/隐藏列 JSON）或 `sql`（config 存语句）
 

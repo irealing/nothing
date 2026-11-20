@@ -40,8 +40,10 @@ const COL: ColumnMeta = {
   visible: true,
   is_reverse: false,
   reverse_of: null,
-    icon: null,
-    color: null,
+  icon: null,
+  color: null,
+  align: null,
+  default_value: null,
   created_at: "",
 };
 
@@ -533,6 +535,106 @@ describe("view actions", () => {
 
     expect(useWorkspace.getState().activeViewId).toBe("v2");
     expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "v2");
+  });
+});
+
+describe("updateColumn", () => {
+  it("refreshes the rendered columns in place for metadata-only edits", async () => {
+    const updated: ColumnMeta = { ...COL, icon: "🔥" };
+    useWorkspace.setState({
+      activeTableId: "t1",
+      columns: [COL],
+      visibleColumns: [COL],
+      views: [GRID_V],
+      activeViewId: "v1",
+    });
+    vi.mocked(ipc.columnList).mockResolvedValue([updated]);
+
+    await useWorkspace.getState().updateColumn("c1", { icon: "🔥" });
+
+    const s = useWorkspace.getState();
+    expect(s.columns[0].icon).toBe("🔥");
+    // The grid reads `visibleColumns`, so it must be patched too (this is what
+    // makes an icon/colour/rename change appear without refetching rows).
+    expect(s.visibleColumns[0].icon).toBe("🔥");
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+  });
+
+  it("refetches rows when the column position changes", async () => {
+    const moved: ColumnMeta = { ...COL, position: 1 };
+    useWorkspace.setState({
+      activeTableId: "t1",
+      columns: [COL],
+      visibleColumns: [COL],
+      views: [GRID_V],
+      activeViewId: "v1",
+      source: { kind: "view", viewId: "v1" },
+    });
+    vi.mocked(ipc.columnList).mockResolvedValue([moved]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([row("r1")]));
+
+    await useWorkspace.getState().updateColumn("c1", { position: 1 });
+
+    expect(ipc.viewRun).toHaveBeenCalled();
+    expect(useWorkspace.getState().columns[0].position).toBe(1);
+  });
+});
+
+describe("duplicateRows", () => {
+  it("copies physical cells and skips formula and reverse columns", async () => {
+    const formula: ColumnMeta = {
+      ...COL,
+      id: "cf",
+      name: "合计",
+      type: "formula",
+      opts: { kind: "formula", expr: "[标题]", result_type: "text" },
+    };
+    const reverse: ColumnMeta = {
+      ...COL,
+      id: "cr",
+      name: "反向关联",
+      type: "relation",
+      opts: { kind: "relation", target_table_id: "t1", single: false },
+      is_reverse: true,
+      reverse_of: "cl",
+    };
+    const relation: ColumnMeta = {
+      ...COL,
+      id: "cl",
+      name: "关联",
+      type: "relation",
+      opts: { kind: "relation", target_table_id: "t1", single: false },
+    };
+    const source: Row = {
+      rid: "r1",
+      created: "",
+      updated: "",
+      cells: { c1: "A", cf: "generated", cr: ["r9"], cl: ["r2"] },
+    };
+    useWorkspace.setState({
+      activeTableId: "t1",
+      columns: [COL, formula, reverse, relation],
+      visibleColumns: [COL],
+      views: [GRID_V],
+      activeViewId: "v1",
+      source: { kind: "view", viewId: "v1" },
+    });
+    vi.mocked(ipc.rowGet).mockResolvedValue(source);
+    vi.mocked(ipc.rowInsert).mockResolvedValue({ ...source, rid: "r2" });
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([row("r1"), row("r2")]));
+
+    await useWorkspace.getState().duplicateRows(["r1"]);
+
+    expect(ipc.rowGet).toHaveBeenCalledWith("t1", "r1");
+    expect(ipc.rowInsert).toHaveBeenCalledWith("t1", { c1: "A", cl: ["r2"] });
+    expect(ipc.viewRun).toHaveBeenCalled();
+  });
+
+  it("does nothing without a selection", async () => {
+    useWorkspace.setState({ activeTableId: "t1", columns: [COL] });
+    await useWorkspace.getState().duplicateRows([]);
+    expect(ipc.rowGet).not.toHaveBeenCalled();
+    expect(ipc.rowInsert).not.toHaveBeenCalled();
   });
 });
 

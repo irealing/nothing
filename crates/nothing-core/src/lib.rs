@@ -20,8 +20,8 @@ pub use error::AppError;
 pub use import::{read_csv_preview, CsvPreview, ImportCsvOptions, ImportReport};
 pub use query::{Cells, Row, RowPage, SqlColumn, SqlResult, ViewResult};
 pub use schema::{
-    Choice, ColumnColor, ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, FilterNode, FilterOp,
-    FilterRule, FormulaOpts, FormulaResultType, GridConfig, LogicOp, NewColumn, NewView, PlainOpts,
-    RelationOpts, SelectOpts, SortSpec, SqlConfig, TableMeta, ViewConfig, ViewKind, ViewMeta,
-    ViewPatch,
+    Choice, ColumnAlign, ColumnColor, ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, FilterNode,
+    FilterOp, FilterRule, FormulaOpts, FormulaResultType, GridConfig, LogicOp, NewColumn, NewView,
+    PlainOpts, RelationOpts, SelectOpts, SortSpec, SqlConfig, TableMeta, ViewConfig, ViewKind,
+    ViewMeta, ViewPatch,
 };

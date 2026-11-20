@@ -16,9 +16,9 @@ use super::column::{
 use super::fts;
 use super::ident::{new_id, now_iso, quote_ident, table_sql_name, validate_user_name};
 use super::{
-    build_column_meta, load_column, load_columns, load_table, load_table_by_name, next_position,
-    table_from_row, touch_table, ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, NewColumn,
-    TableMeta,
+    build_column_meta, default_cell_value, load_column, load_columns, load_table,
+    load_table_by_name, next_position, normalize_column_align, table_from_row, touch_table,
+    ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, NewColumn, TableMeta,
 };
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
@@ -46,6 +46,28 @@ pub(crate) fn map_sqlite_err(e: rusqlite::Error) -> AppError {
         };
     }
     AppError::Sqlite(e)
+}
+
+/// Validate a column default: literals go through the same type/choice checks
+/// as cell writes, and date literals are additionally checked with SQLite's
+/// `datetime()` so metadata can never hold a value the table CHECK rejects.
+fn validate_default_value(
+    conn: &Connection,
+    col: &ColumnMeta,
+    value: &serde_json::Value,
+) -> Result<()> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let resolved = default_cell_value(col, value)?;
+    if col.col_type == ColumnType::Date {
+        let raw = resolved.as_str().unwrap_or_default();
+        let ok: bool = conn.query_row("SELECT datetime(?1) IS NOT NULL", [raw], |r| r.get(0))?;
+        if !ok {
+            return Err(AppError::InvalidInput("日期默认值格式无效".into()));
+        }
+    }
+    Ok(())
 }
 
 fn ensure_column_name_free(
@@ -138,6 +160,8 @@ fn setup_relation(conn: &Connection, src_table: &TableMeta, col: &ColumnMeta) ->
             reverse_of: Some(col.id.clone()),
             icon: None,
             color: None,
+            align: None,
+            default_value: None,
             created_at: now_iso(),
         };
         super::insert_column(conn, &reverse)?;
@@ -209,7 +233,11 @@ pub(crate) fn create_table_tx(
 
     let mut metas = Vec::with_capacity(columns.len());
     for (i, c) in columns.iter().enumerate() {
-        metas.push(build_column_meta(&table_id, c, i as i64)?);
+        let meta = build_column_meta(&table_id, c, i as i64)?;
+        if let Some(default) = &meta.default_value {
+            validate_default_value(conn, &meta, default)?;
+        }
+        metas.push(meta);
     }
     let title_col_id = metas[0].id.clone();
 
@@ -435,6 +463,9 @@ impl Workspace {
                 let target_id = &meta.opts.relation()?.target_table_id;
                 load_table(conn, target_id)?;
             }
+            if let Some(default) = &meta.default_value {
+                validate_default_value(conn, &meta, default)?;
+            }
             // Formula expressions are validated by column_def_sql below.
             super::insert_column(conn, &meta)?;
 
@@ -547,7 +578,7 @@ impl Workspace {
                 }
             }
 
-            let new_meta = ColumnMeta {
+            let mut new_meta = ColumnMeta {
                 name: name.clone(),
                 col_type: new_type,
                 opts: new_opts.clone(),
@@ -561,8 +592,35 @@ impl Workspace {
                     Some(raw) => super::normalize_column_color(Some(raw))?,
                     None => old.color,
                 },
+                align: match &patch.align {
+                    Some(raw) => normalize_column_align(Some(raw))?,
+                    None => old.align,
+                },
+                default_value: match &patch.default_value {
+                    Some(v) if v.is_null() => None,
+                    Some(v) => Some(v.clone()),
+                    None => old.default_value.clone(),
+                },
                 ..old.clone()
             };
+            if patch.clear_default {
+                new_meta.default_value = None;
+            }
+
+            // An explicitly supplied default must be valid; an implicit one is
+            // re-checked after a type/options change and silently cleared when
+            // it no longer fits (e.g. a choice was removed).
+            let explicit_default =
+                !patch.clear_default && patch.default_value.as_ref().is_some_and(|v| !v.is_null());
+            if let Some(default) = new_meta.default_value.clone() {
+                if explicit_default {
+                    validate_default_value(conn, &new_meta, &default)?;
+                } else if (new_type != old.col_type || new_opts != old.opts)
+                    && validate_default_value(conn, &new_meta, &default).is_err()
+                {
+                    new_meta.default_value = None;
+                }
+            }
 
             // --- apply ----------------------------------------------------
             run_in_tx_maybe_fk_off(conn, needs_rebuild, |tx| {
@@ -570,7 +628,7 @@ impl Workspace {
                 tx.execute(
                     r#"UPDATE "_columns"
                        SET "name" = ?1, "type" = ?2, "opts" = ?3, "width" = ?4, "visible" = ?5,
-                           "icon" = ?7, "color" = ?8
+                           "icon" = ?7, "color" = ?8, "align" = ?9, "default_value" = ?10
                        WHERE "id" = ?6"#,
                     rusqlite::params![
                         new_meta.name,
@@ -581,6 +639,12 @@ impl Workspace {
                         col_id,
                         new_meta.icon,
                         new_meta.color.map(|c| c.as_str()),
+                        new_meta.align.map(|a| a.as_str()),
+                        new_meta
+                            .default_value
+                            .as_ref()
+                            .map(serde_json::to_string)
+                            .transpose()?,
                     ],
                 )
                 .map_err(map_sqlite_err)?;

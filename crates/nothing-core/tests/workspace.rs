@@ -4,18 +4,18 @@
 mod common;
 
 use common::{db_path, raw, PASSWORD};
-use nothing_core::{AppError, Workspace, MAGIC};
+use nothing_core::{AppError, Workspace, CURRENT_FORMAT_VERSION, MAGIC};
 
 #[test]
 fn create_then_open_roundtrip() {
     let (dir, ws) = common::create_ws("a.nothing");
     let path = db_path(&dir, "a.nothing");
-    assert_eq!(ws.format_version().unwrap(), 2);
+    assert_eq!(ws.format_version().unwrap(), CURRENT_FORMAT_VERSION);
     assert_eq!(ws.path(), path.as_path());
     drop(ws);
 
     let ws2 = Workspace::open(&path, PASSWORD).unwrap();
-    assert_eq!(ws2.format_version().unwrap(), 2);
+    assert_eq!(ws2.format_version().unwrap(), CURRENT_FORMAT_VERSION);
 }
 
 #[test]

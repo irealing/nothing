@@ -20,6 +20,8 @@ function col(type: ColumnType): ColumnMeta {
     reverse_of: null,
     icon: null,
     color: null,
+    align: null,
+    default_value: null,
     created_at: "",
   };
 }

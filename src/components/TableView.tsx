@@ -26,6 +26,7 @@ import FilterSortPanel from "./FilterSortPanel";
 import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
 import { InlineCellEditor } from "./GridEditors";
+import { movedColumnPosition } from "./columnOrder";
 import { EmojiMenu } from "../ui/ColumnPickers";
 import {
   IconCopy,
@@ -59,8 +60,25 @@ function hasPopupEditor(col: ColumnMeta): boolean {
   return col.type === "select" || col.type === "multi_select";
 }
 
+/** Synthetic trailing header cell that opens the "add column" dialog. */
+const ADD_COLUMN_ID = "__add_column__";
+
+type CellAlign = "left" | "center" | "right";
+
+/** Explicit alignment wins; otherwise numbers (including numeric formulas)
+ * read right-aligned and everything else stays left-aligned. */
+function cellAlign(col: ColumnMeta): CellAlign {
+  if (col.align) return col.align;
+  if (col.type === "number") return "right";
+  if (col.type === "formula" && col.opts.kind === "formula" && col.opts.result_type === "number") {
+    return "right";
+  }
+  return "left";
+}
+
 function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string, string>): GridCell {
   const copyData = asString(value);
+  const contentAlign = cellAlign(col);
   switch (col.type) {
     case "number":
       return {
@@ -68,6 +86,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         data: typeof value === "number" ? value : undefined,
         displayData: value === null || value === undefined ? "" : String(value),
         copyData,
+        contentAlign,
         readonly: false,
         allowOverlay: false,
       };
@@ -76,6 +95,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         kind: GridCellKind.Boolean,
         data: value === true,
         copyData: value ? "true" : "false",
+        contentAlign,
         allowOverlay: false,
         readonly: col.is_reverse,
       };
@@ -86,6 +106,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         data: shown,
         displayData: shown,
         copyData,
+        contentAlign,
         readonly: col.is_reverse,
         allowOverlay: false,
       };
@@ -98,6 +119,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
           data: typeof value === "number" ? value : undefined,
           displayData: value === null || value === undefined ? "" : String(value),
           copyData,
+          contentAlign,
           readonly: true,
           allowOverlay: false,
         };
@@ -107,6 +129,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
           kind: GridCellKind.Boolean,
           data: value === true,
           copyData,
+          contentAlign,
           allowOverlay: false,
           readonly: true,
         };
@@ -116,6 +139,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         data: copyData,
         displayData: copyData,
         copyData,
+        contentAlign,
         readonly: true,
         allowOverlay: false,
       };
@@ -127,6 +151,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         kind: GridCellKind.Bubble,
         data: pills,
         copyData: pills.join(", "),
+        contentAlign,
         allowOverlay: false,
       };
     }
@@ -141,6 +166,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         kind: GridCellKind.Bubble,
         data: pills,
         copyData,
+        contentAlign,
         allowOverlay: false,
       };
     }
@@ -150,6 +176,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         data: copyData,
         displayData: copyData,
         copyData,
+        contentAlign,
         readonly: false,
         allowOverlay: false,
       };
@@ -250,11 +277,13 @@ export default function TableView() {
   }, [activeTableId, activeViewId]);
 
   const columns = visibleColumns;
+  const allColumns = useWorkspace((s) => s.columns);
+  const duplicateRows = useWorkspace((s) => s.duplicateRows);
   const resolvedTheme = useTheme((s) => s.resolved);
   const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme]);
   const gridColumns: GridColumn[] = useMemo(
-    () =>
-      columns.map((c) => ({
+    () => [
+      ...columns.map((c) => ({
         title: `${c.icon ? `${c.icon} ` : ""}${c.name}${c.is_reverse ? t("column.reverseSuffix") : ""}`,
         id: c.id,
         width: c.width || 160,
@@ -263,6 +292,10 @@ export default function TableView() {
         hasMenu: true,
         ...(c.color ? { themeOverride: tagThemeOverride(c.color) } : {}),
       })),
+      // Trailing "+" header cell: a synthetic column so it lives in the header
+      // strip and opens the add-column dialog on click.
+      { title: "+", id: ADD_COLUMN_ID, width: 44, hasMenu: false },
+    ],
     [columns, resolvedTheme],
   );
 
@@ -270,6 +303,17 @@ export default function TableView() {
 
   const getCellContent = useCallback(
     ([col, rowIdx]: Item): GridCell => {
+      // Synthetic "add column" cell: render blank instead of a loading spinner.
+      if (col >= columns.length) {
+        return {
+          kind: GridCellKind.Text,
+          data: "",
+          displayData: "",
+          copyData: "",
+          readonly: true,
+          allowOverlay: false,
+        };
+      }
       const meta = columns[col];
       const r = getRow(rowIdx);
       if (!meta) {
@@ -446,6 +490,14 @@ export default function TableView() {
   // The glyph occupies the first ~28px; the title starts right after it.
   const onHeaderClicked = useCallback(
     (colIndex: number, event: HeaderClickedEventArgs) => {
+      if (colIndex >= columns.length) {
+        // The trailing "+" header cell is the add-column entry.
+        event.preventDefault();
+        setEditor(null);
+        setPicker(null);
+        setColDialog({ existing: null });
+        return;
+      }
       const meta = columns[colIndex];
       if (!meta || event.localEventX > 28) return;
       event.preventDefault();
@@ -457,6 +509,29 @@ export default function TableView() {
     [columns],
   );
 
+  /** Move a column one visible slot left/right (header-menu fallback). */
+  const moveColumn = useCallback(
+    (colId: string, dir: -1 | 1) => {
+      const idx = columns.findIndex((c) => c.id === colId);
+      if (idx < 0) return;
+      const neighbor = columns[idx + dir];
+      if (!neighbor) return;
+      const target = allColumns.findIndex((c) => c.id === neighbor.id);
+      if (target >= 0) void updateColumn(colId, { position: target });
+    },
+    [columns, allColumns, updateColumn],
+  );
+
+  /** Drag-to-reorder: map the visible drop index back onto the full column
+   * list (view-hidden columns included). */
+  const onColumnMoved = useCallback(
+    (startIndex: number, endIndex: number) => {
+      const move = movedColumnPosition(columns, allColumns, startIndex, endIndex);
+      if (move) void updateColumn(move.id, { position: move.position });
+    },
+    [columns, allColumns, updateColumn],
+  );
+
   const selectedRids = useMemo(() => {
     const out: string[] = [];
     for (const i of gridSelection.rows) {
@@ -465,6 +540,8 @@ export default function TableView() {
     }
     return out;
   }, [gridSelection, rowsCache, rowsVersion]);
+
+  const colMenuIndex = colMenu ? columns.findIndex((c) => c.id === colMenu.col.id) : -1;
 
   if (!table || !activeTableId) {
     return (
@@ -550,6 +627,24 @@ export default function TableView() {
           <IconPlus size={14} /> {t("table.addRow")}
         </button>
         <button
+          className="btn"
+          disabled={selectedRids.length === 0}
+          title={t("table.duplicateRowsHint")}
+          onClick={() =>
+            void duplicateRows(selectedRids).then(() => {
+              // Copies land at the end (rows are ULID-ordered); bring the last
+              // one into view so the action has visible feedback.
+              const { total } = useWorkspace.getState();
+              if (total > 0) gridRef.current?.scrollTo(0, total - 1, "vertical");
+            })
+          }
+        >
+          <IconCopy size={14} />{" "}
+          {selectedRids.length > 0
+            ? t("table.duplicateRows", { count: selectedRids.length })
+            : t("table.duplicateRow")}
+        </button>
+        <button
           className="btn danger-ghost"
           disabled={selectedRids.length === 0}
           title={t("table.deleteRowsHint")}
@@ -592,8 +687,10 @@ export default function TableView() {
             void insertRow({});
           }}
           onColumnResize={(column, newSize) => {
+            if (column.id === ADD_COLUMN_ID) return;
             if (column.id) void updateColumn(column.id, { width: newSize });
           }}
+          onColumnMoved={onColumnMoved}
           smoothScrollX={true}
           smoothScrollY={true}
           getCellsForSelection={true}
@@ -679,6 +776,24 @@ export default function TableView() {
             }}
           >
             <IconPencil size={14} /> {t("table.editColumn")}
+          </MenuItem>
+          <MenuItem
+            disabled={colMenuIndex <= 0}
+            onSelect={() => {
+              moveColumn(colMenu.col.id, -1);
+              setColMenu(null);
+            }}
+          >
+            {t("table.moveColumnLeft")}
+          </MenuItem>
+          <MenuItem
+            disabled={colMenuIndex < 0 || colMenuIndex >= columns.length - 1}
+            onSelect={() => {
+              moveColumn(colMenu.col.id, 1);
+              setColMenu(null);
+            }}
+          >
+            {t("table.moveColumnRight")}
           </MenuItem>
           {colMenu.col.type === "text" &&
             !colMenu.col.is_reverse &&

@@ -402,6 +402,8 @@ impl Workspace {
                 opts: None,
                 icon: None,
                 color: None,
+                align: None,
+                default_value: None,
             })
             .collect();
 

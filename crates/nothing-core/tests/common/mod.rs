@@ -39,6 +39,8 @@ pub fn col(name: &str, t: ColumnType) -> NewColumn {
         opts: None,
         icon: None,
         color: None,
+        align: None,
+        default_value: None,
     }
 }
 
@@ -57,6 +59,8 @@ pub fn select_col(name: &str, choices: &[&str]) -> NewColumn {
         })),
         icon: None,
         color: None,
+        align: None,
+        default_value: None,
     }
 }
 
@@ -75,6 +79,8 @@ pub fn multi_select_col(name: &str, choices: &[&str]) -> NewColumn {
         })),
         icon: None,
         color: None,
+        align: None,
+        default_value: None,
     }
 }
 
@@ -89,6 +95,8 @@ pub fn relation_col(name: &str, target_table_id: &str, reverse_name: Option<&str
         })),
         icon: None,
         color: None,
+        align: None,
+        default_value: None,
     }
 }
 
@@ -102,6 +110,8 @@ pub fn formula_col(name: &str, expr: &str, result_type: FormulaResultType) -> Ne
         })),
         icon: None,
         color: None,
+        align: None,
+        default_value: None,
     }
 }
 

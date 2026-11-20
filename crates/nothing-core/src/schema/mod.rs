@@ -130,6 +130,37 @@ impl ColumnColor {
     }
 }
 
+/// Horizontal alignment of a column's cell content.
+///
+/// `None` (no align stored) means "by type": numbers are right aligned, every
+/// other type is left aligned. Presentation only — never part of the SQL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColumnAlign {
+    Left,
+    Center,
+    Right,
+}
+
+impl ColumnAlign {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ColumnAlign::Left => "left",
+            ColumnAlign::Center => "center",
+            ColumnAlign::Right => "right",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        Ok(match s {
+            "left" => ColumnAlign::Left,
+            "center" => ColumnAlign::Center,
+            "right" => ColumnAlign::Right,
+            other => return Err(AppError::InvalidInput(format!("未知的对齐方式: {other}"))),
+        })
+    }
+}
+
 /// Longest accepted icon payload. Emoji can be a ZWJ sequence of a few
 /// scalars, so the limit is generous but still keeps the metadata sane.
 const MAX_ICON_BYTES: usize = 32;
@@ -160,6 +191,63 @@ pub fn normalize_column_color(raw: Option<&str>) -> Result<Option<ColumnColor>> 
         return Ok(None);
     }
     ColumnColor::parse(token).map(Some)
+}
+
+/// Normalize an alignment token; empty string clears it ("by type").
+pub fn normalize_column_align(raw: Option<&str>) -> Result<Option<ColumnAlign>> {
+    let Some(raw) = raw else { return Ok(None) };
+    let token = raw.trim();
+    if token.is_empty() {
+        return Ok(None);
+    }
+    ColumnAlign::parse(token).map(Some)
+}
+
+/// Reserved `kind` of the dynamic date default: evaluated when a row is
+/// inserted (`now_iso()`), never stored literally.
+pub const DEFAULT_NOW_KIND: &str = "now";
+
+/// Whether a default payload is the dynamic "now" token.
+pub fn is_now_default(value: &serde_json::Value) -> bool {
+    value.get("kind").and_then(|v| v.as_str()) == Some(DEFAULT_NOW_KIND)
+}
+
+/// Resolve a stored column default to the value written for a new row.
+///
+/// Literal defaults are validated against the column type/choices; the
+/// `{"kind":"now"}` token is only valid for date columns and expands to the
+/// current UTC timestamp.
+pub fn default_cell_value(
+    col: &ColumnMeta,
+    value: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    if value.is_null() {
+        return Ok(serde_json::Value::Null);
+    }
+    if is_now_default(value) {
+        if col.is_reverse || col.col_type != ColumnType::Date {
+            return Err(AppError::InvalidInput(
+                "只有日期列可以使用「当前时间」默认值".into(),
+            ));
+        }
+        return Ok(serde_json::Value::String(now_iso()));
+    }
+    if col.is_reverse || matches!(col.col_type, ColumnType::Formula | ColumnType::Relation) {
+        return Err(AppError::InvalidInput(format!(
+            "列「{}」不支持默认值",
+            col.name
+        )));
+    }
+    if matches!(col.col_type, ColumnType::Select | ColumnType::MultiSelect)
+        && col.opts.select_choices()?.is_empty()
+    {
+        return Err(AppError::InvalidInput(format!(
+            "列「{}」还没有选项，无法设置默认值",
+            col.name
+        )));
+    }
+    crate::query::json_to_stored(col, value)?;
+    Ok(value.clone())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,6 +459,13 @@ pub struct ColumnMeta {
     pub icon: Option<String>,
     /// Optional palette token tinting the header and the column's cells.
     pub color: Option<ColumnColor>,
+    /// Optional horizontal alignment; `None` means "by type".
+    pub align: Option<ColumnAlign>,
+    /// Value written to new rows when the cell is not supplied.
+    ///
+    /// Literal JSON in the cell's input shape; date columns additionally accept
+    /// the `{"kind":"now"}` token (resolved on insert).
+    pub default_value: Option<serde_json::Value>,
     pub created_at: String,
 }
 
@@ -395,11 +490,19 @@ pub struct NewColumn {
     /// Palette token; `None`/empty means "no tint".
     #[serde(default)]
     pub color: Option<String>,
+    /// Alignment token; `None`/empty means "by type".
+    #[serde(default)]
+    pub align: Option<String>,
+    /// Default value written to new rows; `null` means "no default".
+    #[serde(default)]
+    pub default_value: Option<serde_json::Value>,
 }
 
 /// Partial update of a column. `None` fields keep their current value.
 ///
-/// `icon`/`color` are raw strings so that an empty string clears them.
+/// `icon`/`color`/`align` are raw strings so that an empty string clears them.
+/// JSON `null` for an `Option` deserializes to `None`, so clearing a default
+/// uses the explicit [`ColumnPatch::clear_default`] flag instead.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ColumnPatch {
     pub name: Option<String>,
@@ -411,6 +514,12 @@ pub struct ColumnPatch {
     pub visible: Option<bool>,
     pub icon: Option<String>,
     pub color: Option<String>,
+    pub align: Option<String>,
+    /// New default value; omitted/`null` keeps the current one.
+    pub default_value: Option<serde_json::Value>,
+    /// Remove the current default value.
+    #[serde(default)]
+    pub clear_default: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -586,6 +695,20 @@ pub(crate) fn column_from_row(r: &Row<'_>) -> rusqlite::Result<ColumnMeta> {
         })?),
         None => None,
     };
+    let align_str: Option<String> = r.get("align")?;
+    let align = match align_str.as_deref() {
+        Some(token) => Some(ColumnAlign::parse(token).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?),
+        None => None,
+    };
+    let default_str: Option<String> = r.get("default_value")?;
+    let default_value = match default_str {
+        Some(raw) => Some(serde_json::from_str(&raw).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?),
+        None => None,
+    };
     Ok(ColumnMeta {
         id: r.get("id")?,
         table_id: r.get("table_id")?,
@@ -600,6 +723,8 @@ pub(crate) fn column_from_row(r: &Row<'_>) -> rusqlite::Result<ColumnMeta> {
         reverse_of: r.get("reverse_of")?,
         icon: r.get("icon")?,
         color,
+        align,
+        default_value,
         created_at: r.get("created_at")?,
     })
 }
@@ -626,7 +751,7 @@ pub(crate) fn view_from_row(r: &Row<'_>) -> rusqlite::Result<ViewMeta> {
 
 pub(crate) const TABLE_COLS: &str =
     r#""id","name","sql_name","title_col_id","icon","position","created_at","updated_at""#;
-const COLUMN_COLS: &str = r#""id","table_id","name","sql_name","type","opts","position","width","visible","is_reverse","reverse_of","icon","color","created_at""#;
+const COLUMN_COLS: &str = r#""id","table_id","name","sql_name","type","opts","position","width","visible","is_reverse","reverse_of","icon","color","align","default_value","created_at""#;
 pub(crate) const VIEW_COLS: &str =
     r#""id","table_id","name","kind","config","position","created_at""#;
 
@@ -687,7 +812,7 @@ pub(crate) fn insert_column(conn: &Connection, c: &ColumnMeta) -> Result<()> {
     conn.execute(
         &format!(
             r#"INSERT INTO "_columns" ({COLUMN_COLS})
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)"#
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)"#
         ),
         rusqlite::params![
             c.id,
@@ -703,6 +828,11 @@ pub(crate) fn insert_column(conn: &Connection, c: &ColumnMeta) -> Result<()> {
             c.reverse_of,
             c.icon,
             c.color.map(|c| c.as_str()),
+            c.align.map(|a| a.as_str()),
+            c.default_value
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
             c.created_at,
         ],
     )?;
@@ -740,6 +870,8 @@ pub(crate) fn build_column_meta(
     validate_opts(new.col_type, &opts)?;
     let icon = normalize_icon(new.icon.as_deref())?;
     let color = normalize_column_color(new.color.as_deref())?;
+    let align = normalize_column_align(new.align.as_deref())?;
+    let default_value = new.default_value.as_ref().filter(|v| !v.is_null()).cloned();
     let id = new_id();
     Ok(ColumnMeta {
         id: id.clone(),
@@ -755,6 +887,8 @@ pub(crate) fn build_column_meta(
         reverse_of: None,
         icon,
         color,
+        align,
+        default_value,
         created_at: now_iso(),
     })
 }

@@ -195,6 +195,31 @@ fn write_physical(
     Ok(())
 }
 
+/// Fill defaults for columns the caller did not provide. Formula columns are
+/// generated and reverse relation columns are the other side of a link, so
+/// neither can carry a default.
+fn apply_defaults(cols: &[ColumnMeta], mut cells: Cells) -> Result<Cells> {
+    for col in cols {
+        if col.is_reverse || col.col_type == crate::schema::ColumnType::Formula {
+            continue;
+        }
+        if cells.contains_key(&col.id) {
+            continue;
+        }
+        let Some(default) = &col.default_value else {
+            continue;
+        };
+        if default.is_null() {
+            continue;
+        }
+        cells.insert(
+            col.id.clone(),
+            crate::schema::default_cell_value(col, default)?,
+        );
+    }
+    Ok(cells)
+}
+
 impl Workspace {
     /// Insert one row; `cells` is keyed by column id (missing cells keep
     /// column defaults). Returns the stored row including relation cells.
@@ -204,6 +229,7 @@ impl Workspace {
         self.with_tx(|conn| {
             let table = load_table(conn, table_id)?;
             let cols = load_columns(conn, table_id)?;
+            let cells = apply_defaults(&cols, cells)?;
             let (physical, relations) = split_cells(&cols, &cells)?;
             write_physical(conn, &table, &physical, &rid, true, &now)?;
             for (_, col, value) in relations {

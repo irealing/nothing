@@ -2312,6 +2312,18 @@ input[type="checkbox"] {
   background: var(--accent-weak);
 }
 
+.chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-weak);
+}
+
+.default-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .checkline {
   flex-direction: row !important;
   align-items: center;

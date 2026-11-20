@@ -457,6 +457,8 @@ mod tests {
             reverse_of: None,
             icon: None,
             color: None,
+            align: None,
+            default_value: None,
             created_at: String::new(),
         }
     }
