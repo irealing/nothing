@@ -8,13 +8,19 @@ nothing 是一个 Tauri v2 桌面应用：本地优先、SQLCipher 加密的 Not
 
 产品范围：**只做表格**。不要引入文档、看板、日历等其他 block 类型的功能。
 
+## 项目状态
+
+核心功能（表 / 列 / 行、关联、公式、FTS、网格视图、SQL 视图、CSV 导入、加密与迁移、最近文件与文件关联）已完成，当前处于**易用性打磨期**。改动前先确认基线：`cargo test`、`pnpm test`、`pnpm build` 全绿且 clippy 零 warning，再动手。
+
+进度与待办见 `README.md` 的路线图，本文件只记录约束，不记录进度。
+
 ## 目录结构（现状）
 
-Cargo workspace：存储内核是独立 crate，**不依赖 Tauri**，可单独编译测试；Tauri 壳（M3）只做薄转发。
+Cargo workspace：存储内核是独立 crate，**不依赖 Tauri**，可单独编译测试；Tauri 壳只做薄转发。
 
 ```
 Cargo.toml               workspace 根
-crates/nothing-core/     存储内核（纯 Rust，M1/M2 的主战场）
+crates/nothing-core/     存储内核（纯 Rust）
   src/
     db/                  Workspace：加密连接管理（单写者 Mutex）、密码、迁移入口
       migrate.rs         _nothing 清单表、V1 元数据 schema、format_version 迁移
@@ -31,9 +37,10 @@ crates/nothing-core/     存储内核（纯 Rust，M1/M2 的主战场）
       compiler.rs        grid 视图筛选树/排序 → 参数化 SQL（值永不进 SQL 文本）
       rows.rs            行 CRUD、junction 关系写入、批量更新
       run.rs             run_view/run_sql/search、关联批量标题解析（防 N+1）
+    import.rs            CSV/TSV 导入：预览解析（首行作表头、类型推断）+ 事务内建表并插入
   tests/                 集成测试（直接操作真实加密临时库）
-src-tauri/               （M3 添加）Tauri 薄壳：commands/ 只做参数校验与转发；settings.rs 存应用级偏好（最近文件、上次表/视图），与工作区数据无关
-/                        （M3 添加）前端 React + TS + Vite
+src-tauri/               Tauri 薄壳：commands/ 只做参数校验与转发；settings.rs 存应用级偏好（最近文件、上次表/视图），与工作区数据无关
+/                        前端 React + TS + Vite
   src/components/        业务组件（表格、视图标签、弹窗内容、筛选面板…）
   src/ui/                浮层与表单原语（Radix 驱动的 Dialog/Menu/Popover/Tooltip/Field）
   src/stores/            zustand store（workspace 数据、theme 外观偏好）
@@ -87,7 +94,7 @@ src-tauri/               （M3 添加）Tauri 薄壳：commands/ 只做参数校
 - **ID 一律 ULID**（表、列、行、视图），TEXT 存储，按时间有序利于索引。
 - 时间一律 ISO8601 UTC 字符串（SQLite 日期函数原生兼容），前端负责本地化显示。
 
-### 前端 UI 约定（M6）
+### 前端 UI 约定
 
 - **浮层只走 `src/ui/`**：`Dialog` / `PanelDialog` / `Menu` / `Popover` / `Tooltip` 由 Radix 提供行为（portal、焦点陷阱与归还、Esc、外点关闭、键盘导航），样式仍写在本项目 CSS。禁止在组件里手写 `modal-backdrop`、`dropdown-menu` + backdrop、`window.confirm`。canvas 网格没有 DOM 锚点，浮层用 `.virtual-anchor`（坐标处的 1×1 fixed 元素）挂到 Radix。
 - **表单只走 `src/ui/Field.tsx`**：`Field` 管 label / hint / error，控件统一 `--control-h` 高度与 hover / focus / invalid / disabled 四态。不要在组件里写裸 `<input>`（网格内的 `.cell-editor` 与搜索框除外，它们有特殊焦点语义）。
@@ -102,10 +109,16 @@ src-tauri/               （M3 添加）Tauri 薄壳：commands/ 只做参数校
 cargo test                              # 内核全部测试（workspace 根目录）
 cargo test -p nothing-core --test relation   # 只跑某个集成测试文件
 cargo fmt --all && cargo clippy -p nothing-core --all-targets   # 风格 + 零 warning
-pnpm install              # 安装前端依赖（M3 起）
-pnpm tauri dev            # 开发运行（M3 起；首次会静态编译 SQLCipher，耗时数分钟）
-pnpm tauri build          # 打包（M5）
+pnpm install              # 安装前端依赖
+pnpm test                 # 前端 stores / ipc / 组件单测（vitest）
+pnpm build                # tsc 类型检查 + vite 生产构建
+pnpm tauri dev            # 开发运行（首次会静态编译 SQLCipher，耗时数分钟）
+pnpm tauri build          # 打包
 ```
+
+完成标准：`cargo test`、`pnpm test`、`pnpm build` 全绿，clippy 零 warning。打包前记得手动同步 `Cargo.toml`（根）与 `src-tauri/tauri.conf.json` 的版本号。
+
+无头冒烟脚本：`$TMPDIR/opencode/smoke.sh`（仅 Linux；等待 `target/debug/nothing-app` 出现后检查进程存活，结束时清理进程组）。
 
 注意：本机缺少 webkit2gtk-4.1 时无法编译 Tauri 壳，但 nothing-core 与其测试完全不受影响——这正是内核独立成 crate 的原因。
 
@@ -121,19 +134,7 @@ pnpm tauri build          # 打包（M5）
 - TypeScript：严格模式；ESLint + Prettier；组件函数式，禁止 class 组件。
 - 提交信息：Conventional Commits（`feat:` `fix:` `refactor:` `test:` `docs:` `chore:`）。
 
-## 里程碑上下文
+## 范围边界
 
-M1 存储内核 → M2 查询层 → M3 UI 骨架 → M4 视图 UI → M5 收尾打包。当前进度见 README 路线图。在里程碑未完成前，不要提前实现后续里程碑的功能（例如 M1 阶段不要开始写前端）。
-
-**当前状态：M1–M5 完成，M6 前端体验升级进行中。**
-
-- M1/M2（nothing-core）：68 个内核测试全绿（另 1 个 10 万行性能冒烟默认 `--ignored`），含 v1→v2 迁移与列外观用例；clippy 零警告。10 万行性能冒烟（release，`cargo test --release --test query perf_100k -- --ignored --nocapture`）：筛选视图 236ms、FTS 搜索 1.7ms、聚合 64ms。
-- M3（src-tauri + 前端骨架）：Tauri v2 薄壳 27 个 command；React 18 + TS 严格模式 + Glide Data Grid v6；`src/ipc` 唯一后端入口。
-- M4（视图 UI）：ViewTabs / FilterSortPanel（嵌套筛选树）/ CellEditors（单选/多选气泡、关联选择器）/ ColumnDialogs（全类型列编辑含公式编辑器）/ SqlViewPanel（CodeMirror 6）/ 列头右键菜单。
-- M5（收尾）：正式图标（AI 生成 → `tauri icon` 全套尺寸，bundle.active=true）；README 三平台打包文档（Windows 为主要目标）；**大表窗口化加载**——store 重构为 `rowsCache(Map<行号,Row>) + total + dataVersion` 模型，200 行/页按需拉取 + overscan 预取 + 过期响应丢弃，TableView `rows={total}` + Loading cell；同时修复隐藏列 bug（网格改用后端返回的 `visibleColumns`）。
-- M6（前端体验）：Radix 原语层 `src/ui/`；亮/暗/跟随系统主题与 token 化；表 / 列 emoji 图标（创建表、侧边栏与列头点击修改）与 9 色调色板（format v2 迁移）；表单控件统一；zh 单语言 i18n 字典 + 日期格式化；修复视图标签页「＋」菜单被 `overflow` 裁剪（此前看起来没有新建视图入口）。
-- 最近文件与文件关联（post-M6）：`settings.rs` 把「上次打开的工作区 + 最近 8 个 + 每个工作区最后表/视图」明文存进 OS app config 目录的 `settings.json`（不进加密库，不触发 `format_version`）；启动参数与第二实例的 `.nothing` 路径经 `take_open_request` / `open-request` 事件交给前端；`.nothing` 关联只在 NSIS 安装时建立（HKCU，卸载自动清除），不做运行时注册。
-- 质量门禁：tsc 零错误、vitest 全绿、vite build 通过。
-- 无头冒烟脚本：`/tmp/opencode/smoke.sh`（Linux；检测 `target/debug/nothing-app` 出现 + 进程存活，结束自动清理进程组）。
-
-后续 backlog（非里程碑）：Windows 真机打包验收、日期选择器/富文本单元格编辑器打磨、错误提示细化、滚动窗口内搜索高亮、en/ja 等语言包。
+- 当前是易用性打磨期：优先改交互、提示、性能与文档，不新增大块功能。
+- 新功能要先确认符合"只做表格"的产品范围；进度与待办只记在 `README.md` 的路线图，不在本文件追加里程碑叙述。
