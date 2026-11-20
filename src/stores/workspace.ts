@@ -1,5 +1,9 @@
 // Global workspace state. All backend calls go through src/ipc (AGENTS.md);
 // errors are caught here and surfaced via `error` for the toast component.
+//
+// Rows are loaded lazily in windows (PAGE_SIZE pages) so 100k-row tables
+// scroll smoothly: `rowsCache` maps absolute row index → Row, `total` is the
+// full match count, and `dataVersion` invalidates everything on writes.
 
 import { create } from "zustand";
 import * as ipc from "../ipc";
@@ -11,6 +15,7 @@ import type {
   Json,
   NewColumn,
   NewView,
+  Row,
   RowPage,
   SqlResult,
   TableMeta,
@@ -20,25 +25,49 @@ import type {
   WorkspaceInfo,
 } from "../types";
 
+export const PAGE_SIZE = 200;
+
 export function defaultGridConfig(): GridConfig {
   return { filters: null, sorts: [], hidden_columns: [] };
 }
+
+/** What the row window pipeline currently reads from. */
+type Source =
+  | { kind: "none" }
+  | { kind: "view"; viewId: string }
+  | { kind: "table"; tableId: string }
+  | { kind: "search"; tableId: string; query: string };
 
 interface WorkspaceState {
   info: WorkspaceInfo | null;
   tables: TableMeta[];
   activeTableId: string | null;
+  /** All columns of the active table (panels, dialogs). */
   columns: ColumnMeta[];
+  /** Columns the current source actually returns (view-hidden applied). */
+  visibleColumns: ColumnMeta[];
   /** Grid views of the active table + workspace-level SQL views. */
   views: ViewMeta[];
-  /** null = raw table data fallback; normally a grid or SQL view id. */
   activeViewId: string | null;
-  page: RowPage | null;
+
+  // windowed row data
+  source: Source;
+  total: number;
+  rowsCache: Map<number, Row>;
+  /** Bumped whenever rowsCache/total change — TableView re-renders on it. */
+  rowsVersion: number;
+  /** Bumped on any write; in-flight fetches with an older version are dropped. */
+  dataVersion: number;
+  /** rid → title, accumulated across fetched windows. */
+  titles: Record<string, string>;
+
   sqlResult: SqlResult | null;
-  /** Non-empty when the grid is showing search results instead of the view. */
   searchQuery: string;
   loading: boolean;
   error: string | null;
+
+  // windowed loading
+  fetchWindow: (start: number, end: number) => Promise<void>;
 
   // workspace lifecycle
   openWorkspace: (path: string, password: string) => Promise<void>;
@@ -92,7 +121,74 @@ async function guard<R>(
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => {
-  /** Load columns + views + the given view's data (or raw rows). */
+  /** Fetch one aligned page from the current source into the cache. */
+  async function fetchPage(source: Source, offset: number, version: number): Promise<void> {
+    let gridPage: RowPage;
+    switch (source.kind) {
+      case "view": {
+        const res = await ipc.viewRun(source.viewId, PAGE_SIZE, offset);
+        if (res.kind !== "grid") return; // sql views don't page
+        gridPage = res;
+        break;
+      }
+      case "table":
+        gridPage = await ipc.rowList(source.tableId, PAGE_SIZE, offset);
+        break;
+      case "search":
+        gridPage = await ipc.search(source.tableId, source.query, PAGE_SIZE, offset);
+        break;
+      case "none":
+        return;
+    }
+    // Drop stale responses (a write happened while we were in flight).
+    if (get().dataVersion !== version) return;
+    const cache = get().rowsCache;
+    gridPage.rows.forEach((r, i) => cache.set(offset + i, r));
+    set({
+      total: gridPage.total,
+      visibleColumns: gridPage.columns,
+      titles: { ...get().titles, ...gridPage.titles },
+      rowsVersion: get().rowsVersion + 1,
+    });
+  }
+
+  async function fetchWindowInternal(start: number, end: number) {
+    const { source, total, rowsCache, dataVersion } = get();
+    if (source.kind === "none") return;
+    const from = Math.max(0, Math.floor(start / PAGE_SIZE) * PAGE_SIZE);
+    // Upper bound: known total when available, otherwise just the request.
+    const to = total > 0 ? Math.min(end, total) : end;
+    const inflight: Promise<void>[] = [];
+    for (let p = from; p < to; p += PAGE_SIZE) {
+      // Skip pages already fully cached (bounded by total when known).
+      const pageEnd = total > 0 ? Math.min(p + PAGE_SIZE, total) : p + PAGE_SIZE;
+      let complete = true;
+      for (let i = p; i < pageEnd; i++) {
+        if (!rowsCache.has(i)) {
+          complete = false;
+          break;
+        }
+      }
+      if (!complete) inflight.push(fetchPage(source, p, dataVersion));
+    }
+    await Promise.all(inflight);
+  }
+
+  /** Reset row state and prime the first window for a new source. */
+  async function prime(source: Source) {
+    set((s) => ({
+      source,
+      rowsCache: new Map(),
+      total: 0,
+      titles: {},
+      dataVersion: s.dataVersion + 1,
+      rowsVersion: s.rowsVersion + 1,
+    }));
+    await fetchWindowInternal(0, PAGE_SIZE);
+  }
+
+  /** Load columns + views for a table and activate a view (Notion-style:
+   * every table always has at least one grid view). */
   async function loadTableData(tableId: string, viewId: string | null) {
     const [columns, views] = await Promise.all([
       ipc.columnList(tableId),
@@ -104,33 +200,25 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (view?.kind === "sql") {
         const result = await ipc.viewRun(viewId, 1000, 0);
         if (result.kind === "sql") {
-          set({ sqlResult: result, page: null });
+          set({ sqlResult: result, source: { kind: "none" }, rowsCache: new Map(), total: 0 });
           return;
         }
       }
       if (view?.kind === "grid") {
-        const result = await ipc.viewRun(viewId, 1000, 0);
-        if (result.kind === "grid") {
-          set({ page: result, sqlResult: null });
-          return;
-        }
+        await prime({ kind: "view", viewId });
+        return;
       }
     }
-    const page = await ipc.rowList(tableId, 1000, 0);
-    set({ page, sqlResult: null });
+    await prime({ kind: "table", tableId });
   }
 
-  /**
-   * Activate a table: every table always shows a view — if it has no grid
-   * view yet, a default one is created (Notion-style).
-   */
   async function activateTable(tableId: string) {
     const columns = await ipc.columnList(tableId);
     let views = await ipc.viewList(tableId);
     set({ activeTableId: tableId, columns, views, searchQuery: "" });
     let gridViews = views.filter((v) => v.kind === "grid");
     if (gridViews.length === 0) {
-      const created = await ipc.viewCreate({
+      await ipc.viewCreate({
         table_id: tableId,
         name: "默认视图",
         kind: "grid",
@@ -139,14 +227,29 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       views = await ipc.viewList(tableId);
       set({ views });
       gridViews = views.filter((v) => v.kind === "grid");
-      void created;
     }
     await loadTableData(tableId, gridViews[0]?.id ?? null);
   }
 
+  /** After a write: drop the cache and re-prime the current source. */
   async function afterWrite() {
-    const { activeTableId, activeViewId } = get();
-    if (activeTableId) await loadTableData(activeTableId, activeViewId);
+    const { activeTableId, activeViewId, searchQuery } = get();
+    if (!activeTableId) return;
+    if (searchQuery) {
+      await prime({ kind: "search", tableId: activeTableId, query: searchQuery });
+      return;
+    }
+    const view = get().views.find((v) => v.id === activeViewId);
+    if (view?.kind === "sql") {
+      const result = await ipc.viewRun(view.id, 1000, 0);
+      if (result.kind === "sql") set({ sqlResult: result });
+      return;
+    }
+    if (view?.kind === "grid") {
+      await prime({ kind: "view", viewId: view.id });
+      return;
+    }
+    await prime({ kind: "table", tableId: activeTableId });
   }
 
   return {
@@ -154,13 +257,29 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     tables: [],
     activeTableId: null,
     columns: [],
+    visibleColumns: [],
     views: [],
     activeViewId: null,
-    page: null,
+    source: { kind: "none" },
+    total: 0,
+    rowsCache: new Map(),
+    rowsVersion: 0,
+    dataVersion: 0,
+    titles: {},
     sqlResult: null,
     searchQuery: "",
     loading: false,
     error: null,
+
+    fetchWindow: async (start, end) => {
+      // High-frequency (scroll) path: no global loading flag, errors only
+      // surface via toast-less console to avoid flicker; prime paths report.
+      try {
+        await fetchWindowInternal(start, end);
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e) });
+      }
+    },
 
     clearError: () => set({ error: null }),
 
@@ -173,9 +292,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           tables,
           activeTableId: null,
           columns: [],
+          visibleColumns: [],
           views: [],
-          page: null,
+          rowsCache: new Map(),
+          total: 0,
+          titles: {},
           sqlResult: null,
+          source: { kind: "none" },
         });
         if (tables.length > 0) await activateTable(tables[0].id);
       });
@@ -189,10 +312,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           tables: [],
           activeTableId: null,
           columns: [],
+          visibleColumns: [],
           views: [],
-          page: null,
+          rowsCache: new Map(),
+          total: 0,
+          titles: {},
           sqlResult: null,
           searchQuery: "",
+          source: { kind: "none" },
         });
       });
     },
@@ -205,11 +332,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           tables: [],
           activeTableId: null,
           columns: [],
+          visibleColumns: [],
           views: [],
           activeViewId: null,
-          page: null,
+          rowsCache: new Map(),
+          total: 0,
+          titles: {},
           sqlResult: null,
           searchQuery: "",
+          source: { kind: "none" },
         });
       });
     },
@@ -230,8 +361,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     refresh: async () => {
       await guard(set, get, async () => {
-        const tables = await ipc.tableList();
-        set({ tables });
+        set({ tables: await ipc.tableList() });
         await afterWrite();
       });
     },
@@ -239,8 +369,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     createTable: async (name, columns) => {
       await guard(set, get, async () => {
         const t = await ipc.tableCreate(name, columns);
-        const tables = await ipc.tableList();
-        set({ tables });
+        set({ tables: await ipc.tableList() });
         await activateTable(t.id);
       });
     },
@@ -250,10 +379,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         await ipc.tableDelete(id);
         const tables = await ipc.tableList();
         set({ tables });
-        const { activeTableId } = get();
-        if (activeTableId === id) {
+        if (get().activeTableId === id) {
           const next = tables[0]?.id ?? null;
-          set({ activeTableId: next, page: null, sqlResult: null, columns: [], views: [] });
+          set({
+            activeTableId: next,
+            columns: [],
+            visibleColumns: [],
+            views: [],
+            rowsCache: new Map(),
+            total: 0,
+            titles: {},
+            sqlResult: null,
+            source: { kind: "none" },
+          });
           if (next) await activateTable(next);
         }
       });
@@ -281,6 +419,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId } = get();
         if (!activeTableId) return;
         await ipc.columnAdd(activeTableId, col);
+        set({ columns: await ipc.columnList(activeTableId) });
         await afterWrite();
       });
     },
@@ -290,7 +429,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId } = get();
         if (!activeTableId) return;
         await ipc.columnUpdate(activeTableId, colId, patch);
-        await afterWrite();
+        // Width-only changes don't affect data; still refresh metadata.
+        set({ columns: await ipc.columnList(activeTableId) });
+        if (Object.keys(patch).some((k) => k !== "width")) {
+          await afterWrite();
+        } else {
+          set((s) => ({ rowsVersion: s.rowsVersion + 1 }));
+        }
       });
     },
 
@@ -299,6 +444,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId } = get();
         if (!activeTableId) return;
         await ipc.columnDelete(activeTableId, colId);
+        set({ columns: await ipc.columnList(activeTableId) });
         await afterWrite();
       });
     },
@@ -327,11 +473,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         });
         const { activeTableId } = get();
         if (activeTableId) {
-          const views = await ipc.viewList(activeTableId);
-          set({ views, activeViewId: v.id });
+          set({ views: await ipc.viewList(activeTableId), activeViewId: v.id });
         }
         const result = await ipc.viewRun(v.id, 1000, 0);
-        if (result.kind === "sql") set({ sqlResult: result, page: null });
+        if (result.kind === "sql") {
+          set({ sqlResult: result, source: { kind: "none" }, rowsCache: new Map(), total: 0 });
+        }
       });
     },
 
@@ -354,7 +501,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId, activeViewId } = get();
         if (!activeTableId) return;
         if (activeViewId === viewId) {
-          // fall back to the first remaining grid view (auto-created if none)
           await activateTable(activeTableId);
         } else {
           set({ views: await ipc.viewList(activeTableId) });
@@ -376,17 +522,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId } = get();
         if (!activeTableId) return;
         const updated = await ipc.rowUpdate(activeTableId, rid, { [colId]: value });
-        // Patch the row in place — no full reload (formula cells come back
-        // from the server, so generated values stay correct).
-        const page = get().page;
-        if (page) {
-          set({
-            page: {
-              ...page,
-              rows: page.rows.map((r) => (r.rid === rid ? { ...r, ...updated } : r)),
-            },
-          });
+        // Patch in place first for instant feedback (formula cells included —
+        // the backend returns the recomputed row)…
+        const cache = get().rowsCache;
+        for (const [idx, r] of cache) {
+          if (r.rid === rid) {
+            cache.set(idx, { ...r, ...updated });
+            break;
+          }
         }
+        set((s) => ({ rowsVersion: s.rowsVersion + 1 }));
+        // …then revalidate the window: in filtered/sorted views the edit may
+        // change membership or ordering.
+        await afterWrite();
       });
     },
 
@@ -408,12 +556,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           await loadTableData(activeTableId, activeViewId);
           return;
         }
-        const page = await ipc.search(activeTableId, query, 1000, 0);
-        set({ page, sqlResult: null, searchQuery: query });
+        set({ searchQuery: query, sqlResult: null });
+        await prime({ kind: "search", tableId: activeTableId, query });
       });
     },
   };
 });
 
-// Re-export for components that build configs.
 export type { GridConfig, ViewConfig };

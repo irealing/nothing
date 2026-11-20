@@ -297,10 +297,10 @@ select:focus {
 }
 
 .brand-logo {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 7px;
-  background: linear-gradient(135deg, #5ea0ff 0%, #1f2430 60%);
+  display: block;
 }
 
 .brand h1 {

@@ -45,7 +45,7 @@ export default function Welcome() {
     <div className="welcome">
       <div className="welcome-card">
         <div className="brand">
-          <div className="brand-logo" aria-hidden />
+          <img className="brand-logo" src="/icon.png" alt="" />
           <h1>nothing</h1>
         </div>
         <p className="brand-sub">本地优先、端到端加密的表格工作区</p>

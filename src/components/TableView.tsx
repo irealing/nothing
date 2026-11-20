@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CompactSelection,
   DataEditor,
@@ -11,8 +11,9 @@ import {
   type GridSelection,
   type HeaderClickedEventArgs,
   type Item,
+  type Rectangle,
 } from "@glideapps/glide-data-grid";
-import { useWorkspace } from "../stores/workspace";
+import { PAGE_SIZE, useWorkspace } from "../stores/workspace";
 import type { ColumnMeta, Json, Row } from "../types";
 import FilterSortPanel from "./FilterSortPanel";
 import ColumnDialog from "./ColumnDialogs";
@@ -28,7 +29,7 @@ function asString(v: Json | undefined): string {
 /** Inline-editable via glide's built-in overlays. */
 function isInlineEditable(col: ColumnMeta): boolean {
   if (col.is_reverse) return false;
-  return ["text", "number", "date"].includes(col.type);
+  return ["text", "number", "date", "checkbox"].includes(col.type);
 }
 
 /** Opens a custom popup editor on click. */
@@ -47,7 +48,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         data: typeof value === "number" ? value : undefined,
         displayData: value === null || value === undefined ? "" : String(value),
         copyData,
-        readonly: !isInlineEditable(col) && col.type !== "number",
+        readonly: false,
         allowOverlay: !col.is_reverse,
       };
     case "checkbox":
@@ -136,14 +137,22 @@ interface PickerState {
   anchor: Anchor;
 }
 
+/** Rows fetched around the visible region (in row counts). */
+const OVERSCAN = PAGE_SIZE * 2;
+
 export default function TableView() {
   const activeTableId = useWorkspace((s) => s.activeTableId);
   const tables = useWorkspace((s) => s.tables);
-  const columns = useWorkspace((s) => s.columns);
+  const visibleColumns = useWorkspace((s) => s.visibleColumns);
   const views = useWorkspace((s) => s.views);
   const activeViewId = useWorkspace((s) => s.activeViewId);
-  const page = useWorkspace((s) => s.page);
+  const total = useWorkspace((s) => s.total);
+  const rowsCache = useWorkspace((s) => s.rowsCache);
+  const rowsVersion = useWorkspace((s) => s.rowsVersion);
+  const dataVersion = useWorkspace((s) => s.dataVersion);
+  const titles = useWorkspace((s) => s.titles);
   const searchQuery = useWorkspace((s) => s.searchQuery);
+  const fetchWindow = useWorkspace((s) => s.fetchWindow);
   const insertRow = useWorkspace((s) => s.insertRow);
   const updateCell = useWorkspace((s) => s.updateCell);
   const deleteRows = useWorkspace((s) => s.deleteRows);
@@ -162,12 +171,19 @@ export default function TableView() {
     rows: CompactSelection.empty(),
   });
   const gridWrapRef = useRef<HTMLDivElement>(null);
+  const visibleRange = useRef<Rectangle>({ x: 0, y: 0, width: 0, height: PAGE_SIZE });
 
   const table = tables.find((t) => t.id === activeTableId) ?? null;
   const activeView = views.find((v) => v.id === activeViewId) ?? null;
-  const rows: Row[] = useMemo(() => page?.rows ?? [], [page]);
-  const titles = useMemo(() => page?.titles ?? {}, [page]);
 
+  // After writes (dataVersion bumps) re-pull whatever is on screen.
+  useEffect(() => {
+    const r = visibleRange.current;
+    void fetchWindow(Math.max(0, r.y - OVERSCAN), r.y + r.height + OVERSCAN);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
+
+  const columns = visibleColumns;
   const gridColumns: GridColumn[] = useMemo(
     () =>
       columns.map((c) => ({
@@ -180,22 +196,40 @@ export default function TableView() {
     [columns],
   );
 
+  const getRow = useCallback((idx: number): Row | undefined => rowsCache.get(idx), [rowsCache, rowsVersion]);
+
   const getCellContent = useCallback(
     ([col, rowIdx]: Item): GridCell => {
       const meta = columns[col];
-      const r = rows[rowIdx];
-      if (!meta || !r) {
+      const r = getRow(rowIdx);
+      if (!meta) {
+        return { kind: GridCellKind.Loading, copyData: "", allowOverlay: false };
+      }
+      if (!r) {
+        // Cache miss (fast scrolling): schedule a window fetch and show a
+        // loading cell; the rowsVersion bump re-renders with real data.
+        queueMicrotask(() =>
+          void fetchWindow(Math.max(0, rowIdx - OVERSCAN), rowIdx + OVERSCAN),
+        );
         return { kind: GridCellKind.Loading, copyData: "", allowOverlay: false };
       }
       return cellFor(meta, r.cells[meta.id], titles);
     },
-    [columns, rows, titles],
+    [columns, getRow, titles, fetchWindow],
+  );
+
+  const onVisibleRegionChanged = useCallback(
+    (range: Rectangle) => {
+      visibleRange.current = range;
+      void fetchWindow(Math.max(0, range.y - OVERSCAN), range.y + range.height + OVERSCAN);
+    },
+    [fetchWindow],
   );
 
   const onCellEdited = useCallback(
     ([col, rowIdx]: Item, newValue: EditableGridCell) => {
       const meta = columns[col];
-      const r = rows[rowIdx];
+      const r = getRow(rowIdx);
       if (!meta || !r || !activeTableId) return;
       let value: Json;
       switch (newValue.kind) {
@@ -213,14 +247,14 @@ export default function TableView() {
       }
       void updateCell(r.rid, meta.id, value);
     },
-    [columns, rows, activeTableId, updateCell],
+    [columns, getRow, activeTableId, updateCell],
   );
 
   const onCellClicked = useCallback(
     (cell: Item, event: CellClickedEventArgs) => {
       const meta = columns[cell[0]];
       const rowIdx = cell[1];
-      if (!meta || !rows[rowIdx] || !hasPopupEditor(meta)) return;
+      if (!meta || !getRow(rowIdx) || !hasPopupEditor(meta)) return;
       const rect = gridWrapRef.current?.getBoundingClientRect();
       const b = event.bounds;
       setPicker({
@@ -234,7 +268,7 @@ export default function TableView() {
         },
       });
     },
-    [columns, rows],
+    [columns, getRow],
   );
 
   const onHeaderContextMenu = useCallback(
@@ -256,11 +290,11 @@ export default function TableView() {
   const selectedRids = useMemo(() => {
     const out: string[] = [];
     for (const i of gridSelection.rows) {
-      const r = rows[i];
+      const r = rowsCache.get(i);
       if (r) out.push(r.rid);
     }
     return out;
-  }, [gridSelection, rows]);
+  }, [gridSelection, rowsCache, rowsVersion]);
 
   if (!table || !activeTableId) {
     return (
@@ -270,14 +304,14 @@ export default function TableView() {
     );
   }
 
-  const pickerRow = picker ? rows[picker.rowIdx] : undefined;
+  const pickerRow = picker ? getRow(picker.rowIdx) : undefined;
 
   return (
     <div className="table-view">
       <div className="toolbar">
         <h2 className="toolbar-title">{table.name}</h2>
         <span className="toolbar-count">
-          {page ? `${page.total} 行` : ""}
+          {total > 0 || rowsCache.size > 0 ? `${total} 行` : ""}
           {searchQuery ? `（搜索“${searchQuery}”）` : ""}
         </span>
         <div className="toolbar-spacer" />
@@ -321,11 +355,12 @@ export default function TableView() {
       <div className="grid-wrap" ref={gridWrapRef}>
         <DataEditor
           columns={gridColumns}
-          rows={rows.length}
+          rows={total}
           getCellContent={getCellContent}
           onCellEdited={onCellEdited}
           onCellClicked={onCellClicked}
           onHeaderContextMenu={onHeaderContextMenu}
+          onVisibleRegionChanged={onVisibleRegionChanged}
           rowMarkers={{ kind: "both" }}
           gridSelection={gridSelection}
           onGridSelectionChange={setGridSelection}
