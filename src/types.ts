@@ -208,6 +208,36 @@ export interface WorkspaceInfo {
   format_version: number;
 }
 
+// ---- CSV import ----
+
+export interface CsvPreview {
+  /** First record; shown as the editable header row by default. */
+  first_row: string[];
+  /** Data rows after the first record (preview only). */
+  rows: string[][];
+  /** Total record count in the file, including the first record. */
+  total_rows: number;
+  width: number;
+  delimiter: string;
+  encoding: string;
+  ragged: boolean;
+  suggested_types: ColumnType[];
+}
+
+export interface ImportCsvOptions {
+  path: string;
+  table_name: string;
+  use_header: boolean;
+  headers: string[];
+  types: ColumnType[];
+}
+
+export interface ImportReport {
+  table: TableMeta;
+  imported: number;
+  invalid_cells: number;
+}
+
 export interface CommandError {
   kind: string;
   message: string;

@@ -1,9 +1,19 @@
 import { useState } from "react";
+import * as ipc from "../ipc";
 import { useWorkspace } from "../stores/workspace";
 import { ChangePasswordDialog, CreateTableDialog } from "./dialogs";
+import ImportCsvDialog from "./ImportCsvDialog";
 import { confirm } from "../ui/ConfirmDialog";
 import { t } from "../i18n";
-import { IconDatabase, IconKey, IconLogout, IconPlus, IconTable, IconTrash } from "./icons";
+import {
+  IconDatabase,
+  IconKey,
+  IconLogout,
+  IconPlus,
+  IconTable,
+  IconTrash,
+  IconUpload,
+} from "./icons";
 import { ThemeSwitch } from "../ui/ThemeSwitch";
 import { Tooltip } from "../ui/Tooltip";
 
@@ -23,8 +33,18 @@ export default function Sidebar() {
 
   const [showCreateTable, setShowCreateTable] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
+  const [importPath, setImportPath] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  const startImport = async () => {
+    try {
+      const picked = await ipc.pickCsvFile();
+      if (picked) setImportPath(picked);
+    } catch {
+      // The native dialog failing is non-fatal; keep the UI as-is.
+    }
+  };
 
   return (
     <aside className="sidebar">
@@ -58,9 +78,16 @@ export default function Sidebar() {
             {t("sidebar.tables")}
             {tables.length > 0 && <span className="section-count">{tables.length}</span>}
           </span>
-          <button className="btn-icon" title={t("sidebar.newTable")} onClick={() => setShowCreateTable(true)}>
-            <IconPlus size={14} />
-          </button>
+          <span className="section-actions">
+            <button className="btn-icon" title={t("sidebar.newTable")} onClick={() => setShowCreateTable(true)}>
+              <IconPlus size={14} />
+            </button>
+            <Tooltip label={t("importCsv.action")}>
+              <button className="btn-icon" onClick={() => void startImport()}>
+                <IconUpload size={14} />
+              </button>
+            </Tooltip>
+          </span>
         </div>
         <ul className="nav-list">
           {tables.map((table) => (
@@ -126,6 +153,9 @@ export default function Sidebar() {
               <button className="btn ghost" onClick={() => setShowCreateTable(true)}>
                 <IconPlus size={14} /> {t("sidebar.newTableAction")}
               </button>
+              <button className="btn ghost" onClick={() => void startImport()}>
+                <IconUpload size={14} /> {t("importCsv.action")}
+              </button>
             </li>
           )}
         </ul>
@@ -138,6 +168,7 @@ export default function Sidebar() {
 
       {showCreateTable && <CreateTableDialog onClose={() => setShowCreateTable(false)} />}
       {showChangePw && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}
+      {importPath && <ImportCsvDialog path={importPath} onClose={() => setImportPath(null)} />}
     </aside>
   );
 }

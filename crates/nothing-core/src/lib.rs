@@ -10,12 +10,14 @@
 
 pub mod db;
 pub mod error;
+pub mod import;
 pub mod query;
 pub mod schema;
 
 pub use db::migrate::CURRENT_FORMAT_VERSION;
 pub use db::{Workspace, MAGIC};
 pub use error::AppError;
+pub use import::{read_csv_preview, CsvPreview, ImportCsvOptions, ImportReport};
 pub use query::{Cells, Row, RowPage, SqlColumn, SqlResult, ViewResult};
 pub use schema::{
     Choice, ColumnColor, ColumnMeta, ColumnOpts, ColumnPatch, ColumnType, FilterNode, FilterOp,

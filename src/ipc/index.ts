@@ -9,6 +9,9 @@ import type {
   ColumnMeta,
   ColumnPatch,
   CommandError,
+  CsvPreview,
+  ImportCsvOptions,
+  ImportReport,
   NewColumn,
   NewView,
   Row,
@@ -126,6 +129,14 @@ export const search = (tableId: string, query: string, limit?: number, offset?: 
 export const runSql = (sql: string, limit?: number, offset?: number) =>
   call<SqlResult>("run_sql", { sql, limit, offset });
 
+// ---- CSV import ----
+
+export const csvPreview = (path: string, previewRows?: number) =>
+  call<CsvPreview>("csv_preview", { path, previewRows });
+
+export const csvImport = (options: ImportCsvOptions) =>
+  call<ImportReport>("csv_import", { options });
+
 // ---- native dialogs ----
 
 export async function pickWorkspaceFile(): Promise<string | null> {
@@ -144,4 +155,13 @@ export async function pickNewWorkspacePath(): Promise<string | null> {
   });
   if (typeof picked !== "string") return null;
   return picked.endsWith(".nothing") ? picked : `${picked}.nothing`;
+}
+
+export async function pickCsvFile(): Promise<string | null> {
+  const picked = await open({
+    multiple: false,
+    filters: [{ name: t("importCsv.fileType"), extensions: ["csv", "tsv", "txt"] }],
+    title: t("importCsv.pickTitle"),
+  });
+  return typeof picked === "string" ? picked : null;
 }

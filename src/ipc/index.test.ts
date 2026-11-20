@@ -10,7 +10,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { IpcError, rowUpdate, viewRun, workspaceOpen } from "./index";
+import { csvImport, csvPreview, IpcError, rowUpdate, viewRun, workspaceOpen } from "./index";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -41,6 +41,27 @@ describe("ipc argument mapping", () => {
       viewId: "v1",
       limit: 50,
       offset: 100,
+    });
+  });
+
+  it("maps CSV preview and import arguments", async () => {
+    mockInvoke.mockResolvedValue({});
+    await csvPreview("/data/a.csv", 20);
+    expect(mockInvoke).toHaveBeenCalledWith("csv_preview", {
+      path: "/data/a.csv",
+      previewRows: 20,
+    });
+
+    const options = {
+      path: "/data/a.csv",
+      table_name: "导入表",
+      use_header: true,
+      headers: ["标题", "数量"],
+      types: ["text", "number"] as const,
+    };
+    await csvImport({ ...options, types: [...options.types] });
+    expect(mockInvoke).toHaveBeenCalledWith("csv_import", {
+      options: { ...options, types: [...options.types] },
     });
   });
 });

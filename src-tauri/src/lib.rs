@@ -45,6 +45,9 @@ pub fn run() {
             // search & ad-hoc SQL
             commands::search,
             commands::run_sql,
+            // CSV import
+            commands::csv_preview,
+            commands::csv_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nothing");

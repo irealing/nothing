@@ -6,7 +6,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../ipc");
 
 import * as ipc from "../ipc";
-import type { ColumnMeta, Row, RowPage, TableMeta, ViewMeta, ViewResult } from "../types";
+import type {
+  ColumnMeta,
+  ImportCsvOptions,
+  Row,
+  RowPage,
+  TableMeta,
+  ViewMeta,
+  ViewResult,
+} from "../types";
 import { PAGE_SIZE, useWorkspace } from "./workspace";
 
 const T1: TableMeta = {
@@ -143,6 +151,55 @@ describe("openWorkspace", () => {
     const s = useWorkspace.getState();
     expect(s.info).toBeNull();
     expect(s.error).toContain("密码不正确");
+    expect(s.loading).toBe(false);
+  });
+});
+
+describe("importCsv", () => {
+  const NEW_TABLE: TableMeta = { ...T1, id: "t2", name: "导入表", title_col_id: "c2" };
+  const NEW_COL: ColumnMeta = { ...COL, id: "c2", table_id: "t2" };
+  const NEW_VIEW: ViewMeta = { ...GRID_V, id: "v2", table_id: "t2" };
+  const OPTIONS: ImportCsvOptions = {
+    path: "/a.csv",
+    table_name: "导入表",
+    use_header: true,
+    headers: ["标题"],
+    types: ["text"],
+  };
+
+  it("imports, refreshes tables and activates the new table", async () => {
+    const report = { table: NEW_TABLE, imported: 3, invalid_cells: 1 };
+    vi.mocked(ipc.csvImport).mockResolvedValue(report);
+    vi.mocked(ipc.tableList).mockResolvedValue([T1, NEW_TABLE]);
+    vi.mocked(ipc.columnList).mockResolvedValue([NEW_COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([NEW_VIEW]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    const result = await useWorkspace.getState().importCsv(OPTIONS);
+
+    expect(result).toEqual(report);
+    expect(ipc.csvImport).toHaveBeenCalledWith(OPTIONS);
+    expect(ipc.columnList).toHaveBeenCalledWith("t2");
+    const s = useWorkspace.getState();
+    expect(s.error).toBeNull();
+    expect(s.tables.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(s.activeTableId).toBe("t2");
+    expect(s.activeViewId).toBe("v2");
+    expect(s.loading).toBe(false);
+  });
+
+  it("captures backend failures and keeps the current table active", async () => {
+    useWorkspace.setState({ ...dataState, rowsCache: new Map(), activeTableId: "t1" });
+    vi.mocked(ipc.csvImport).mockRejectedValue(
+      new FakeIpcError("AlreadyExists", "名称已存在: 表 导入表"),
+    );
+
+    const result = await useWorkspace.getState().importCsv(OPTIONS);
+
+    expect(result).toBeNull();
+    const s = useWorkspace.getState();
+    expect(s.activeTableId).toBe("t1");
+    expect(s.error).toContain("名称已存在");
     expect(s.loading).toBe(false);
   });
 });

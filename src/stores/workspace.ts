@@ -13,6 +13,8 @@ import type {
   ColumnMeta,
   ColumnPatch,
   GridConfig,
+  ImportCsvOptions,
+  ImportReport,
   Json,
   NewColumn,
   NewView,
@@ -84,6 +86,7 @@ interface WorkspaceState {
 
   // tables & columns
   createTable: (name: string, columns: NewColumn[]) => Promise<void>;
+  importCsv: (options: ImportCsvOptions) => Promise<ImportReport | null>;
   deleteTable: (id: string) => Promise<void>;
   renameTable: (id: string, name: string) => Promise<void>;
   setTitleColumn: (colId: string) => Promise<void>;
@@ -373,6 +376,23 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         set({ tables: await ipc.tableList() });
         await activateTable(t.id);
       });
+    },
+
+    importCsv: async (options) => {
+      // Returns the report so the dialog can show counts; on failure the
+      // existing toast carries the error and the dialog stays open.
+      set({ loading: true, error: null });
+      try {
+        const report = await ipc.csvImport(options);
+        set({ tables: await ipc.tableList() });
+        await activateTable(report.table.id);
+        return report;
+      } catch (e) {
+        set({ error: errorText(e) });
+        return null;
+      } finally {
+        set({ loading: false });
+      }
     },
 
     deleteTable: async (id) => {

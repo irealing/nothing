@@ -4,8 +4,8 @@
 use std::sync::Mutex;
 
 use nothing_core::{
-    Cells, ColumnMeta, ColumnPatch, NewColumn, NewView, Row, RowPage, SqlResult, TableMeta,
-    ViewMeta, ViewPatch, ViewResult, Workspace,
+    Cells, ColumnMeta, ColumnPatch, CsvPreview, ImportCsvOptions, ImportReport, NewColumn, NewView,
+    Row, RowPage, SqlResult, TableMeta, ViewMeta, ViewPatch, ViewResult, Workspace,
 };
 use serde::Serialize;
 use tauri::State;
@@ -331,4 +331,18 @@ pub fn run_sql(
     offset: Option<i64>,
 ) -> CmdResult<SqlResult> {
     with_ws(&state, |ws| ws.run_sql(&sql, limit, offset))
+}
+
+// ---------------------------------------------------------------------------
+// CSV import
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn csv_preview(path: String, preview_rows: Option<usize>) -> CmdResult<CsvPreview> {
+    nothing_core::read_csv_preview(&path, preview_rows.unwrap_or(20)).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn csv_import(state: State<AppState>, options: ImportCsvOptions) -> CmdResult<ImportReport> {
+    with_ws(&state, |ws| ws.import_csv(options))
 }

@@ -23,7 +23,7 @@ use super::{
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
 
-const MAX_COLUMNS: usize = 200;
+pub(crate) const MAX_COLUMNS: usize = 200;
 
 /// Map SQLite constraint failures onto semantic [`AppError`] variants so the
 /// UI can show meaningful messages.
@@ -146,6 +146,102 @@ fn setup_relation(conn: &Connection, src_table: &TableMeta, col: &ColumnMeta) ->
     Ok(())
 }
 
+/// Create a table inside an existing transaction.
+///
+/// Shared by [`Workspace::create_table`] and CSV import so both go through the
+/// same validation and DDL path (铁律 1: callers own the transaction).
+pub(crate) fn create_table_tx(
+    conn: &Connection,
+    name: &str,
+    columns: Vec<NewColumn>,
+) -> Result<TableMeta> {
+    let name = validate_user_name("表名", name)?;
+    if columns.is_empty() {
+        return Err(AppError::InvalidInput("表至少需要一列".into()));
+    }
+    if columns.len() > MAX_COLUMNS {
+        return Err(AppError::InvalidInput(format!(
+            "列数超过上限（{MAX_COLUMNS}）"
+        )));
+    }
+    if columns[0].col_type != ColumnType::Text {
+        return Err(AppError::InvalidInput(
+            "第一列必须是文本列（作为标题列）".into(),
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for c in &columns {
+        let n = validate_user_name("列名", &c.name)?;
+        if !seen.insert(n) {
+            return Err(AppError::AlreadyExists(format!("列名 {}", c.name)));
+        }
+        let opts = c
+            .opts
+            .clone()
+            .unwrap_or_else(|| ColumnOpts::default_for(c.col_type));
+        super::validate_opts(c.col_type, &opts)?;
+    }
+
+    ensure_table_name_free(conn, &name, None)?;
+    // Relation targets must already exist (a table cannot relate to itself
+    // during creation).
+    for c in &columns {
+        if c.col_type == ColumnType::Relation {
+            let opts = c
+                .opts
+                .as_ref()
+                .ok_or_else(|| AppError::InvalidInput("关联列必须提供选项".into()))?;
+            let target_id = &opts.relation()?.target_table_id;
+            load_table(conn, target_id)?;
+        }
+    }
+
+    let table_id = new_id();
+    let sql_name = table_sql_name(&table_id);
+    let position: i64 = conn.query_row(
+        r#"SELECT COALESCE(MAX("position"), -1) + 1 FROM "_tables""#,
+        [],
+        |r| r.get(0),
+    )?;
+    let now = now_iso();
+
+    let mut metas = Vec::with_capacity(columns.len());
+    for (i, c) in columns.iter().enumerate() {
+        metas.push(build_column_meta(&table_id, c, i as i64)?);
+    }
+    let title_col_id = metas[0].id.clone();
+
+    conn.execute(
+        r#"INSERT INTO "_tables"
+             ("id","name","sql_name","title_col_id","icon","position","created_at","updated_at")
+           VALUES (?1,?2,?3,?4,NULL,?5,?6,?6)"#,
+        rusqlite::params![table_id, name, sql_name, title_col_id, position, now],
+    )
+    .map_err(map_sqlite_err)?;
+    for m in &metas {
+        super::insert_column(conn, m)?;
+    }
+
+    conn.execute_batch(&create_table_ddl(&sql_name, &metas)?)?;
+    for m in metas.iter().filter(|m| m.col_type == ColumnType::Relation) {
+        let table_meta = TableMeta {
+            id: table_id.clone(),
+            name: name.clone(),
+            sql_name: sql_name.clone(),
+            title_col_id: Some(title_col_id.clone()),
+            icon: None,
+            position,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+        setup_relation(conn, &table_meta, m)?;
+    }
+
+    let table = load_table(conn, &table_id)?;
+    fts::rebuild(conn, &table, &metas)?;
+    Ok(table)
+}
+
 impl Workspace {
     // ------------------------------------------------------------------
     // Tables
@@ -156,93 +252,7 @@ impl Workspace {
     /// The first column must be a text column — it becomes the table's title
     /// column (used by relation pickers as the row display name).
     pub fn create_table(&self, name: &str, columns: Vec<NewColumn>) -> Result<TableMeta> {
-        let name = validate_user_name("表名", name)?;
-        if columns.is_empty() {
-            return Err(AppError::InvalidInput("表至少需要一列".into()));
-        }
-        if columns.len() > MAX_COLUMNS {
-            return Err(AppError::InvalidInput(format!(
-                "列数超过上限（{MAX_COLUMNS}）"
-            )));
-        }
-        if columns[0].col_type != ColumnType::Text {
-            return Err(AppError::InvalidInput(
-                "第一列必须是文本列（作为标题列）".into(),
-            ));
-        }
-        let mut seen = std::collections::HashSet::new();
-        for c in &columns {
-            let n = validate_user_name("列名", &c.name)?;
-            if !seen.insert(n) {
-                return Err(AppError::AlreadyExists(format!("列名 {}", c.name)));
-            }
-            let opts = c
-                .opts
-                .clone()
-                .unwrap_or_else(|| ColumnOpts::default_for(c.col_type));
-            super::validate_opts(c.col_type, &opts)?;
-        }
-
-        self.with_tx(|conn| {
-            ensure_table_name_free(conn, &name, None)?;
-            // Relation targets must already exist (a table cannot relate to
-            // itself during creation).
-            for c in &columns {
-                if c.col_type == ColumnType::Relation {
-                    let opts = c
-                        .opts
-                        .as_ref()
-                        .ok_or_else(|| AppError::InvalidInput("关联列必须提供选项".into()))?;
-                    let target_id = &opts.relation()?.target_table_id;
-                    load_table(conn, target_id)?;
-                }
-            }
-
-            let table_id = new_id();
-            let sql_name = table_sql_name(&table_id);
-            let position: i64 = conn.query_row(
-                r#"SELECT COALESCE(MAX("position"), -1) + 1 FROM "_tables""#,
-                [],
-                |r| r.get(0),
-            )?;
-            let now = now_iso();
-
-            let mut metas = Vec::with_capacity(columns.len());
-            for (i, c) in columns.iter().enumerate() {
-                metas.push(build_column_meta(&table_id, c, i as i64)?);
-            }
-            let title_col_id = metas[0].id.clone();
-
-            conn.execute(
-                r#"INSERT INTO "_tables"
-                     ("id","name","sql_name","title_col_id","icon","position","created_at","updated_at")
-                   VALUES (?1,?2,?3,?4,NULL,?5,?6,?6)"#,
-                rusqlite::params![table_id, name, sql_name, title_col_id, position, now],
-            )
-            .map_err(map_sqlite_err)?;
-            for m in &metas {
-                super::insert_column(conn, m)?;
-            }
-
-            conn.execute_batch(&create_table_ddl(&sql_name, &metas)?)?;
-            for m in metas.iter().filter(|m| m.col_type == ColumnType::Relation) {
-                let table_meta = TableMeta {
-                    id: table_id.clone(),
-                    name: name.clone(),
-                    sql_name: sql_name.clone(),
-                    title_col_id: Some(title_col_id.clone()),
-                    icon: None,
-                    position,
-                    created_at: now.clone(),
-                    updated_at: now.clone(),
-                };
-                setup_relation(conn, &table_meta, m)?;
-            }
-
-            let table = load_table(conn, &table_id)?;
-            fts::rebuild(conn, &table, &metas)?;
-            Ok(table)
-        })
+        self.with_tx(|conn| create_table_tx(conn, name, columns))
     }
 
     pub fn list_tables(&self) -> Result<Vec<TableMeta>> {

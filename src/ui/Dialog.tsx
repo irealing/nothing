@@ -42,16 +42,20 @@ export function Dialog({
   subtitle,
   onClose,
   wide,
+  xwide,
   children,
 }: {
   title: string;
   subtitle?: string;
   onClose: () => void;
   wide?: boolean;
+  /** Extra-wide panel for data-heavy dialogs (CSV import). */
+  xwide?: boolean;
   children: ReactNode;
 }) {
+  const contentClass = xwide ? "modal modal-xwide" : wide ? "modal modal-wide" : "modal";
   return (
-    <Shell onClose={onClose} layerClass="modal-layer" contentClass={wide ? "modal modal-wide" : "modal"}>
+    <Shell onClose={onClose} layerClass="modal-layer" contentClass={contentClass}>
       <div className="modal-head">
         <div className="modal-heading">
           <DialogPrimitive.Title asChild>
