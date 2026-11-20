@@ -7,6 +7,7 @@ import * as ipc from "../ipc";
 import { useWorkspace } from "../stores/workspace";
 import { SqlEditor } from "./SqlEditor";
 import SqlResultTable from "./SqlResultTable";
+import { SchemaBrowser, tableQuery } from "./SchemaBrowser";
 import { IconCode, IconPlay, IconX } from "./icons";
 import { t } from "../i18n";
 import type { SqlResult } from "../types";
@@ -45,6 +46,7 @@ export default function ScratchQueryPanel() {
         </div>
         <span className="toolbar-count">{t("sql.scratchHint")}</span>
         <div className="toolbar-spacer" />
+        <SchemaBrowser onPickTable={(sqlName) => setStatement(tableQuery(sqlName))} />
         <button
           className="btn ghost"
           disabled={running || !statement.trim()}
