@@ -120,6 +120,7 @@ const dataState = {
   titles: {},
   sqlResult: null,
   searchQuery: "",
+  scratch: { open: false, statement: "SELECT " },
   loading: false,
   error: null,
 };
@@ -535,6 +536,54 @@ describe("view actions", () => {
 
     expect(useWorkspace.getState().activeViewId).toBe("v2");
     expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "v2");
+  });
+});
+
+describe("scratch query", () => {
+  it("keeps the draft while the panel is closed and reopened", () => {
+    const s = useWorkspace.getState();
+    s.openScratch();
+    s.setScratchStatement("SELECT 1");
+    s.closeScratch();
+
+    const afterClose = useWorkspace.getState();
+    expect(afterClose.scratch.open).toBe(false);
+    expect(afterClose.scratch.statement).toBe("SELECT 1");
+
+    afterClose.openScratch();
+    expect(useWorkspace.getState().scratch.open).toBe(true);
+  });
+
+  it("closes when switching to a table or a view", async () => {
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      columns: [COL],
+      views: [GRID_V, GRID_V2],
+      activeViewId: "v1",
+      scratch: { open: true, statement: "SELECT 1" },
+    });
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V, GRID_V2]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().selectView("v2");
+    expect(useWorkspace.getState().scratch.open).toBe(false);
+    expect(useWorkspace.getState().scratch.statement).toBe("SELECT 1");
+
+    useWorkspace.setState((s) => ({ scratch: { ...s.scratch, open: true } }));
+    await useWorkspace.getState().selectTable("t1");
+    expect(useWorkspace.getState().scratch.open).toBe(false);
+  });
+
+  it("discards the draft when the workspace closes", async () => {
+    vi.mocked(ipc.workspaceClose).mockResolvedValue(undefined);
+    useWorkspace.setState({ scratch: { open: true, statement: "SELECT 42" } });
+
+    await useWorkspace.getState().closeWorkspace();
+
+    expect(useWorkspace.getState().scratch).toEqual({ open: false, statement: "SELECT " });
   });
 });
 

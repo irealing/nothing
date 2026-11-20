@@ -10,7 +10,14 @@ function renderCell(v: Json): string {
 }
 
 /** Pure renderer for columnar SQL results. */
-export default function SqlResultTable({ result }: { result: SqlResult | null }) {
+export default function SqlResultTable({
+  result,
+  emptyHint,
+}: {
+  result: SqlResult | null;
+  /** Overrides the SQL-view hint for callers without a save action. */
+  emptyHint?: string;
+}) {
   if (!result) {
     return (
       <div className="empty-state">
@@ -18,7 +25,7 @@ export default function SqlResultTable({ result }: { result: SqlResult | null })
           <span className="empty-icon">
             <IconCode size={24} />
           </span>
-          <p>{t("sql.emptyHint")}</p>
+          <p>{emptyHint ?? t("sql.emptyHint")}</p>
         </div>
       </div>
     );

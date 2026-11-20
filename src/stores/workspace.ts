@@ -106,6 +106,8 @@ interface WorkspaceState {
 
   sqlResult: SqlResult | null;
   searchQuery: string;
+  /** Session-only scratch SQL console; never written to the workspace file. */
+  scratch: { open: boolean; statement: string };
   loading: boolean;
   error: string | null;
 
@@ -125,6 +127,11 @@ interface WorkspaceState {
   selectTable: (id: string) => Promise<void>;
   selectView: (viewId: string | null) => Promise<void>;
   refresh: () => Promise<void>;
+
+  // scratch read-only SQL console
+  openScratch: () => void;
+  closeScratch: () => void;
+  setScratchStatement: (statement: string) => void;
 
   // tables & columns
   createTable: (name: string, columns: NewColumn[], icon?: string | null) => Promise<void>;
@@ -294,7 +301,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   async function activateTable(tableId: string, preferredViewId: string | null = null) {
     const columns = await ipc.columnList(tableId);
     let views = await ipc.viewList(tableId);
-    set({ activeTableId: tableId, columns, views, searchQuery: "" });
+    set({
+      activeTableId: tableId,
+      columns,
+      views,
+      searchQuery: "",
+      scratch: { ...get().scratch, open: false },
+    });
     let gridViews = views.filter((v) => v.kind === "grid");
     if (gridViews.length === 0) {
       await ipc.viewCreate({
@@ -360,6 +373,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     titles: {},
     sqlResult: null,
     searchQuery: "",
+    scratch: { open: false, statement: "SELECT " },
     loading: false,
     error: null,
 
@@ -407,6 +421,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           sqlResult: null,
           source: { kind: "none" },
           pendingPath: null,
+          scratch: { open: false, statement: "SELECT " },
         });
         syncTitle(info);
         // The core just recorded this open; mirror it locally so closing the
@@ -437,6 +452,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           searchQuery: "",
           source: { kind: "none" },
           pendingPath: null,
+          scratch: { open: false, statement: "SELECT " },
         });
         syncTitle(info);
         await syncSettings();
@@ -460,6 +476,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           sqlResult: null,
           searchQuery: "",
           source: { kind: "none" },
+          scratch: { open: false, statement: "SELECT " },
         });
         syncTitle(null);
       });
@@ -477,6 +494,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       const { activeTableId } = get();
       if (!activeTableId) return;
       await guard(set, get, async () => {
+        set((s) => ({ scratch: { ...s.scratch, open: false } }));
         await loadTableData(activeTableId, viewId);
         await persistUi();
       });
@@ -488,6 +506,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         await afterWrite();
       });
     },
+
+    openScratch: () => set((s) => ({ scratch: { ...s.scratch, open: true } })),
+    closeScratch: () => set((s) => ({ scratch: { ...s.scratch, open: false } })),
+    setScratchStatement: (statement) =>
+      set((s) => ({ scratch: { ...s.scratch, statement } })),
 
     createTable: async (name, columns, icon) => {
       await guard(set, get, async () => {

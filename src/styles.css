@@ -546,6 +546,18 @@ body,
   padding: 8px 12px 12px;
 }
 
+.sidebar-foot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sidebar-foot-row .theme-switch {
+  flex: 1;
+  margin-bottom: 0;
+}
+
 .nav-hint {
   font-size: 11px;
   color: var(--text-weak);

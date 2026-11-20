@@ -6,6 +6,7 @@ import ImportCsvDialog from "./ImportCsvDialog";
 import { confirm } from "../ui/ConfirmDialog";
 import { t } from "../i18n";
 import {
+  IconCode,
   IconDatabase,
   IconKey,
   IconLogout,
@@ -26,6 +27,7 @@ export default function Sidebar() {
   const renameTable = useWorkspace((s) => s.renameTable);
   const setTableIcon = useWorkspace((s) => s.setTableIcon);
   const deleteTable = useWorkspace((s) => s.deleteTable);
+  const openScratch = useWorkspace((s) => s.openScratch);
   const closeWorkspace = useWorkspace((s) => s.closeWorkspace);
 
   const [showCreateTable, setShowCreateTable] = useState(false);
@@ -176,7 +178,18 @@ export default function Sidebar() {
       </div>
 
       <div className="sidebar-foot">
-        <ThemeSwitch />
+        <div className="sidebar-foot-row">
+          <ThemeSwitch />
+          <Tooltip label={t("sql.scratch")}>
+            <button
+              className="btn-icon"
+              aria-label={t("sql.scratch")}
+              onClick={() => openScratch()}
+            >
+              <IconCode size={15} />
+            </button>
+          </Tooltip>
+        </div>
         <p className="nav-hint">{t("sidebar.renameHint")}</p>
       </div>
 
