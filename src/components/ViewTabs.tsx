@@ -1,15 +1,23 @@
 import { useState } from "react";
 import { useWorkspace } from "../stores/workspace";
-import { Modal } from "./dialogs";
+import { Dialog } from "../ui/Dialog";
+import { Field, Input } from "../ui/Field";
+import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
+import { confirm } from "../ui/ConfirmDialog";
+import { t } from "../i18n";
 import { SqlEditor } from "./SqlEditor";
+import { IconChevronDown, IconCode, IconGridView, IconPencil, IconPlus, IconPlay, IconTrash } from "./icons";
 import type { ViewMeta } from "../types";
 
 /**
  * View tab bar: the active table's grid views, a separator, then all
  * workspace-level SQL views. "+" creates either kind; the active tab gets a
  * rename/delete menu.
+ *
+ * The menus are portalled (Radix), so the strip's `overflow-x: auto` no longer
+ * swallows them — that was why "add view" looked missing.
  */
-export default function ViewTabs() {
+export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
   const views = useWorkspace((s) => s.views);
   const activeViewId = useWorkspace((s) => s.activeViewId);
   const activeTableId = useWorkspace((s) => s.activeTableId);
@@ -19,21 +27,18 @@ export default function ViewTabs() {
   const updateView = useWorkspace((s) => s.updateView);
   const deleteView = useWorkspace((s) => s.deleteView);
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [tabMenu, setTabMenu] = useState<string | null>(null);
   const [gridDialog, setGridDialog] = useState(false);
   const [sqlDialog, setSqlDialog] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ViewMeta | null>(null);
   const [nameInput, setNameInput] = useState("");
 
-  if (!activeTableId) return null;
-
   const gridViews = views.filter((v) => v.kind === "grid");
   const sqlViews = views.filter((v) => v.kind === "sql");
-  const active = views.find((v) => v.id === activeViewId) ?? null;
+
+  if (!activeTableId && sqlViews.length === 0) return null;
 
   const submitNewGrid = async () => {
-    const name = nameInput.trim() || `视图 ${gridViews.length + 1}`;
+    const name = nameInput.trim() || t("view.namePlaceholder", { n: gridViews.length + 1 });
     setGridDialog(false);
     setNameInput("");
     await createGridView(name);
@@ -47,18 +52,49 @@ export default function ViewTabs() {
           className={v.id === activeViewId ? "view-tab active" : "view-tab"}
           onClick={() => void selectView(v.id)}
         >
-          <span className="view-tab-icon">▤</span>
+          <span className="view-tab-icon">
+            <IconGridView size={13} />
+          </span>
           <span>{v.name}</span>
           {v.id === activeViewId && (
-            <button
-              className="btn-icon tab-menu-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setTabMenu(tabMenu === v.id ? null : v.id);
-              }}
+            <Menu
+              align="end"
+              ariaLabel={t("view.rename")}
+              trigger={
+                <button
+                  className="btn-icon tab-menu-btn"
+                  aria-label={t("view.rename")}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <IconChevronDown size={12} />
+                </button>
+              }
             >
-              ▾
-            </button>
+              <MenuItem
+                onSelect={() => {
+                  setNameInput(v.name);
+                  setRenameTarget(v);
+                }}
+              >
+                <IconPencil size={14} /> {t("view.rename")}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                onSelect={() => {
+                  void confirm({
+                    title: t("view.deleteTitle"),
+                    description: t("view.deleteConfirm", { name: v.name }),
+                    confirmLabel: t("common.delete"),
+                    danger: true,
+                  }).then((ok) => {
+                    if (ok) void deleteView(v.id);
+                  });
+                }}
+              >
+                <IconTrash size={14} /> {t("view.delete")}
+              </MenuItem>
+            </Menu>
           )}
         </div>
       ))}
@@ -68,77 +104,87 @@ export default function ViewTabs() {
           key={v.id}
           className={v.id === activeViewId ? "view-tab active" : "view-tab"}
           onClick={() => void selectView(v.id)}
-          title="SQL 视图（工作区级）"
+          title={t("view.sqlBadge")}
         >
-          <span className="view-tab-icon">⌘</span>
+          <span className="view-tab-icon">
+            <IconCode size={13} />
+          </span>
           <span>{v.name}</span>
           {v.id === activeViewId && (
-            <button
-              className="btn-icon tab-menu-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setTabMenu(tabMenu === v.id ? null : v.id);
-              }}
+            <Menu
+              align="end"
+              trigger={
+                <button
+                  className="btn-icon tab-menu-btn"
+                  aria-label={t("view.rename")}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <IconChevronDown size={12} />
+                </button>
+              }
             >
-              ▾
-            </button>
+              <MenuItem
+                onSelect={() => {
+                  setNameInput(v.name);
+                  setRenameTarget(v);
+                }}
+              >
+                <IconPencil size={14} /> {t("view.rename")}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                onSelect={() => {
+                  void confirm({
+                    title: t("view.delete"),
+                    description: t("view.deleteConfirm", { name: v.name }),
+                    confirmLabel: t("common.delete"),
+                    danger: true,
+                  }).then((ok) => {
+                    if (ok) void deleteView(v.id);
+                  });
+                }}
+              >
+                <IconTrash size={14} /> {t("view.delete")}
+              </MenuItem>
+            </Menu>
           )}
         </div>
       ))}
 
       <div className="view-tabs-add">
-        <button className="btn-icon" onClick={() => setMenuOpen(!menuOpen)} title="新建视图">
-          ＋
-        </button>
-        {menuOpen && (
-          <div className="dropdown-menu" onMouseLeave={() => setMenuOpen(false)}>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
+        <Menu
+          align="start"
+          ariaLabel={t("view.newView")}
+          trigger={
+            <button className="btn ghost small">
+              <IconPlus size={13} /> {t("view.add")}
+            </button>
+          }
+        >
+          {hasTable && activeTableId && (
+            <MenuItem
+              onSelect={() => {
                 setNameInput("");
                 setGridDialog(true);
               }}
             >
-              ▤ 新建网格视图
-            </button>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                setNameInput("");
-                setSqlDialog(true);
-              }}
-            >
-              ⌘ 新建 SQL 视图
-            </button>
-          </div>
-        )}
+              <IconGridView size={14} /> {t("view.newGrid")}
+            </MenuItem>
+          )}
+          <MenuItem
+            onSelect={() => {
+              setNameInput("");
+              setSqlDialog(true);
+            }}
+          >
+            <IconCode size={14} /> {t("view.newSql")}
+          </MenuItem>
+        </Menu>
       </div>
 
-      {tabMenu && active && active.id === tabMenu && (
-        <div className="dropdown-menu tab-menu" onMouseLeave={() => setTabMenu(null)}>
-          <button
-            onClick={() => {
-              setTabMenu(null);
-              setNameInput(active.name);
-              setRenameTarget(active);
-            }}
-          >
-            重命名
-          </button>
-          <button
-            className="danger"
-            onClick={() => {
-              setTabMenu(null);
-              if (window.confirm(`删除视图「${active.name}」？`)) void deleteView(active.id);
-            }}
-          >
-            删除视图
-          </button>
-        </div>
-      )}
-
       {gridDialog && (
-        <Modal title="新建网格视图" onClose={() => setGridDialog(false)}>
+        <Dialog title={t("view.newGrid")} onClose={() => setGridDialog(false)}>
           <form
             className="form"
             onSubmit={(e) => {
@@ -146,20 +192,26 @@ export default function ViewTabs() {
               void submitNewGrid();
             }}
           >
-            <label>
-              视图名
-              <input
-                value={nameInput}
+            <Field label={t("view.name")}>
+              <Input
                 autoFocus
-                placeholder={`视图 ${gridViews.length + 1}`}
+                value={nameInput}
+                placeholder={t("view.namePlaceholder", { n: gridViews.length + 1 })}
                 onChange={(e) => setNameInput(e.target.value)}
               />
-            </label>
-            <button type="submit" className="btn primary">
-              创建
-            </button>
+            </Field>
+            <p className="hint">{t("view.gridHint")}</p>
+            <div className="modal-actions">
+              <div className="toolbar-spacer" />
+              <button type="button" className="btn" onClick={() => setGridDialog(false)}>
+                {t("common.cancel")}
+              </button>
+              <button type="submit" className="btn primary">
+                {t("view.create")}
+              </button>
+            </div>
           </form>
-        </Modal>
+        </Dialog>
       )}
 
       {sqlDialog && (
@@ -173,7 +225,7 @@ export default function ViewTabs() {
       )}
 
       {renameTarget && (
-        <Modal title="重命名视图" onClose={() => setRenameTarget(null)}>
+        <Dialog title={t("view.renameTitle")} onClose={() => setRenameTarget(null)}>
           <form
             className="form"
             onSubmit={(e) => {
@@ -184,15 +236,20 @@ export default function ViewTabs() {
               if (name) void updateView(target.id, { name });
             }}
           >
-            <label>
-              视图名
-              <input value={nameInput} autoFocus onChange={(e) => setNameInput(e.target.value)} />
-            </label>
-            <button type="submit" className="btn primary">
-              保存
-            </button>
+            <Field label={t("view.name")}>
+              <Input value={nameInput} autoFocus onChange={(e) => setNameInput(e.target.value)} />
+            </Field>
+            <div className="modal-actions">
+              <div className="toolbar-spacer" />
+              <button type="button" className="btn" onClick={() => setRenameTarget(null)}>
+                {t("common.cancel")}
+              </button>
+              <button type="submit" className="btn primary">
+                {t("common.save")}
+              </button>
+            </div>
           </form>
-        </Modal>
+        </Dialog>
       )}
     </div>
   );
@@ -208,7 +265,12 @@ export function CreateSqlViewDialog({
   const [name, setName] = useState("");
   const [statement, setStatement] = useState("SELECT ");
   return (
-    <Modal title="新建 SQL 视图" onClose={onClose}>
+    <Dialog
+      title={t("view.newSql")}
+      subtitle={t("sql.newViewSubtitle")}
+      onClose={onClose}
+      wide
+    >
       <form
         className="form"
         onSubmit={(e) => {
@@ -217,21 +279,28 @@ export function CreateSqlViewDialog({
           void onCreate(name.trim(), statement.trim());
         }}
       >
-        <label>
-          视图名
-          <input value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder="例如：任务统计" />
-        </label>
-        <label>
-          SELECT 语句（只读，支持 JOIN / 聚合 / 窗口函数）
-          <SqlEditor value={statement} onChange={setStatement} height="160px" />
-        </label>
-        <p className="hint">
-          提示：物理表名形如 t_xxxx，可在网格视图的列菜单里查看「SQL 引用名」。
-        </p>
-        <button type="submit" className="btn primary">
-          创建
-        </button>
+        <Field label={t("view.name")}>
+          <Input
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t("sql.namePlaceholder")}
+          />
+        </Field>
+        <Field label={t("sql.statement")}>
+          <SqlEditor value={statement} onChange={setStatement} height="180px" />
+        </Field>
+        <p className="hint">{t("sql.refHint")}</p>
+        <div className="modal-actions">
+          <div className="toolbar-spacer" />
+          <button type="button" className="btn" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button type="submit" className="btn primary" disabled={!name.trim()}>
+            <IconPlay size={13} /> {t("common.create")}
+          </button>
+        </div>
       </form>
-    </Modal>
+    </Dialog>
   );
 }

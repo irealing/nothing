@@ -14,27 +14,30 @@ import type {
   ViewMeta,
 } from "../types";
 import { isFilterGroup } from "../types";
+import { IconPlus, IconSliders, IconSortAsc, IconSortDesc, IconX } from "./icons";
+import { PanelDialog } from "../ui/Dialog";
+import { t } from "../i18n";
 
 type Kind = "text" | "select" | "multi_select" | "number" | "date" | "checkbox" | "relation";
 
 const OP_LABELS: Record<FilterOp, string> = {
-  eq: "等于",
-  neq: "不等于",
-  contains: "包含",
-  not_contains: "不包含",
-  starts_with: "开头是",
-  ends_with: "结尾是",
-  is_empty: "为空",
-  is_not_empty: "不为空",
-  gt: "大于",
-  gte: "大于等于",
-  lt: "小于",
-  lte: "小于等于",
-  in: "在列表中",
-  not_in: "不在列表中",
-  before: "早于",
-  after: "晚于",
-  on: "当天",
+  eq: t("ops.eq"),
+  neq: t("ops.neq"),
+  contains: t("ops.contains"),
+  not_contains: t("ops.not_contains"),
+  starts_with: t("ops.starts_with"),
+  ends_with: t("ops.ends_with"),
+  is_empty: t("ops.is_empty"),
+  is_not_empty: t("ops.is_not_empty"),
+  gt: t("ops.gt"),
+  gte: t("ops.gte"),
+  lt: t("ops.lt"),
+  lte: t("ops.lte"),
+  in: t("ops.in"),
+  not_in: t("ops.not_in"),
+  before: t("ops.before"),
+  after: t("ops.after"),
+  on: t("ops.on"),
 };
 
 const OPS_BY_KIND: Record<Kind, FilterOp[]> = {
@@ -73,6 +76,12 @@ function choicesOf(col: ColumnMeta | undefined): string[] {
     return col.opts.choices.map((c) => c.name);
   }
   return [];
+}
+
+
+/** Column label with its optional emoji icon. */
+function colLabel(c: { icon: string | null; name: string }): string {
+  return c.icon ? `${c.icon} ${c.name}` : c.name;
 }
 
 // ---- immutable draft helpers -------------------------------------------------
@@ -129,7 +138,7 @@ function ValueInput({
       <input
         className="filter-value"
         type="text"
-        placeholder="逗号分隔多个值"
+        placeholder={t("filter.multiValuePlaceholder")}
         value={text}
         onChange={(e) => {
           const parts = e.target.value
@@ -173,8 +182,8 @@ function ValueInput({
           value={value === true ? "true" : "false"}
           onChange={(e) => onChange(e.target.value === "true")}
         >
-          <option value="true">✓ 已勾选</option>
-          <option value="false">☐ 未勾选</option>
+          <option value="true">{t("filter.checked")}</option>
+          <option value="false">{t("filter.unchecked")}</option>
         </select>
       );
     case "select":
@@ -188,7 +197,7 @@ function ValueInput({
             onChange={(e) => onChange(e.target.value)}
           >
             <option value="" disabled>
-              选择…
+              {t("common.choose")}
             </option>
             {choices.map((c) => (
               <option key={c} value={c}>
@@ -213,7 +222,7 @@ function ValueInput({
           className="filter-value"
           type="text"
           value={typeof value === "string" ? value : ""}
-          placeholder="值"
+          placeholder={t("filter.valuePlaceholder")}
           onChange={(e) => onChange(e.target.value)}
         />
       );
@@ -295,22 +304,22 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
                 setFilters(next);
               }}
             >
-              <option value="and">满足所有（AND）</option>
-              <option value="or">满足任一（OR）</option>
+              <option value="and">{t("filter.and")}</option>
+              <option value="or">{t("filter.or")}</option>
             </select>
             <div className="toolbar-spacer" />
-            <button className="btn-icon" title="添加条件" onClick={() => addRule(path)}>
-              ＋条件
+            <button className="btn-icon text" title={t("filter.addRule")} onClick={() => addRule(path)}>
+              <IconPlus size={13} /> {t("filter.addRule")}
             </button>
             {path.length > 0 && (
-              <button className="btn-icon" title="添加分组" onClick={() => addGroup(path)}>
-                ＋分组
+              <button className="btn-icon text" title={t("filter.addGroup")} onClick={() => addGroup(path)}>
+                <IconPlus size={13} /> {t("filter.addGroup")}
               </button>
             )}
             {path.length > 0 && (
               <button
                 className="btn-icon danger"
-                title="删除分组"
+                title={t("filter.deleteGroup")}
                 onClick={() => {
                   const next = clone(draft.filters!);
                   const parentPath = path.slice(0, -1);
@@ -319,24 +328,24 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
                   setFilters(next);
                 }}
               >
-                ✕
+                <IconX size={13} />
               </button>
             )}
           </div>
           <div className="filter-children">
             {node.children.length === 0 && path.length === 0 && (
               <div className="filter-empty">
-                没有筛选条件，点「＋条件」开始（不筛选则显示全部行）
+                {t("filter.noFiltersHint")}
               </div>
             )}
             {node.children.map((child, i) => renderNode(child, [...path, i]))}
             {path.length === 0 && (
               <div className="filter-root-adds">
                 <button className="btn" onClick={() => addRule([])}>
-                  ＋ 条件
+                  <IconPlus size={14} /> {t("filter.addRule")}
                 </button>
                 <button className="btn" onClick={() => addGroup([])}>
-                  ＋ 分组
+                  <IconPlus size={14} /> {t("filter.addGroup")}
                 </button>
               </div>
             )}
@@ -374,7 +383,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
         >
           {columns.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name}
+              {colLabel(c)}
             </option>
           ))}
         </select>
@@ -408,7 +417,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
         />
         <button
           className="btn-icon danger"
-          title="删除条件"
+          title={t("filter.deleteRule")}
           onClick={() => {
             const next = clone(draft.filters!);
             const parentPath = path.slice(0, -1);
@@ -417,32 +426,49 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
             setFilters(next);
           }}
         >
-          ✕
+          <IconX size={13} />
         </button>
       </div>
     );
   };
 
   return (
-    <div className="panel-backdrop" onClick={onClose}>
-      <div className="panel" onClick={(e) => e.stopPropagation()}>
-        <div className="panel-head">
-          <h3>筛选与排序 · {view.name}</h3>
-          <button className="btn-icon" onClick={onClose}>
-            ✕
+    <PanelDialog
+      title={
+        <>
+          <IconSliders size={15} /> {t("filter.title")}
+        </>
+      }
+      badge={<span className="panel-head-view">{view.name}</span>}
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            className="btn"
+            onClick={() => setDraft({ filters: null, sorts: [], hidden_columns: [] })}
+          >
+            {t("filter.reset")}
           </button>
-        </div>
-        <div className="panel-body">
-          <section>
-            <h4>筛选</h4>
+          <div className="toolbar-spacer" />
+          <button className="btn" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button className="btn primary" onClick={() => void save()}>
+            {t("filter.saveApply")}
+          </button>
+        </>
+      }
+    >
+      <section>
+            <h4>{t("filter.filters")}</h4>
             {draft.filters ? (
               renderNode(draft.filters, [])
             ) : (
               <div className="filter-empty">
-                没有筛选条件
+                {t("filter.noFilters")}
                 <div className="filter-root-adds">
                   <button className="btn" onClick={() => addRule([])}>
-                    ＋ 条件
+                    <IconPlus size={14} /> {t("filter.addRule")}
                   </button>
                 </div>
               </div>
@@ -450,7 +476,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
           </section>
 
           <section>
-            <h4>排序</h4>
+            <h4>{t("filter.sorts")}</h4>
             {draft.sorts.map((s, i) => (
               <div className="filter-rule" key={i}>
                 <select
@@ -466,34 +492,35 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
                     .filter((c) => c.type !== "relation")
                     .map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name}
+                        {colLabel(c)}
                       </option>
                     ))}
                 </select>
-                <select
-                  className="filter-op"
-                  value={s.desc ? "desc" : "asc"}
-                  onChange={(e) => {
+                <button
+                  className="btn sort-dir"
+                  title={s.desc ? t("filter.toggleDesc") : t("filter.toggleAsc")}
+                  onClick={() => {
                     const sorts = [...draft.sorts];
-                    sorts[i] = { ...s, desc: e.target.value === "desc" };
+                    sorts[i] = { ...s, desc: !s.desc };
                     setDraft((d) => ({ ...d, sorts }));
                   }}
                 >
-                  <option value="asc">升序</option>
-                  <option value="desc">降序</option>
-                </select>
+                  {s.desc ? <IconSortDesc size={14} /> : <IconSortAsc size={14} />}
+                  {s.desc ? t("filter.desc") : t("filter.asc")}
+                </button>
                 <button
                   className="btn-icon danger"
+                  title={t("filter.deleteSort")}
                   onClick={() =>
                     setDraft((d) => ({ ...d, sorts: d.sorts.filter((_, j) => j !== i) }))
                   }
                 >
-                  ✕
+                  <IconX size={13} />
                 </button>
               </div>
             ))}
             <button
-              className="btn"
+              className="btn dashed"
               onClick={() => {
                 const first = columns.find((c) => c.type !== "relation");
                 if (first) {
@@ -504,12 +531,12 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
                 }
               }}
             >
-              ＋ 添加排序
+              <IconPlus size={14} /> {t("filter.addSort")}
             </button>
           </section>
 
           <section>
-            <h4>隐藏列</h4>
+            <h4>{t("filter.hidden")}</h4>
             <div className="hidden-cols">
               {columns.map((c) => (
                 <label className="hidden-col" key={c.id}>
@@ -523,30 +550,11 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
                       setDraft((d) => ({ ...d, hidden_columns: hidden }));
                     }}
                   />
-                  {c.name}
+                  {colLabel(c)}
                 </label>
               ))}
             </div>
           </section>
-        </div>
-        <div className="panel-foot">
-          <button
-            className="btn"
-            onClick={() =>
-              setDraft({ filters: null, sorts: [], hidden_columns: [] })
-            }
-          >
-            重置
-          </button>
-          <div className="toolbar-spacer" />
-          <button className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn primary" onClick={() => void save()}>
-            保存并应用
-          </button>
-        </div>
-      </div>
-    </div>
+    </PanelDialog>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { useWorkspace } from "../stores/workspace";
+import { IconAlert } from "./icons";
+import { t } from "../i18n";
 
 export default function ErrorToast() {
   const error = useWorkspace((s) => s.error);
@@ -13,9 +15,11 @@ export default function ErrorToast() {
 
   if (!error) return null;
   return (
-    <div className="toast" role="alert" onClick={clear}>
-      <span className="toast-icon">!</span>
-      <span>{error}</span>
+    <div className="toast" role="alert" onClick={clear} title={t("common.clickToClose")}>
+      <span className="toast-icon">
+        <IconAlert size={13} />
+      </span>
+      <span className="toast-text">{error}</span>
     </div>
   );
 }

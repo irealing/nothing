@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useWorkspace } from "../stores/workspace";
 import { ChangePasswordDialog, CreateTableDialog } from "./dialogs";
+import { confirm } from "../ui/ConfirmDialog";
+import { t } from "../i18n";
+import { IconDatabase, IconKey, IconLogout, IconPlus, IconTable, IconTrash } from "./icons";
+import { ThemeSwitch } from "../ui/ThemeSwitch";
+import { Tooltip } from "../ui/Tooltip";
 
 function baseName(p: string): string {
   const parts = p.split(/[\\/]/);
@@ -25,39 +30,53 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-header" title={info?.path}>
         <div className="sidebar-ws">
-          <span className="ws-dot" aria-hidden />
-          <span className="ws-name">{info ? baseName(info.path) : ""}</span>
+          <span className="ws-mark">
+            <IconDatabase size={15} />
+          </span>
+          <div className="ws-meta">
+            <span className="ws-name">{info ? baseName(info.path) : ""}</span>
+            <span className="ws-sub">{t("sidebar.encrypted")}</span>
+          </div>
         </div>
         <div className="sidebar-actions">
-          <button className="btn-icon" title="修改密码" onClick={() => setShowChangePw(true)}>
-            🔑
-          </button>
-          <button className="btn-icon" title="关闭工作区" onClick={() => void closeWorkspace()}>
-            ⏏
-          </button>
+          <Tooltip label={t("sidebar.changePassword")}>
+            <button className="btn-icon" onClick={() => setShowChangePw(true)}>
+              <IconKey size={15} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t("sidebar.closeWorkspace")}>
+            <button className="btn-icon" onClick={() => void closeWorkspace()}>
+              <IconLogout size={15} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
       <div className="sidebar-section">
         <div className="sidebar-section-head">
-          <span>表格</span>
-          <button className="btn-icon" title="新建表" onClick={() => setShowCreateTable(true)}>
-            ＋
+          <span className="section-title">
+            {t("sidebar.tables")}
+            {tables.length > 0 && <span className="section-count">{tables.length}</span>}
+          </span>
+          <button className="btn-icon" title={t("sidebar.newTable")} onClick={() => setShowCreateTable(true)}>
+            <IconPlus size={14} />
           </button>
         </div>
         <ul className="nav-list">
-          {tables.map((t) => (
+          {tables.map((table) => (
             <li
-              key={t.id}
-              className={t.id === activeTableId ? "nav-item active" : "nav-item"}
-              onClick={() => void selectTable(t.id)}
+              key={table.id}
+              className={table.id === activeTableId ? "nav-item active" : "nav-item"}
+              onClick={() => void selectTable(table.id)}
               onDoubleClick={() => {
-                setRenaming(t.id);
-                setRenameValue(t.name);
+                setRenaming(table.id);
+                setRenameValue(table.name);
               }}
             >
-              <span className="nav-icon">▦</span>
-              {renaming === t.id ? (
+              <span className="nav-icon">
+                <IconTable size={14} />
+              </span>
+              {renaming === table.id ? (
                 <input
                   className="nav-rename"
                   value={renameValue}
@@ -69,37 +88,52 @@ export default function Sidebar() {
                     if (e.key === "Enter") {
                       const v = renameValue.trim();
                       setRenaming(null);
-                      if (v && v !== t.name) void renameTable(t.id, v);
+                      if (v && v !== table.name) void renameTable(table.id, v);
                     }
                     if (e.key === "Escape") setRenaming(null);
                   }}
                 />
               ) : (
-                <span className="nav-label">{t.name}</span>
+                <span className="nav-label">{table.name}</span>
               )}
-              {t.id === activeTableId && renaming !== t.id && (
+              {table.id === activeTableId && renaming !== table.id && (
                 <button
-                  className="btn-icon danger"
-                  title="删除表"
+                  className="nav-action danger"
+                  title={t("sidebar.deleteTable")}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (
-                      window.confirm(
-                        `确定删除表「${t.name}」？所有行、关联和视图都会一并删除，且不可恢复。`,
-                      )
-                    ) {
-                      void deleteTable(t.id);
-                    }
+                    void confirm({
+                      title: t("sidebar.deleteTable"),
+                      description: t("sidebar.deleteTableConfirm", { name: table.name }),
+                      confirmLabel: t("common.delete"),
+                      danger: true,
+                    }).then((ok) => {
+                      if (ok) void deleteTable(table.id);
+                    });
                   }}
                 >
-                  🗑
+                  <IconTrash size={13} />
                 </button>
               )}
             </li>
           ))}
-          {tables.length === 0 && <li className="nav-empty">还没有表格，点 ＋ 创建</li>}
+          {tables.length === 0 && (
+            <li className="nav-empty">
+              <span className="nav-empty-icon">
+                <IconTable size={20} />
+              </span>
+              <p>{t("sidebar.noTables")}</p>
+              <button className="btn ghost" onClick={() => setShowCreateTable(true)}>
+                <IconPlus size={14} /> {t("sidebar.newTableAction")}
+              </button>
+            </li>
+          )}
         </ul>
-        <p className="nav-hint">双击表名可重命名</p>
+      </div>
+
+      <div className="sidebar-foot">
+        <ThemeSwitch />
+        <p className="nav-hint">{t("sidebar.renameHint")}</p>
       </div>
 
       {showCreateTable && <CreateTableDialog onClose={() => setShowCreateTable(false)} />}

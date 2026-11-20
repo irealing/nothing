@@ -5,6 +5,7 @@ import {
   GridCellKind,
   GridColumnIcon,
   type CellClickedEventArgs,
+  type DataEditorRef,
   type EditableGridCell,
   type GridCell,
   type GridColumn,
@@ -14,10 +15,28 @@ import {
   type Rectangle,
 } from "@glideapps/glide-data-grid";
 import { PAGE_SIZE, useWorkspace } from "../stores/workspace";
+import { useTheme } from "../stores/theme";
+import { readGridTheme, tagThemeOverride } from "../theme/grid";
+import { formatDate } from "../i18n/format";
+import { t } from "../i18n";
+import { confirm } from "../ui/ConfirmDialog";
+import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import type { ColumnMeta, Json, Row } from "../types";
 import FilterSortPanel from "./FilterSortPanel";
 import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
+import { InlineCellEditor } from "./GridEditors";
+import {
+  IconCopy,
+  IconPencil,
+  IconPlus,
+  IconSearch,
+  IconSliders,
+  IconStar,
+  IconTable,
+  IconTrash,
+  IconX,
+} from "./icons";
 
 function asString(v: Json | undefined): string {
   if (v === null || v === undefined) return "";
@@ -26,10 +45,10 @@ function asString(v: Json | undefined): string {
   return String(v);
 }
 
-/** Inline-editable via glide's built-in overlays. */
+/** Inline-editable through our own floating editor (IME safe). */
 function isInlineEditable(col: ColumnMeta): boolean {
   if (col.is_reverse) return false;
-  return ["text", "number", "date", "checkbox"].includes(col.type);
+  return ["text", "number", "date"].includes(col.type);
 }
 
 /** Opens a custom popup editor on click. */
@@ -49,7 +68,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         displayData: value === null || value === undefined ? "" : String(value),
         copyData,
         readonly: false,
-        allowOverlay: !col.is_reverse,
+        allowOverlay: false,
       };
     case "checkbox":
       return {
@@ -59,6 +78,17 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         allowOverlay: false,
         readonly: col.is_reverse,
       };
+    case "date": {
+      const shown = formatDate(value);
+      return {
+        kind: GridCellKind.Text,
+        data: shown,
+        displayData: shown,
+        copyData,
+        readonly: col.is_reverse,
+        allowOverlay: false,
+      };
+    }
     case "formula": {
       const rt = col.opts.kind === "formula" ? col.opts.result_type : "text";
       if (rt === "number") {
@@ -80,60 +110,85 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
           readonly: true,
         };
       }
-      return { kind: GridCellKind.Text, data: copyData, displayData: copyData, copyData, readonly: true, allowOverlay: false };
-    }
-    case "relation": {
-      const display = Array.isArray(value)
-        ? (value as Json[]).map((rid) => titles[String(rid)] ?? "…").join(", ")
-        : "";
-      return {
-        kind: GridCellKind.Text,
-        data: display,
-        displayData: display,
-        copyData: display,
-        readonly: true,
-        allowOverlay: false,
-      };
-    }
-    case "multi_select":
-    case "select":
       return {
         kind: GridCellKind.Text,
         data: copyData,
         displayData: copyData,
         copyData,
-        readonly: true, // editing happens through the popup editor
+        readonly: true,
         allowOverlay: false,
       };
+    }
+    case "relation": {
+      const rids = Array.isArray(value) ? (value as Json[]).map(String) : [];
+      const pills = rids.map((rid) => titles[rid] ?? "…");
+      return {
+        kind: GridCellKind.Bubble,
+        data: pills,
+        copyData: pills.join(", "),
+        allowOverlay: false,
+      };
+    }
+    case "multi_select":
+    case "select": {
+      const pills = Array.isArray(value)
+        ? (value as Json[]).map((v) => String(v))
+        : value === null || value === undefined || value === ""
+          ? []
+          : [String(value)];
+      return {
+        kind: GridCellKind.Bubble,
+        data: pills,
+        copyData,
+        allowOverlay: false,
+      };
+    }
     default:
       return {
         kind: GridCellKind.Text,
         data: copyData,
         displayData: copyData,
         copyData,
-        readonly: !isInlineEditable(col),
-        allowOverlay: isInlineEditable(col),
+        readonly: false,
+        allowOverlay: false,
       };
   }
 }
 
 function headerIcon(col: ColumnMeta): GridColumnIcon | undefined {
   switch (col.type) {
-    case "text": return GridColumnIcon.HeaderString;
-    case "number": return GridColumnIcon.HeaderNumber;
-    case "checkbox": return GridColumnIcon.HeaderBoolean;
-    case "date": return GridColumnIcon.HeaderDate;
-    case "select": return GridColumnIcon.HeaderSingleValue;
-    case "multi_select": return GridColumnIcon.HeaderLookup;
-    case "relation": return GridColumnIcon.HeaderReference;
-    case "formula": return GridColumnIcon.HeaderMath;
-    default: return undefined;
+    case "text":
+      return GridColumnIcon.HeaderString;
+    case "number":
+      return GridColumnIcon.HeaderNumber;
+    case "checkbox":
+      return GridColumnIcon.HeaderBoolean;
+    case "date":
+      return GridColumnIcon.HeaderDate;
+    case "select":
+      return GridColumnIcon.HeaderSingleValue;
+    case "multi_select":
+      return GridColumnIcon.HeaderLookup;
+    case "relation":
+      return GridColumnIcon.HeaderReference;
+    case "formula":
+      return GridColumnIcon.HeaderMath;
+    default:
+      return undefined;
   }
 }
 
 interface PickerState {
   col: ColumnMeta;
   rowIdx: number;
+  anchor: Anchor;
+}
+
+interface EditorState {
+  colIdx: number;
+  rowIdx: number;
+  rid: string;
+  value: Json;
   anchor: Anchor;
 }
 
@@ -164,13 +219,14 @@ export default function TableView() {
   const [localQuery, setLocalQuery] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
   const [picker, setPicker] = useState<PickerState | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
   const [colMenu, setColMenu] = useState<{ col: ColumnMeta; x: number; y: number } | null>(null);
   const [colDialog, setColDialog] = useState<{ existing: ColumnMeta | null } | null>(null);
   const [gridSelection, setGridSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
   });
-  const gridWrapRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<DataEditorRef | null>(null);
   const visibleRange = useRef<Rectangle>({ x: 0, y: 0, width: 0, height: PAGE_SIZE });
 
   const table = tables.find((t) => t.id === activeTableId) ?? null;
@@ -183,17 +239,26 @@ export default function TableView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataVersion]);
 
+  // Switching tables/views must not leave a stale floating editor behind.
+  useEffect(() => {
+    setEditor(null);
+    setPicker(null);
+  }, [activeTableId, activeViewId]);
+
   const columns = visibleColumns;
+  const resolvedTheme = useTheme((s) => s.resolved);
+  const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme]);
   const gridColumns: GridColumn[] = useMemo(
     () =>
       columns.map((c) => ({
-        title: c.name + (c.is_reverse ? "（反向）" : ""),
+        title: `${c.icon ? `${c.icon} ` : ""}${c.name}${c.is_reverse ? t("column.reverseSuffix") : ""}`,
         id: c.id,
         width: c.width || 160,
         icon: headerIcon(c),
         hasMenu: true,
+        ...(c.color ? { themeOverride: tagThemeOverride(c.color) } : {}),
       })),
-    [columns],
+    [columns, resolvedTheme],
   );
 
   const getRow = useCallback((idx: number): Row | undefined => rowsCache.get(idx), [rowsCache, rowsVersion]);
@@ -250,25 +315,111 @@ export default function TableView() {
     [columns, getRow, activeTableId, updateCell],
   );
 
+  const anchorFor = useCallback((col: number, row: number): Anchor | null => {
+    // glide's bounds are already client (viewport) coordinates.
+    const bounds = gridRef.current?.getBounds(col, row);
+    if (!bounds) return null;
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  }, []);
+
+  // Shift is tracked manually so shift+click keeps extending the range
+  // instead of dropping straight into the cell editor.
+  const shiftHeld = useRef(false);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftHeld.current = true;
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftHeld.current = false;
+    };
+    const blur = () => {
+      shiftHeld.current = false;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
+
+  const openInlineEditor = useCallback(
+    (colIdx: number, rowIdx: number, anchor: Anchor) => {
+      const meta = columns[colIdx];
+      const r = getRow(rowIdx);
+      if (!meta || !r || !isInlineEditable(meta)) return;
+      setPicker(null);
+      setEditor({ colIdx, rowIdx, rid: r.rid, value: r.cells[meta.id] ?? null, anchor });
+    },
+    [columns, getRow],
+  );
+
   const onCellClicked = useCallback(
     (cell: Item, event: CellClickedEventArgs) => {
       const meta = columns[cell[0]];
       const rowIdx = cell[1];
-      if (!meta || !getRow(rowIdx) || !hasPopupEditor(meta)) return;
-      const rect = gridWrapRef.current?.getBoundingClientRect();
+      const r = getRow(rowIdx);
+      if (!meta || !r) return;
+      // event.bounds is in client (viewport) coordinates already.
       const b = event.bounds;
-      setPicker({
-        col: meta,
-        rowIdx,
-        anchor: {
-          x: (rect?.left ?? 0) + b.x,
-          y: (rect?.top ?? 0) + b.y,
-          width: b.width,
-          height: b.height,
-        },
+      const anchor: Anchor = { x: b.x, y: b.y, width: b.width, height: b.height };
+      if (hasPopupEditor(meta)) {
+        setEditor(null);
+        setPicker({ col: meta, rowIdx, anchor });
+        return;
+      }
+      // Notion-style: a single click puts the cell straight into edit mode so
+      // typing (including CJK via IME) lands in a real <input>.
+      if (!shiftHeld.current && isInlineEditable(meta)) {
+        openInlineEditor(cell[0], rowIdx, anchor);
+      }
+    },
+    [columns, getRow, openInlineEditor],
+  );
+
+  // Enter (and double-click) on a selected cell also starts editing.
+  const onCellActivated = useCallback(
+    (cell: Item) => {
+      const anchor = anchorFor(cell[0], cell[1]);
+      if (!anchor) return;
+      openInlineEditor(cell[0], cell[1], anchor);
+    },
+    [anchorFor, openInlineEditor],
+  );
+
+  const closeEditor = useCallback(() => {
+    setEditor(null);
+    // Hand keyboard control back to the grid once editing ends.
+    gridRef.current?.focus();
+  }, []);
+
+  const moveEditor = useCallback(
+    (dir: -1 | 1) => {
+      if (!editor) return;
+      let idx = editor.colIdx + dir;
+      while (idx >= 0 && idx < columns.length && !isInlineEditable(columns[idx])) idx += dir;
+      if (idx < 0 || idx >= columns.length) {
+        closeEditor();
+        return;
+      }
+      const anchor = anchorFor(idx, editor.rowIdx);
+      const meta = columns[idx];
+      const r = getRow(editor.rowIdx);
+      if (!anchor || !meta || !r) {
+        closeEditor();
+        return;
+      }
+      setEditor({
+        colIdx: idx,
+        rowIdx: editor.rowIdx,
+        rid: r.rid,
+        value: r.cells[meta.id] ?? null,
+        anchor,
       });
     },
-    [columns, getRow],
+    [columns, editor, getRow, anchorFor, closeEditor],
   );
 
   const onHeaderContextMenu = useCallback(
@@ -276,12 +427,11 @@ export default function TableView() {
       event.preventDefault();
       const meta = columns[colIndex];
       if (!meta) return;
-      const rect = gridWrapRef.current?.getBoundingClientRect();
       const b = event.bounds;
       setColMenu({
         col: meta,
-        x: (rect?.left ?? 0) + b.x,
-        y: (rect?.top ?? 0) + b.y + b.height,
+        x: b.x,
+        y: b.y + b.height,
       });
     },
     [columns],
@@ -299,72 +449,106 @@ export default function TableView() {
   if (!table || !activeTableId) {
     return (
       <div className="empty-state">
-        <p>👈 在左侧选择或创建一个表格开始</p>
+        <div className="empty-card">
+          <span className="empty-icon">
+            <IconTable size={26} />
+          </span>
+          <p>{t("table.empty")}</p>
+        </div>
       </div>
     );
   }
 
   const pickerRow = picker ? getRow(picker.rowIdx) : undefined;
+  const editorCol = editor ? columns[editor.colIdx] : undefined;
 
   return (
     <div className="table-view">
       <div className="toolbar">
-        <h2 className="toolbar-title">{table.name}</h2>
-        <span className="toolbar-count">
-          {total > 0 || rowsCache.size > 0 ? `${total} 行` : ""}
-          {searchQuery ? `（搜索“${searchQuery}”）` : ""}
-        </span>
+        <div className="toolbar-title-group">
+          <h2 className="toolbar-title">{table.name}</h2>
+          <span className="pill-count">{t("table.rows", { count: total })}</span>
+          {searchQuery && <span className="pill-filter">{t("table.searching", { query: searchQuery })}</span>}
+        </div>
         <div className="toolbar-spacer" />
-        <input
-          className="search-input"
-          type="text"
-          placeholder="搜索…（回车）"
-          value={localQuery}
-          onChange={(e) => setLocalQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void searchRows(localQuery.trim());
-            if (e.key === "Escape") {
-              setLocalQuery("");
-              void searchRows("");
-            }
-          }}
-        />
+        <label className="search-field">
+          <IconSearch size={14} />
+          <input
+            type="text"
+            placeholder={t("table.searchPlaceholder")}
+            value={localQuery}
+            onChange={(e) => setLocalQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void searchRows(localQuery.trim());
+              if (e.key === "Escape") {
+                setLocalQuery("");
+                void searchRows("");
+              }
+            }}
+          />
+          {localQuery && (
+            <button
+              type="button"
+              className="search-clear"
+              aria-label={t("table.clearSearch")}
+              onClick={() => {
+                setLocalQuery("");
+                void searchRows("");
+              }}
+            >
+              <IconX size={12} />
+            </button>
+          )}
+        </label>
         {activeView?.kind === "grid" && (
-          <button className="btn" onClick={() => setPanelOpen(true)}>
-            ⚙ 筛选 / 排序
+          <button className="btn ghost" onClick={() => setPanelOpen(true)}>
+            <IconSliders size={14} /> {t("table.filterSort")}
           </button>
         )}
-        <button className="btn" onClick={() => setColDialog({ existing: null })}>
-          ＋ 列
+        <button className="btn ghost" onClick={() => setColDialog({ existing: null })}>
+          <IconPlus size={14} /> {t("table.addColumn")}
         </button>
-        <button className="btn" onClick={() => void insertRow({})}>
-          ＋ 新增行
+        <button className="btn primary" onClick={() => void insertRow({})}>
+          <IconPlus size={14} /> {t("table.addRow")}
         </button>
         <button
-          className="btn danger"
+          className="btn danger-ghost"
           disabled={selectedRids.length === 0}
+          title={t("table.deleteRowsHint")}
           onClick={() => {
-            if (window.confirm(`删除选中的 ${selectedRids.length} 行？关联链接会一并级联删除。`)) {
-              void deleteRows(selectedRids);
-            }
+            const count = selectedRids.length;
+            void confirm({
+              title: t("table.deleteRowsTitle"),
+              description: t("table.deleteRowsConfirm", { count }),
+              confirmLabel: t("common.delete"),
+              danger: true,
+            }).then((ok) => {
+              if (ok) void deleteRows(selectedRids);
+            });
           }}
         >
-          删除选中（{selectedRids.length}）
+          <IconTrash size={14} />{" "}
+          {selectedRids.length > 0
+            ? t("table.deleteRows", { count: selectedRids.length })
+            : t("common.delete")}
         </button>
       </div>
-      <div className="grid-wrap" ref={gridWrapRef}>
+      <div className="grid-wrap">
         <DataEditor
+          ref={gridRef}
           columns={gridColumns}
           rows={total}
+          theme={gridTheme}
           getCellContent={getCellContent}
           onCellEdited={onCellEdited}
           onCellClicked={onCellClicked}
+          onCellActivated={onCellActivated}
           onHeaderContextMenu={onHeaderContextMenu}
           onVisibleRegionChanged={onVisibleRegionChanged}
           rowMarkers={{ kind: "both" }}
           gridSelection={gridSelection}
           onGridSelectionChange={setGridSelection}
-          trailingRowOptions={{ tint: true, sticky: true, hint: "新增行…" }}
+          trailingRowOptions={{ tint: true, sticky: true, hint: t("table.newRowHint") }}
           onRowAppended={() => {
             void insertRow({});
           }}
@@ -378,6 +562,23 @@ export default function TableView() {
           columnSelect="none"
         />
       </div>
+
+      {/* ---- floating cell editor (text / number / date) ---- */}
+      {editor && editorCol && (
+        <InlineCellEditor
+          key={`${editorCol.id}:${editor.rowIdx}`}
+          request={{
+            col: editorCol,
+            rowIdx: editor.rowIdx,
+            rid: editor.rid,
+            anchor: editor.anchor,
+            value: editor.value,
+          }}
+          onCommit={(v) => void updateCell(editor.rid, editorCol.id, v)}
+          onClose={closeEditor}
+          onMove={moveEditor}
+        />
+      )}
 
       {/* ---- popups ---- */}
       {picker && pickerRow && picker.col.type !== "relation" && (
@@ -401,51 +602,70 @@ export default function TableView() {
       )}
 
       {colMenu && (
-        <>
-          <div className="menu-backdrop" onClick={() => setColMenu(null)} />
-          <div className="dropdown-menu positioned" style={{ left: colMenu.x, top: colMenu.y }}>
-            <button
-              onClick={() => {
-                setColDialog({ existing: colMenu.col });
-                setColMenu(null);
-              }}
-            >
-              ✎ 编辑列…
-            </button>
-            {colMenu.col.type === "text" && !colMenu.col.is_reverse && table.title_col_id !== colMenu.col.id && (
-              <button
-                onClick={() => {
+        <Menu
+          open
+          onOpenChange={(open) => {
+            if (!open) setColMenu(null);
+          }}
+          trigger={
+            <span
+              className="virtual-anchor"
+              style={{ left: colMenu.x, top: colMenu.y }}
+              aria-hidden
+            />
+          }
+        >
+          <MenuItem
+            onSelect={() => {
+              setColDialog({ existing: colMenu.col });
+              setColMenu(null);
+            }}
+          >
+            <IconPencil size={14} /> {t("table.editColumn")}
+          </MenuItem>
+          {colMenu.col.type === "text" &&
+            !colMenu.col.is_reverse &&
+            table.title_col_id !== colMenu.col.id && (
+              <MenuItem
+                onSelect={() => {
                   void setTitleColumn(colMenu.col.id);
                   setColMenu(null);
                 }}
               >
-                ★ 设为标题列
-              </button>
+                <IconStar size={14} /> {t("table.setTitleColumn")}
+              </MenuItem>
             )}
-            <button
-              onClick={() => {
-                void navigator.clipboard.writeText(`${table.sql_name}.${colMenu.col.sql_name}`);
-                setColMenu(null);
-              }}
-            >
-              ⧉ 复制 SQL 引用名
-            </button>
-            {!colMenu.col.is_reverse && table.title_col_id !== colMenu.col.id && (
-              <button
-                className="danger"
-                onClick={() => {
+          <MenuItem
+            onSelect={() => {
+              void navigator.clipboard.writeText(`${table.sql_name}.${colMenu.col.sql_name}`);
+              setColMenu(null);
+            }}
+          >
+            <IconCopy size={14} /> {t("table.copySqlRef")}
+          </MenuItem>
+          {!colMenu.col.is_reverse && table.title_col_id !== colMenu.col.id && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                onSelect={() => {
                   const c = colMenu.col;
                   setColMenu(null);
-                  if (window.confirm(`删除列「${c.name}」？该列所有数据将被移除。`)) {
-                    void deleteColumn(c.id);
-                  }
+                  void confirm({
+                    title: t("column.deleteTitle"),
+                    description: t("column.deleteConfirm", { name: c.name }),
+                    confirmLabel: t("common.delete"),
+                    danger: true,
+                  }).then((ok) => {
+                    if (ok) void deleteColumn(c.id);
+                  });
                 }}
               >
-                🗑 删除列
-              </button>
-            )}
-          </div>
-        </>
+                <IconTrash size={14} /> {t("table.deleteColumn")}
+              </MenuItem>
+            </>
+          )}
+        </Menu>
       )}
 
       {panelOpen && activeView?.kind === "grid" && (

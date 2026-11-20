@@ -32,6 +32,8 @@ const COL: ColumnMeta = {
   visible: true,
   is_reverse: false,
   reverse_of: null,
+    icon: null,
+    color: null,
   created_at: "",
 };
 
@@ -140,7 +142,7 @@ describe("openWorkspace", () => {
     await useWorkspace.getState().openWorkspace("/a.nothing", "bad");
     const s = useWorkspace.getState();
     expect(s.info).toBeNull();
-    expect(s.error).toContain("密码错误");
+    expect(s.error).toContain("密码不正确");
     expect(s.loading).toBe(false);
   });
 });
@@ -190,7 +192,7 @@ describe("windowed loading", () => {
 });
 
 describe("updateCell", () => {
-  it("patches in place, then revalidates the window", async () => {
+  it("patches the cached row in place without refetching a stable view", async () => {
     useWorkspace.setState({
       info: { path: "/a.nothing", format_version: 1 },
       tables: [T1],
@@ -203,14 +205,69 @@ describe("updateCell", () => {
       total: 1,
     });
     vi.mocked(ipc.rowUpdate).mockResolvedValue(row("r1", "b"));
-    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([row("r1", "b")], 1));
 
     await useWorkspace.getState().updateCell("r1", "c1", "b");
 
     expect(ipc.rowUpdate).toHaveBeenCalledWith("t1", "r1", { c1: "b" });
     const s = useWorkspace.getState();
     expect(s.rowsCache.get(0)?.cells.c1).toBe("b");
-    // revalidation re-ran the view
+    // unfiltered + unsorted → the in-place patch is authoritative
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+  });
+
+  it("revalidates after an edit in a filtered view", async () => {
+    const filtered: ViewMeta = {
+      ...GRID_V,
+      config: {
+        kind: "grid",
+        filters: { column_id: "c1", op: "contains", value: "b" },
+        sorts: [],
+        hidden_columns: [],
+      },
+    };
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      columns: [COL],
+      views: [filtered],
+      activeViewId: "v1",
+      source: { kind: "view", viewId: "v1" },
+      rowsCache: new Map([[0, row("r1", "a")]]),
+      total: 1,
+    });
+    vi.mocked(ipc.rowUpdate).mockResolvedValue(row("r1", "b"));
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([row("r1", "b")], 1));
+
+    await useWorkspace.getState().updateCell("r1", "c1", "b");
+
+    expect(ipc.viewRun).toHaveBeenCalled();
+  });
+
+  it("revalidates relation edits so linked titles resolve", async () => {
+    const relCol: ColumnMeta = {
+      ...COL,
+      id: "c9",
+      name: "负责人",
+      type: "relation",
+      opts: { kind: "relation", target_table_id: "t2", single: false, reverse_name: null },
+    };
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      columns: [COL, relCol],
+      views: [GRID_V],
+      activeViewId: "v1",
+      source: { kind: "view", viewId: "v1" },
+      rowsCache: new Map([[0, row("r1", "a")]]),
+      total: 1,
+    });
+    vi.mocked(ipc.rowUpdate).mockResolvedValue(row("r1", "a"));
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([row("r1", "a")], 1));
+
+    await useWorkspace.getState().updateCell("r1", "c9", ["r2"]);
+
     expect(ipc.viewRun).toHaveBeenCalled();
   });
 

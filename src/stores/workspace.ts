@@ -5,6 +5,7 @@
 // scroll smoothly: `rowsCache` maps absolute row index → Row, `total` is the
 // full match count, and `dataVersion` invalidates everything on writes.
 
+import { errorText, t } from "../i18n";
 import { create } from "zustand";
 import * as ipc from "../ipc";
 import type {
@@ -112,7 +113,7 @@ async function guard<R>(
   try {
     return await fn();
   } catch (e) {
-    set({ error: e instanceof Error ? e.message : String(e) });
+    set({ error: errorText(e) });
     return undefined;
   } finally {
     set({ loading: false });
@@ -220,7 +221,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     if (gridViews.length === 0) {
       await ipc.viewCreate({
         table_id: tableId,
-        name: "默认视图",
+        name: t("view.defaultName"),
         kind: "grid",
         config: { kind: "grid", ...defaultGridConfig() },
       } satisfies NewView);
@@ -277,7 +278,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       try {
         await fetchWindowInternal(start, end);
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : String(e) });
+        set({ error: errorText(e) });
       }
     },
 
@@ -429,9 +430,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId } = get();
         if (!activeTableId) return;
         await ipc.columnUpdate(activeTableId, colId, patch);
-        // Width-only changes don't affect data; still refresh metadata.
         set({ columns: await ipc.columnList(activeTableId) });
-        if (Object.keys(patch).some((k) => k !== "width")) {
+        // Only shape/choices/formula changes can alter stored cell values;
+        // renaming, recolouring or resizing a column is metadata-only.
+        const affectsData = patch.type !== undefined || patch.opts !== undefined;
+        if (affectsData) {
           await afterWrite();
         } else {
           set((s) => ({ rowsVersion: s.rowsVersion + 1 }));
@@ -519,7 +522,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     updateCell: async (rid, colId, value) => {
       await guard(set, get, async () => {
-        const { activeTableId } = get();
+        const { activeTableId, activeViewId, searchQuery } = get();
         if (!activeTableId) return;
         const updated = await ipc.rowUpdate(activeTableId, rid, { [colId]: value });
         // Patch in place first for instant feedback (formula cells included —
@@ -532,9 +535,20 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           }
         }
         set((s) => ({ rowsVersion: s.rowsVersion + 1 }));
-        // …then revalidate the window: in filtered/sorted views the edit may
-        // change membership or ordering.
-        await afterWrite();
+
+        // …then only revalidate when the edit can change membership, ordering
+        // or related titles: filtered/sorted views, active search, or relation
+        // columns (their pills resolve through the backend title map). Plain
+        // edits in an unfiltered grid keep the in-place patch authoritative,
+        // so typing in a cell no longer refetches the page and flickers.
+        const col = get().columns.find((c) => c.id === colId);
+        const view = get().views.find((v) => v.id === activeViewId);
+        const cfg = view?.config.kind === "grid" ? view.config : null;
+        const stable =
+          !searchQuery && (cfg === null || (cfg.filters === null && cfg.sorts.length === 0));
+        if (!stable || col?.type === "relation") {
+          await afterWrite();
+        }
       });
     },
 

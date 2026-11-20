@@ -1,11 +1,19 @@
 // Popup editors for cell types that need richer UI than glide's built-in
-// overlays: select / multi_select (dropdown at the cell) and relation
+// overlays: select / multi_select (popover at the cell) and relation
 // (searchable picker against the target table's title column).
+//
+// Both use `src/ui/` primitives. A 1×1 virtual anchor is placed at the cell's
+// rectangle so the primitive can position itself — the grid is canvas, so
+// there is no DOM node to anchor to.
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import * as Popover from "@radix-ui/react-popover";
+import { useEffect, useMemo, useState } from "react";
 import * as ipc from "../ipc";
 import { useWorkspace } from "../stores/workspace";
+import { t } from "../i18n";
 import type { ColumnMeta, Json, Row } from "../types";
+import { Dialog } from "../ui/Dialog";
+import { IconCheck, IconLink, IconSearch, IconX } from "./icons";
 
 export interface Anchor {
   x: number;
@@ -45,20 +53,6 @@ export function SelectPopover({
       : [];
   const [local, setLocal] = useState<string[]>(selected);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const onMouse = (e: MouseEvent) => {
-      const el = document.getElementById("select-popover");
-      if (el && !el.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onMouse);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onMouse);
-    };
-  }, [onClose]);
-
   const toggle = (name: string) => {
     if (!multi) {
       onCommit(name);
@@ -70,47 +64,65 @@ export function SelectPopover({
     onCommit(next); // commit live so the grid stays in sync
   };
 
-  const style: CSSProperties = {
-    position: "fixed",
-    left: Math.max(8, anchor.x),
-    top: anchor.y + anchor.height + 2,
-    minWidth: Math.max(160, anchor.width),
-    zIndex: 300,
-  };
-
   return (
-    <div className="popover" id="select-popover" style={style}>
-      {multi && (
-        <div className="popover-head">
-          <span>多选（点击切换）</span>
-          <button className="btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-      )}
-      {choices.length === 0 && <div className="popover-empty">该列还没有选项</div>}
-      {choices.map((c) => (
-        <div
-          key={c}
-          className={local.includes(c) ? "popover-item selected" : "popover-item"}
-          onClick={() => toggle(c)}
+    <Popover.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Popover.Trigger asChild>
+        <span
+          className="virtual-anchor"
+          style={{ left: anchor.x, top: anchor.y + anchor.height }}
+          aria-hidden
+        />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          className="popover"
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          style={{ minWidth: Math.max(180, anchor.width) }}
+          onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          {multi && <span className="popover-check">{local.includes(c) ? "☑" : "☐"}</span>}
-          {c}
-        </div>
-      ))}
-      {!multi && (
-        <div
-          className="popover-item clear"
-          onClick={() => {
-            onCommit(null);
-            onClose();
-          }}
-        >
-          清除
-        </div>
-      )}
-    </div>
+          <div className="popover-head">
+            <span>{multi ? t("cell.multi") : t("cell.single")}</span>
+            <button className="btn-icon" onClick={onClose} aria-label={t("common.close")}>
+              <IconX size={12} />
+            </button>
+          </div>
+          {choices.length === 0 && <div className="popover-empty">{t("cell.noChoices")}</div>}
+          {choices.map((c) => (
+            <div
+              key={c}
+              className={local.includes(c) ? "popover-item selected" : "popover-item"}
+              onClick={() => toggle(c)}
+            >
+              <span className="popover-check">
+                {local.includes(c) ? <IconCheck size={13} /> : null}
+              </span>
+              {c}
+            </div>
+          ))}
+          {!multi && (
+            <>
+              <div className="popover-sep" />
+              <div
+                className="popover-item clear"
+                onClick={() => {
+                  onCommit(null);
+                  onClose();
+                }}
+              >
+                {t("cell.clear")}
+              </div>
+            </>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -131,7 +143,7 @@ export function RelationModal({
 }) {
   const tables = useWorkspace((s) => s.tables);
   const opts = col.opts.kind === "relation" ? col.opts : null;
-  const targetTable = tables.find((t) => t.id === opts?.target_table_id) ?? null;
+  const targetTable = tables.find((x) => x.id === opts?.target_table_id) ?? null;
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Row[]>([]);
@@ -141,7 +153,7 @@ export function RelationModal({
 
   const single = opts?.single ?? false;
 
-  // resolve the target table's title column once
+  // Resolve the target table's title column once.
   useEffect(() => {
     if (!targetTable) return;
     setTitleColId(targetTable.title_col_id);
@@ -170,8 +182,8 @@ export function RelationModal({
   }, [runQuery]);
 
   useEffect(() => {
-    const t = setTimeout(() => void runQuery(query), 300);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void runQuery(query), 300);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
@@ -189,71 +201,70 @@ export function RelationModal({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal relation-modal" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>
-            选择{targetTable ? `「${targetTable.name}」` : ""}
-            {single ? "（单选）" : "（可多选）"}
-          </h3>
-          <button className="btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-          <input
-            type="text"
-            autoFocus
-            placeholder="搜索…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            style={{ width: "100%", marginBottom: 8 }}
-          />
-          <div className="relation-results">
-            {loading && <div className="popover-empty">搜索中…</div>}
-            {!loading && results.length === 0 && (
-              <div className="popover-empty">没有匹配的行</div>
-            )}
-            {results.map((r) => (
-              <div
-                key={r.rid}
-                className={selected.includes(r.rid) ? "popover-item selected" : "popover-item"}
-                onClick={() => toggle(r.rid)}
-              >
-                <span className="popover-check">
-                  {selected.includes(r.rid) ? (single ? "◉" : "☑") : single ? "○" : "☐"}
-                </span>
-                {titleOf(r)}
-              </div>
-            ))}
-          </div>
-          {selected.length > 0 && (
-            <div className="relation-selected">
-              已选 {selected.length} 行
-              {!single && (
-                <button className="btn-icon" onClick={() => setSelected([])} title="清空">
-                  清空
-                </button>
-              )}
+    <Dialog
+      title={
+        targetTable
+          ? t("cell.relationTitle", { name: targetTable.name })
+          : t("cell.relationFallback")
+      }
+      subtitle={single ? t("cell.relationSingle") : t("cell.relationMulti")}
+      onClose={onClose}
+    >
+      <label className="search-field">
+        <IconSearch size={14} />
+        <input
+          type="text"
+          autoFocus
+          placeholder={t("cell.searchByTitle")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
+      <div className="relation-results">
+        {loading && <div className="popover-empty">{t("cell.searching")}</div>}
+        {!loading && results.length === 0 && (
+          <div className="popover-empty">{t("cell.noMatches")}</div>
+        )}
+        {results.map((row) => {
+          const isSelected = selected.includes(row.rid);
+          return (
+            <div
+              key={row.rid}
+              className={isSelected ? "popover-item selected" : "popover-item"}
+              onClick={() => toggle(row.rid)}
+            >
+              <span className="popover-check">{isSelected ? <IconCheck size={13} /> : null}</span>
+              {titleOf(row)}
             </div>
-          )}
-        </div>
-        <div className="panel-foot">
-          <div className="toolbar-spacer" />
-          <button className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button
-            className="btn primary"
-            onClick={() => {
-              onCommit(selected);
-              onClose();
-            }}
-          >
-            确定
-          </button>
-        </div>
+          );
+        })}
       </div>
-    </div>
+      <div className="relation-selected">
+        <span className="relation-selected-label">
+          <IconLink size={13} />
+          {t("cell.selectedCount", { count: selected.length })}
+        </span>
+        {!single && selected.length > 0 && (
+          <button className="btn ghost small" onClick={() => setSelected([])}>
+            {t("cell.clearAll")}
+          </button>
+        )}
+      </div>
+      <div className="modal-actions">
+        <div className="toolbar-spacer" />
+        <button className="btn" onClick={onClose}>
+          {t("common.cancel")}
+        </button>
+        <button
+          className="btn primary"
+          onClick={() => {
+            onCommit(selected);
+            onClose();
+          }}
+        >
+          {t("common.confirm")}
+        </button>
+      </div>
+    </Dialog>
   );
 }

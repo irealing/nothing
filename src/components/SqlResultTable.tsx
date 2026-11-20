@@ -1,4 +1,6 @@
 import type { Json, SqlResult } from "../types";
+import { IconCode } from "./icons";
+import { t } from "../i18n";
 
 function renderCell(v: Json): string {
   if (v === null || v === undefined) return "";
@@ -12,7 +14,12 @@ export default function SqlResultTable({ result }: { result: SqlResult | null })
   if (!result) {
     return (
       <div className="empty-state">
-        <p>点「▶ 运行」查看结果；保存后打开视图会自动执行</p>
+        <div className="empty-card">
+          <span className="empty-icon">
+            <IconCode size={24} />
+          </span>
+          <p>{t("sql.emptyHint")}</p>
+        </div>
       </div>
     );
   }
@@ -39,7 +46,7 @@ export default function SqlResultTable({ result }: { result: SqlResult | null })
           ))}
         </tbody>
       </table>
-      <div className="sql-rowcount">{result.rows.length} 行</div>
+      <div className="sql-rowcount">{t("sql.rows", { count: result.rows.length })}</div>
     </div>
   );
 }

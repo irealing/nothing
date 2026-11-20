@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { pickNewWorkspacePath, pickWorkspaceFile } from "../ipc";
 import { useWorkspace } from "../stores/workspace";
+import { t } from "../i18n";
+import { Field, Input } from "../ui/Field";
+import { ThemeSwitch } from "../ui/ThemeSwitch";
+import { IconDatabase, IconFolder, IconLock, IconPlus } from "./icons";
 
 export default function Welcome() {
   const openWorkspace = useWorkspace((s) => s.openWorkspace);
@@ -10,7 +14,7 @@ export default function Welcome() {
   const [mode, setMode] = useState<"open" | "create">("open");
   const [path, setPath] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -22,10 +26,10 @@ export default function Welcome() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
-    if (!path.trim()) return setLocalError("请选择工作区文件路径");
-    if (!password) return setLocalError("请输入密码");
-    if (mode === "create" && password !== confirm) {
-      return setLocalError("两次输入的密码不一致");
+    if (!path.trim()) return setLocalError(t("welcome.errorPathRequired"));
+    if (!password) return setLocalError(t("welcome.errorPasswordRequired"));
+    if (mode === "create" && password !== confirmPw) {
+      return setLocalError(t("welcome.errorPasswordMismatch"));
     }
     setBusy(true);
     try {
@@ -44,72 +48,91 @@ export default function Welcome() {
   return (
     <div className="welcome">
       <div className="welcome-card">
-        <div className="brand">
+        <div className="welcome-brand">
           <img className="brand-logo" src="/icon.png" alt="" />
-          <h1>nothing</h1>
+          <div className="welcome-brand-text">
+            <h1>nothing</h1>
+            <p className="brand-sub">{t("welcome.tagline")}</p>
+          </div>
         </div>
-        <p className="brand-sub">本地优先、端到端加密的表格工作区</p>
 
         <div className="tabs">
           <button
             className={mode === "open" ? "tab active" : "tab"}
-            onClick={() => { setMode("open"); setLocalError(null); }}
+            onClick={() => {
+              setMode("open");
+              setLocalError(null);
+            }}
           >
-            打开工作区
+            <IconDatabase size={14} /> {t("welcome.openTab")}
           </button>
           <button
             className={mode === "create" ? "tab active" : "tab"}
-            onClick={() => { setMode("create"); setLocalError(null); }}
+            onClick={() => {
+              setMode("create");
+              setLocalError(null);
+            }}
           >
-            新建工作区
+            <IconPlus size={14} /> {t("welcome.createTab")}
           </button>
         </div>
 
         <form onSubmit={submit} className="form">
-          <label>
-            文件
+          <Field label={mode === "open" ? t("welcome.workspaceFile") : t("welcome.savePath")}>
             <div className="path-row">
-              <input
-                type="text"
+              <Input
                 value={path}
-                placeholder={mode === "open" ? "选择 .nothing 文件" : "选择保存位置（.nothing）"}
+                placeholder={
+                  mode === "open" ? t("welcome.chooseFile") : t("welcome.chooseSavePath")
+                }
                 onChange={(e) => setPath(e.target.value)}
               />
-              <button type="button" className="btn" onClick={browse}>
-                浏览…
+              <button type="button" className="btn" onClick={() => void browse()}>
+                <IconFolder size={14} /> {t("welcome.browse")}
               </button>
             </div>
-          </label>
-          <label>
-            密码
-            <input
+          </Field>
+          <Field label={mode === "open" ? t("welcome.password") : t("welcome.setPassword")}>
+            <Input
               type="password"
               value={password}
               autoComplete="off"
+              placeholder={t("welcome.passwordPlaceholder")}
               onChange={(e) => setPassword(e.target.value)}
             />
-          </label>
+          </Field>
           {mode === "create" && (
             <>
-              <label>
-                确认密码
-                <input
+              <Field label={t("welcome.confirmPassword")}>
+                <Input
                   type="password"
-                  value={confirm}
+                  value={confirmPw}
                   autoComplete="off"
-                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder={t("welcome.confirmPlaceholder")}
+                  onChange={(e) => setConfirmPw(e.target.value)}
                 />
-              </label>
-              <p className="hint">
-                工作区使用 SQLCipher 加密。密码丢失将无法恢复数据，请牢记。
+              </Field>
+              <p className="hint note">
+                <IconLock size={13} /> {t("welcome.cipherNote")}
               </p>
             </>
           )}
           {error && <div className="form-error">{error}</div>}
-          <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? "处理中…" : mode === "open" ? "打开" : "创建"}
+          <button type="submit" className="btn primary btn-block" disabled={busy}>
+            {busy
+              ? t("welcome.processing")
+              : mode === "open"
+                ? t("welcome.openAction")
+                : t("welcome.createAction")}
           </button>
         </form>
+
+        <div className="welcome-foot">
+          <span>
+            <span className="dot" /> {t("welcome.localOnly")}
+          </span>
+          <ThemeSwitch compact />
+        </div>
       </div>
     </div>
   );

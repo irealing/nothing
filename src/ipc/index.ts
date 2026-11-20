@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { t } from "../i18n";
 import type {
   Cells,
   ColumnMeta,
@@ -130,16 +131,16 @@ export const runSql = (sql: string, limit?: number, offset?: number) =>
 export async function pickWorkspaceFile(): Promise<string | null> {
   const picked = await open({
     multiple: false,
-    filters: [{ name: "nothing 工作区", extensions: ["nothing"] }],
-    title: "打开工作区",
+    filters: [{ name: t("welcome.workspaceFile"), extensions: ["nothing"] }],
+    title: t("welcome.openTab"),
   });
   return typeof picked === "string" ? picked : null;
 }
 
 export async function pickNewWorkspacePath(): Promise<string | null> {
   const picked = await save({
-    filters: [{ name: "nothing 工作区", extensions: ["nothing"] }],
-    title: "新建工作区",
+    filters: [{ name: t("welcome.workspaceFile"), extensions: ["nothing"] }],
+    title: t("welcome.createTab"),
   });
   if (typeof picked !== "string") return null;
   return picked.endsWith(".nothing") ? picked : `${picked}.nothing`;

@@ -13,6 +13,18 @@ export type ColumnType =
 
 export type FormulaResultType = "number" | "text" | "date" | "checkbox";
 
+/** Presentation palette token for a column (never a hex value). */
+export type ColumnColor =
+  | "gray"
+  | "blue"
+  | "green"
+  | "yellow"
+  | "orange"
+  | "red"
+  | "purple"
+  | "pink"
+  | "brown";
+
 export interface Choice {
   id: string;
   name: string;
@@ -53,6 +65,10 @@ export interface ColumnMeta {
   visible: boolean;
   is_reverse: boolean;
   reverse_of: string | null;
+  /** Optional emoji shown before the column name. */
+  icon: string | null;
+  /** Optional palette token tinting the header and cells. */
+  color: ColumnColor | null;
   created_at: string;
 }
 
@@ -60,8 +76,11 @@ export interface NewColumn {
   name: string;
   type: ColumnType;
   opts?: ColumnOpts;
+  icon?: string | null;
+  color?: ColumnColor | null;
 }
 
+/** `icon`/`color` accept "" to clear them. */
 export interface ColumnPatch {
   name?: string;
   type?: ColumnType;
@@ -69,6 +88,8 @@ export interface ColumnPatch {
   position?: number;
   width?: number;
   visible?: boolean;
+  icon?: string;
+  color?: string;
 }
 
 // ---- views ----
