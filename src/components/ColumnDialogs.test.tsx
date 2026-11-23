@@ -144,6 +144,26 @@ describe("ColumnDialog", () => {
     );
   });
 
+  it("gives a newly added option an unused color automatically", async () => {
+    const user = userEvent.setup();
+    render(<ColumnDialog existing={SELECT_COL} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("button", { name: "添加选项" }));
+    await user.type(screen.getByPlaceholderText("选项 2"), "进行中");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(updateColumn).toHaveBeenCalledTimes(1));
+    expect(updateColumn).toHaveBeenCalledWith(
+      "c1",
+      expect.objectContaining({
+        choices: [
+          expect.objectContaining({ name: "待办" }),
+          expect.objectContaining({ name: "进行中", color: "blue" }),
+        ],
+      }),
+    );
+  });
+
   it("stays open when the backend rejects the change", async () => {
     const user = userEvent.setup();
     updateColumn.mockResolvedValue(false);

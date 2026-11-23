@@ -173,6 +173,28 @@ describe("openWorkspace", () => {
     expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t2", "v22");
   });
 
+  it("restores a SQL view recorded for the file", async () => {
+    vi.mocked(ipc.workspaceOpen).mockResolvedValue({ path: "/a.nothing", format_version: 2 });
+    vi.mocked(ipc.tableList).mockResolvedValue([T1]);
+    vi.mocked(ipc.settingsUi).mockResolvedValue({ table_id: "t1", view_id: "vs" });
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V, SQL_V]);
+    vi.mocked(ipc.viewRun).mockResolvedValue({
+      kind: "sql",
+      columns: [{ name: "n", decl_type: "INTEGER" }],
+      rows: [[1]],
+    });
+
+    await useWorkspace.getState().openWorkspace("/a.nothing", "pw");
+
+    const s = useWorkspace.getState();
+    expect(s.activeTableId).toBe("t1");
+    expect(s.activeViewId).toBe("vs");
+    expect(s.sqlResult?.rows).toEqual([[1]]);
+    expect(ipc.viewRun).toHaveBeenCalledWith("vs", 1000, 0);
+    expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "vs");
+  });
+
   it("falls back to the first table when the recorded ids are stale", async () => {
     vi.mocked(ipc.workspaceOpen).mockResolvedValue({ path: "/a.nothing", format_version: 2 });
     vi.mocked(ipc.tableList).mockResolvedValue([T1]);
@@ -186,6 +208,8 @@ describe("openWorkspace", () => {
     const s = useWorkspace.getState();
     expect(s.activeTableId).toBe("t1");
     expect(s.activeViewId).toBe("v2");
+    // The repaired selection is written back, so the next open skips the fallback.
+    expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "v2");
     expect(s.error).toBeNull();
   });
 

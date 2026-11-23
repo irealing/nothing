@@ -13,7 +13,7 @@ import { useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import type { ColumnMeta, Json, Row } from "../types";
 import { choicesOf } from "../types";
-import { tagChipStyle } from "../theme/grid";
+import { chipStyle } from "../theme/grid";
 import { Dialog } from "../ui/Dialog";
 import { IconCheck, IconLink, IconPencil, IconSearch, IconX } from "./icons";
 
@@ -108,7 +108,7 @@ export function SelectPopover({
                 {c.icon && <span className="popover-icon">{c.icon}</span>}
                 <span
                   className="popover-tag"
-                  style={c.color ? tagChipStyle(c.color) : undefined}
+                  style={c.color ? chipStyle(c.color) : undefined}
                 >
                   {c.name}
                 </span>

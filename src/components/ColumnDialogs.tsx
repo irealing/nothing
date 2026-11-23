@@ -13,7 +13,7 @@ import { t } from "../i18n";
 import { Dialog } from "../ui/Dialog";
 import { Field, Input, Select, Textarea, Checkbox, handleFormEnter } from "../ui/Field";
 import { ColorPicker, EmojiMenu, EmojiPicker } from "../ui/ColumnPickers";
-import { tagCellStyle, tagChipStyle } from "../theme/grid";
+import { cellStyle, chipStyle, headerStyle, pickAutoColor } from "../theme/grid";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconSigma, IconX } from "./icons";
 import type {
   ColumnAlign,
@@ -116,26 +116,26 @@ function ColumnPreview({
   color: ColumnColor | null;
   align: ColumnAlign | null;
 }) {
-  const headerStyle = color ? tagChipStyle(color) : undefined;
-  const cellStyle = color ? tagCellStyle(color) : undefined;
+  const headerColors = color ? headerStyle(color) : undefined;
+  const cellColors = color ? cellStyle(color) : undefined;
   const contentAlign = previewAlign(type, resultType, align);
   return (
     <div className="column-preview" role="img" aria-label={t("column.preview")}>
-      <div className="column-preview-head" style={headerStyle}>
+      <div className="column-preview-head" style={headerColors}>
         <span className="column-preview-icon">
           {icon ? <span className="column-preview-emoji">{icon}</span> : <ColumnTypeIcon type={type} size={13} />}
         </span>
         <span className="column-preview-name">{name.trim() || t("column.previewUntitled")}</span>
         <IconChevronDown size={10} className="column-preview-caret" />
       </div>
-      <div className="column-preview-cell" style={cellStyle}>
+      <div className="column-preview-cell" style={cellColors}>
         <span className="column-preview-value" style={{ textAlign: contentAlign }}>
           {type === "select" || type === "multi_select" ? (
             <span
               className="column-preview-tag"
               style={
                 choices[0]?.color
-                  ? tagChipStyle(choices[0].color as ColumnColor)
+                  ? chipStyle(choices[0].color as ColumnColor)
                   : undefined
               }
             >
@@ -267,12 +267,20 @@ export default function ColumnDialog({
 
   /** Append an empty option after `index` (defaults to the end) and focus it. */
   const addChoice = (index?: number) => {
-    const choice: NewChoice = { id: crypto.randomUUID(), name: "", icon: null, color: null };
+    const id = crypto.randomUUID();
     setChoiceList((list) => {
+      const choice: NewChoice = {
+        id,
+        name: "",
+        icon: null,
+        // Give every new option a usable color immediately; the palette only
+        // repeats once all nine are taken.
+        color: pickAutoColor(list.map((c) => c.color)),
+      };
       const at = index === undefined ? list.length : Math.min(index + 1, list.length);
       return [...list.slice(0, at), choice, ...list.slice(at)];
     });
-    setFocusChoiceId(choice.id ?? null);
+    setFocusChoiceId(id);
   };
 
   const submit = async () => {

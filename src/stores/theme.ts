@@ -34,6 +34,9 @@ export function resolveTheme(pref: ThemePreference): ResolvedTheme {
 function applyResolved(theme: ResolvedTheme) {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.theme = theme;
+  // Radix Colors scopes its dark scales to `.dark`; keep the class in sync with
+  // the `data-theme` attribute so both our tokens and the scales flip together.
+  document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
 interface ThemeState {

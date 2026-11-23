@@ -1,6 +1,7 @@
 import { useState } from "react";
 import * as ipc from "../ipc";
 import { baseName, useWorkspace } from "../stores/workspace";
+import { useLayout } from "../stores/layout";
 import { ChangePasswordDialog, CreateTableDialog } from "./dialogs";
 import ImportCsvDialog from "./ImportCsvDialog";
 import { confirm } from "../ui/ConfirmDialog";
@@ -11,6 +12,8 @@ import {
   IconKey,
   IconLogout,
   IconPlus,
+  IconSidebarCollapse,
+  IconSidebarExpand,
   IconTable,
   IconTrash,
   IconUpload,
@@ -30,6 +33,8 @@ export default function Sidebar() {
   const deleteTable = useWorkspace((s) => s.deleteTable);
   const openScratch = useWorkspace((s) => s.openScratch);
   const closeWorkspace = useWorkspace((s) => s.closeWorkspace);
+  const collapsed = useLayout((s) => s.sidebarCollapsed);
+  const toggleSidebar = useLayout((s) => s.toggleSidebar);
 
   const [showCreateTable, setShowCreateTable] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -47,7 +52,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="sidebar">
+    <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
       <div className="sidebar-header" title={info?.path}>
         <div className="sidebar-ws">
           <span className="ws-mark">
@@ -59,14 +64,28 @@ export default function Sidebar() {
           </div>
         </div>
         <div className="sidebar-actions">
-          <Tooltip label={t("sidebar.changePassword")}>
-            <button className="btn-icon" onClick={() => setShowChangePw(true)}>
-              <IconKey size={15} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t("sidebar.closeWorkspace")}>
-            <button className="btn-icon" onClick={() => void closeWorkspace()}>
-              <IconLogout size={15} />
+          {!collapsed && (
+            <>
+              <Tooltip label={t("sidebar.changePassword")}>
+                <button className="btn-icon" onClick={() => setShowChangePw(true)}>
+                  <IconKey size={15} />
+                </button>
+              </Tooltip>
+              <Tooltip label={t("sidebar.closeWorkspace")}>
+                <button className="btn-icon" onClick={() => void closeWorkspace()}>
+                  <IconLogout size={15} />
+                </button>
+              </Tooltip>
+            </>
+          )}
+          <Tooltip label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}>
+            <button
+              className="btn-icon sidebar-toggle"
+              aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+              aria-expanded={!collapsed}
+              onClick={toggleSidebar}
+            >
+              {collapsed ? <IconSidebarExpand size={15} /> : <IconSidebarCollapse size={15} />}
             </button>
           </Tooltip>
         </div>
@@ -94,32 +113,45 @@ export default function Sidebar() {
             <li
               key={table.id}
               className={table.id === activeTableId ? "nav-item active" : "nav-item"}
+              title={collapsed ? table.name : undefined}
+              aria-current={table.id === activeTableId ? "page" : undefined}
               onClick={() => void selectTable(table.id)}
               onDoubleClick={() => {
+                if (collapsed) return;
                 setRenaming(table.id);
                 setRenameValue(table.name);
               }}
             >
-              <EmojiMenu
-                value={table.icon}
-                onChange={(icon) => void setTableIcon(table.id, icon)}
-                trigger={
-                  <button
-                    type="button"
-                    className="nav-icon nav-icon-btn"
-                    aria-label={t("table.icon")}
-                    title={t("table.icon")}
-                    onClick={(e) => e.stopPropagation()}
-                    onDoubleClick={(e) => e.stopPropagation()}
-                  >
-                    {table.icon ? (
-                      <span className="nav-emoji">{table.icon}</span>
-                    ) : (
-                      <IconTable size={14} />
-                    )}
-                  </button>
-                }
-              />
+              {collapsed ? (
+                <span className="nav-icon nav-icon-static">
+                  {table.icon ? (
+                    <span className="nav-emoji">{table.icon}</span>
+                  ) : (
+                    <IconTable size={14} />
+                  )}
+                </span>
+              ) : (
+                <EmojiMenu
+                  value={table.icon}
+                  onChange={(icon) => void setTableIcon(table.id, icon)}
+                  trigger={
+                    <button
+                      type="button"
+                      className="nav-icon nav-icon-btn"
+                      aria-label={t("table.icon")}
+                      title={t("table.icon")}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
+                      {table.icon ? (
+                        <span className="nav-emoji">{table.icon}</span>
+                      ) : (
+                        <IconTable size={14} />
+                      )}
+                    </button>
+                  }
+                />
+              )}
               {renaming === table.id ? (
                 <input
                   className="nav-rename"

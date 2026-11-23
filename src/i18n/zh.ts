@@ -49,6 +49,8 @@ export const zh = {
     noTables: "还没有表格",
     newTableAction: "新建表格",
     renameHint: "双击表名可重命名",
+    collapse: "收起侧边栏",
+    expand: "展开侧边栏",
     theme: "外观",
     themeLight: "浅色",
     themeDark: "深色",

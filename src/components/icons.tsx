@@ -106,6 +106,28 @@ export const IconChevronRight = (p: IconProps) => (
   </Svg>
 );
 
+export const IconChevronLeft = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m15 6-6 6 6 6" />
+  </Svg>
+);
+
+export const IconSidebarCollapse = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+    <path d="m15 9-3 3 3 3" />
+  </Svg>
+);
+
+export const IconSidebarExpand = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+    <path d="m14 9 3 3-3 3" />
+  </Svg>
+);
+
 export const IconKey = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="7.5" cy="15.5" r="4.5" />

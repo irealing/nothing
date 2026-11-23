@@ -16,7 +16,7 @@ import { choicesOf, colType, isFilterGroup } from "../types";
 import { IconChevronDown, IconPlus, IconSortAsc, IconSortDesc, IconX } from "./icons";
 import { Checkbox, Select } from "../ui/Field";
 import { Popover } from "../ui/Popover";
-import { tagChipStyle } from "../theme/grid";
+import { chipStyle, swatchStyle } from "../theme/grid";
 import { t } from "../i18n";
 import {
   NO_VALUE_OPS,
@@ -82,7 +82,7 @@ function ChoiceChip({ choice }: { choice: Pick<Choice, "icon" | "name" | "color"
   return (
     <span
       className="filter-choice-chip"
-      style={choice.color ? tagChipStyle(choice.color) : undefined}
+      style={choice.color ? chipStyle(choice.color) : undefined}
     >
       {choice.icon ? `${choice.icon} ` : ""}
       {choice.name}
@@ -112,7 +112,7 @@ function SingleChoicePicker({
           leading: c.color ? (
             <span
               className="filter-choice-dot"
-              style={{ background: tagChipStyle(c.color).background }}
+              style={{ background: swatchStyle(c.color).background }}
             />
           ) : undefined,
         }))}

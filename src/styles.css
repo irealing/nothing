@@ -2,7 +2,30 @@
  *
  * Design tokens first, then surfaces. Everything is intentionally quiet:
  * 1px hairline borders, soft shadows, a single blue accent.
+ *
+ * Palette values come from Radix Colors: each hue exposes a light scale on
+ * :root and a dark scale on `.dark`. The aliases below only map steps, so the
+ * same semantic token works in both themes.
  */
+
+@import "@radix-ui/colors/gray.css";
+@import "@radix-ui/colors/blue.css";
+@import "@radix-ui/colors/green.css";
+@import "@radix-ui/colors/yellow.css";
+@import "@radix-ui/colors/orange.css";
+@import "@radix-ui/colors/red.css";
+@import "@radix-ui/colors/purple.css";
+@import "@radix-ui/colors/pink.css";
+@import "@radix-ui/colors/brown.css";
+@import "@radix-ui/colors/gray-dark.css";
+@import "@radix-ui/colors/blue-dark.css";
+@import "@radix-ui/colors/green-dark.css";
+@import "@radix-ui/colors/yellow-dark.css";
+@import "@radix-ui/colors/orange-dark.css";
+@import "@radix-ui/colors/red-dark.css";
+@import "@radix-ui/colors/purple-dark.css";
+@import "@radix-ui/colors/pink-dark.css";
+@import "@radix-ui/colors/brown-dark.css";
 
 :root {
   /* ---- structure (theme independent) ---- */
@@ -28,6 +51,104 @@
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* ---- palette aliases (theme independent; Radix steps resolve per theme) ----
+ *
+ * Three surfaces per hue:
+ *   chip/swatch  option tags and the picker dots
+ *   tag          grid column chrome (header + cell tint)
+ */
+:root {
+  --chip-gray-bg: var(--gray-4);
+  --chip-gray-fg: var(--gray-12);
+  --chip-gray-border: var(--gray-7);
+  --swatch-gray-bg: var(--gray-9);
+  --swatch-gray-fg: #111111;
+  --tag-gray-header-bg: var(--gray-5);
+  --tag-gray-header-fg: var(--gray-12);
+  --tag-gray-cell-bg: var(--gray-3);
+  --tag-gray-cell-bg-hover: var(--gray-4);
+
+  --chip-blue-bg: var(--blue-4);
+  --chip-blue-fg: var(--blue-12);
+  --chip-blue-border: var(--blue-7);
+  --swatch-blue-bg: var(--blue-9);
+  --swatch-blue-fg: #ffffff;
+  --tag-blue-header-bg: var(--blue-5);
+  --tag-blue-header-fg: var(--blue-12);
+  --tag-blue-cell-bg: var(--blue-3);
+  --tag-blue-cell-bg-hover: var(--blue-4);
+
+  --chip-green-bg: var(--green-4);
+  --chip-green-fg: var(--green-12);
+  --chip-green-border: var(--green-7);
+  --swatch-green-bg: var(--green-9);
+  --swatch-green-fg: #ffffff;
+  --tag-green-header-bg: var(--green-5);
+  --tag-green-header-fg: var(--green-12);
+  --tag-green-cell-bg: var(--green-3);
+  --tag-green-cell-bg-hover: var(--green-4);
+
+  --chip-yellow-bg: var(--yellow-4);
+  --chip-yellow-fg: var(--yellow-12);
+  --chip-yellow-border: var(--yellow-7);
+  --swatch-yellow-bg: var(--yellow-9);
+  --swatch-yellow-fg: #3d2a00;
+  --tag-yellow-header-bg: var(--yellow-5);
+  --tag-yellow-header-fg: var(--yellow-12);
+  --tag-yellow-cell-bg: var(--yellow-3);
+  --tag-yellow-cell-bg-hover: var(--yellow-4);
+
+  --chip-orange-bg: var(--orange-4);
+  --chip-orange-fg: var(--orange-12);
+  --chip-orange-border: var(--orange-7);
+  --swatch-orange-bg: var(--orange-9);
+  --swatch-orange-fg: #ffffff;
+  --tag-orange-header-bg: var(--orange-5);
+  --tag-orange-header-fg: var(--orange-12);
+  --tag-orange-cell-bg: var(--orange-3);
+  --tag-orange-cell-bg-hover: var(--orange-4);
+
+  --chip-red-bg: var(--red-4);
+  --chip-red-fg: var(--red-12);
+  --chip-red-border: var(--red-7);
+  --swatch-red-bg: var(--red-9);
+  --swatch-red-fg: #ffffff;
+  --tag-red-header-bg: var(--red-5);
+  --tag-red-header-fg: var(--red-12);
+  --tag-red-cell-bg: var(--red-3);
+  --tag-red-cell-bg-hover: var(--red-4);
+
+  --chip-purple-bg: var(--purple-4);
+  --chip-purple-fg: var(--purple-12);
+  --chip-purple-border: var(--purple-7);
+  --swatch-purple-bg: var(--purple-9);
+  --swatch-purple-fg: #ffffff;
+  --tag-purple-header-bg: var(--purple-5);
+  --tag-purple-header-fg: var(--purple-12);
+  --tag-purple-cell-bg: var(--purple-3);
+  --tag-purple-cell-bg-hover: var(--purple-4);
+
+  --chip-pink-bg: var(--pink-4);
+  --chip-pink-fg: var(--pink-12);
+  --chip-pink-border: var(--pink-7);
+  --swatch-pink-bg: var(--pink-9);
+  --swatch-pink-fg: #ffffff;
+  --tag-pink-header-bg: var(--pink-5);
+  --tag-pink-header-fg: var(--pink-12);
+  --tag-pink-cell-bg: var(--pink-3);
+  --tag-pink-cell-bg-hover: var(--pink-4);
+
+  --chip-brown-bg: var(--brown-4);
+  --chip-brown-fg: var(--brown-12);
+  --chip-brown-border: var(--brown-7);
+  --swatch-brown-bg: var(--brown-9);
+  --swatch-brown-fg: #ffffff;
+  --tag-brown-header-bg: var(--brown-5);
+  --tag-brown-header-fg: var(--brown-12);
+  --tag-brown-cell-bg: var(--brown-3);
+  --tag-brown-cell-bg-hover: var(--brown-4);
 }
 
 /* ---- light theme (default) ---- */
@@ -77,52 +198,6 @@
   --shadow-2: 0 6px 18px rgba(15, 15, 15, 0.09), 0 1px 3px rgba(15, 15, 15, 0.05);
   --shadow-3: 0 20px 55px rgba(15, 15, 15, 0.22), 0 4px 12px rgba(15, 15, 15, 0.08);
   --ring: 0 0 0 2px rgba(35, 131, 226, 0.25);
-
-  /* column palette: header bg / header fg / cell bg / cell hover */
-  --tag-gray-header-bg: #f1f1ef;
-  --tag-gray-header-fg: #5f5e5b;
-  --tag-gray-cell-bg: #fbfbfa;
-  --tag-gray-cell-bg-hover: #f3f3f1;
-
-  --tag-blue-header-bg: #ddebf7;
-  --tag-blue-header-fg: #1f5f99;
-  --tag-blue-cell-bg: #f5f9fd;
-  --tag-blue-cell-bg-hover: #eef6fd;
-
-  --tag-green-header-bg: #ddedea;
-  --tag-green-header-fg: #1c6b5f;
-  --tag-green-cell-bg: #f5faf8;
-  --tag-green-cell-bg-hover: #edf7f3;
-
-  --tag-yellow-header-bg: #fbf3db;
-  --tag-yellow-header-fg: #8a6d1f;
-  --tag-yellow-cell-bg: #fdfaf1;
-  --tag-yellow-cell-bg-hover: #fbf6e7;
-
-  --tag-orange-header-bg: #fadec9;
-  --tag-orange-header-fg: #9a5320;
-  --tag-orange-cell-bg: #fdf6f1;
-  --tag-orange-cell-bg-hover: #fbeee5;
-
-  --tag-red-header-bg: #fbe4e4;
-  --tag-red-header-fg: #a02f2f;
-  --tag-red-cell-bg: #fdf6f6;
-  --tag-red-cell-bg-hover: #fbecec;
-
-  --tag-purple-header-bg: #eae2f8;
-  --tag-purple-header-fg: #6b4fa0;
-  --tag-purple-cell-bg: #f9f7fd;
-  --tag-purple-cell-bg-hover: #f2edfb;
-
-  --tag-pink-header-bg: #f9e0ea;
-  --tag-pink-header-fg: #9d3a6b;
-  --tag-pink-cell-bg: #fdf6f9;
-  --tag-pink-cell-bg-hover: #fbeaf1;
-
-  --tag-brown-header-bg: #eee0da;
-  --tag-brown-header-fg: #7a4a33;
-  --tag-brown-cell-bg: #faf6f4;
-  --tag-brown-cell-bg-hover: #f4eae5;
 }
 
 /* ---- dark theme ---- */
@@ -171,51 +246,6 @@
   --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-3: 0 20px 55px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.35);
   --ring: 0 0 0 2px rgba(74, 158, 234, 0.35);
-
-  --tag-gray-header-bg: #2f2f2f;
-  --tag-gray-header-fg: #cfcfcf;
-  --tag-gray-cell-bg: #202020;
-  --tag-gray-cell-bg-hover: #262626;
-
-  --tag-blue-header-bg: #1c3a57;
-  --tag-blue-header-fg: #9cc6ee;
-  --tag-blue-cell-bg: #141c24;
-  --tag-blue-cell-bg-hover: #18222c;
-
-  --tag-green-header-bg: #17403a;
-  --tag-green-header-fg: #8fd3c6;
-  --tag-green-cell-bg: #13211e;
-  --tag-green-cell-bg-hover: #162924;
-
-  --tag-yellow-header-bg: #3f3717;
-  --tag-yellow-header-fg: #e6cf8f;
-  --tag-yellow-cell-bg: #1f1d14;
-  --tag-yellow-cell-bg-hover: #262314;
-
-  --tag-orange-header-bg: #452a17;
-  --tag-orange-header-fg: #f0b183;
-  --tag-orange-cell-bg: #241a12;
-  --tag-orange-cell-bg-hover: #2c2017;
-
-  --tag-red-header-bg: #472024;
-  --tag-red-header-fg: #eda3a3;
-  --tag-red-cell-bg: #241518;
-  --tag-red-cell-bg-hover: #2c191c;
-
-  --tag-purple-header-bg: #322a4d;
-  --tag-purple-header-fg: #c3b0ef;
-  --tag-purple-cell-bg: #1c1926;
-  --tag-purple-cell-bg-hover: #231e30;
-
-  --tag-pink-header-bg: #45233a;
-  --tag-pink-header-fg: #efa6c8;
-  --tag-pink-cell-bg: #241822;
-  --tag-pink-cell-bg-hover: #2d1d29;
-
-  --tag-brown-header-bg: #3a2c23;
-  --tag-brown-header-fg: #d3b09a;
-  --tag-brown-cell-bg: #201a16;
-  --tag-brown-cell-bg-hover: #281f1a;
 }
 
 * {
@@ -316,6 +346,62 @@ body,
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  transition: width 0.18s ease, min-width 0.18s ease;
+}
+
+/* Collapsed rail: table icons stay reachable, labels/actions fold away. */
+.sidebar.collapsed {
+  width: 56px;
+  min-width: 56px;
+  overflow-x: hidden;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: center;
+  padding: 12px 0 10px;
+}
+
+.sidebar.collapsed .sidebar-ws {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-section {
+  padding: 8px 6px 4px;
+}
+
+.sidebar.collapsed .sidebar-section-head {
+  display: none;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  gap: 0;
+  padding: 7px 0;
+}
+
+.sidebar.collapsed .nav-item.active {
+  background: var(--accent-weak);
+  box-shadow: none;
+}
+
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-rename,
+.sidebar.collapsed .nav-action,
+.sidebar.collapsed .nav-empty,
+.sidebar.collapsed .sidebar-foot {
+  display: none;
+}
+
+.sidebar.collapsed .nav-icon {
+  width: 20px;
+}
+
+.sidebar.collapsed .nav-icon-static {
+  color: var(--text-mid);
+}
+
+.sidebar.collapsed .nav-item.active .nav-icon {
+  color: var(--accent);
 }
 
 .sidebar-header {
@@ -3334,20 +3420,20 @@ input[type="checkbox"] {
 .ui-swatches {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .ui-swatch {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   border: 1px solid var(--border-strong);
   cursor: pointer;
   display: grid;
   place-items: center;
   padding: 0;
-  transition: transform 0.1s ease;
+  transition: transform 0.1s ease, box-shadow 0.12s ease;
 }
 
 .ui-swatch:hover {

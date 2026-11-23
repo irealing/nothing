@@ -288,6 +288,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       ipc.viewList(tableId),
     ]);
     set({ columns, views, activeViewId: viewId, sqlResult: null, searchQuery: "" });
+    // Record the choice before running the view: if the query itself fails the
+    // selection is still the one the user made, and reopening retries it.
+    await persistUi();
     if (viewId) {
       const view = views.find((v) => v.id === viewId);
       if (view?.kind === "sql") {
@@ -330,7 +333,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     // Restored selection wins when it still exists; otherwise the first grid view.
     const preferred = preferredViewId ? views.find((v) => v.id === preferredViewId) : undefined;
     await loadTableData(tableId, preferred?.id ?? gridViews[0]?.id ?? null);
-    await persistUi();
   }
 
   /** Window title mirrors the open file so the taskbar is meaningful. */
@@ -503,7 +505,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       await guard(set, get, async () => {
         set((s) => ({ scratch: { ...s.scratch, open: false } }));
         await loadTableData(activeTableId, viewId);
-        await persistUi();
       });
     },
 
@@ -654,7 +655,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           data: { kind: "grid", ...defaultGridConfig() },
         });
         await loadTableData(activeTableId, v.id);
-        await persistUi();
       });
     },
 

@@ -6,6 +6,7 @@ import { Dialog } from "../ui/Dialog";
 import { Field, Input, handleFormEnter } from "../ui/Field";
 import { Menu, MenuItem } from "../ui/Menu";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconX } from "./icons";
+import { pickAutoColor } from "../theme/grid";
 import { EmojiPicker } from "../ui/ColumnPickers";
 
 /** Modal shell (kept as an alias so call sites stay terse). */
@@ -84,11 +85,16 @@ export function CreateTableDialog({ onClose }: { onClose: () => void }) {
         { name: titleCol.trim(), type: "text" },
         ...extras.map((e): NewColumn => {
           if (e.type === "select" || e.type === "multi_select") {
-            const choices = e.choices
+            const names = e.choices
               .split(/[,，]/)
               .map((s) => s.trim())
-              .filter(Boolean)
-              .map((n) => ({ id: crypto.randomUUID(), name: n }));
+              .filter(Boolean);
+            const used: string[] = [];
+            const choices = names.map((n) => {
+              const color = pickAutoColor(used);
+              used.push(color);
+              return { id: crypto.randomUUID(), name: n, color };
+            });
             return { name: e.name.trim(), type: e.type, choices };
           }
           return { name: e.name.trim(), type: e.type };

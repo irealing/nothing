@@ -4,7 +4,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useState, type ReactNode } from "react";
 import type { ColumnColor } from "../types";
-import { TAG_COLORS, tagChipStyle } from "../theme/grid";
+import { TAG_COLORS, swatchStyle } from "../theme/grid";
 import { IconCheck, IconX } from "../components/icons";
 import { t } from "../i18n";
 import { Popover as PopoverShell } from "./Popover";
@@ -192,7 +192,7 @@ export function ColorSwatches({
           aria-checked={value === color}
           aria-label={color}
           className="ui-swatch"
-          style={tagChipStyle(color)}
+          style={swatchStyle(color)}
           onClick={() => onChange(color)}
         >
           {value === color && <IconCheck size={11} />}
@@ -228,7 +228,7 @@ export function ColorPicker({
         >
           <span
             className={value ? "ui-color-dot" : "ui-color-dot none"}
-            style={value ? tagChipStyle(value) : undefined}
+            style={value ? swatchStyle(value) : undefined}
           >
             {!value && <IconX size={10} />}
           </span>

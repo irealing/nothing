@@ -16,13 +16,14 @@ import {
 } from "@glideapps/glide-data-grid";
 import { PAGE_SIZE, useWorkspace } from "../stores/workspace";
 import { useTheme } from "../stores/theme";
-import { readGridTheme, tagThemeOverride } from "../theme/grid";
+import { readGridTheme, readOptionPalette, tagThemeOverride } from "../theme/grid";
 import { formatDate } from "../i18n/format";
 import { t } from "../i18n";
 import { confirm } from "../ui/ConfirmDialog";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import type { ColumnMeta, Json, Row } from "../types";
-import { colType, choicesOf, formulaResultType, isReverse, sqlNameOf } from "../types";
+import { colType, formulaResultType, isReverse, sqlNameOf } from "../types";
+import { createOptionCellRenderer, optionCellFor } from "./OptionCell";
 import FilterSortPanel from "./FilterSortPanel";
 import ViewConfigBar from "./ViewConfigBar";
 import ColumnDialog from "./ColumnDialogs";
@@ -157,25 +158,8 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
       };
     }
     case "multi_select":
-    case "select": {
-      const choiceIcon = new Map(choicesOf(col).map((c) => [c.name, c.icon]));
-      const raw = Array.isArray(value)
-        ? (value as Json[]).map((v) => String(v))
-        : value === null || value === undefined || value === ""
-          ? []
-          : [String(value)];
-      const pills = raw.map((name) => {
-        const icon = choiceIcon.get(name);
-        return icon ? `${icon} ${name}` : name;
-      });
-      return {
-        kind: GridCellKind.Bubble,
-        data: pills,
-        copyData,
-        contentAlign,
-        allowOverlay: false,
-      };
-    }
+    case "select":
+      return optionCellFor(col, value, contentAlign);
     default:
       return {
         kind: GridCellKind.Text,
@@ -289,6 +273,11 @@ export default function TableView() {
   const layout = activeView?.columns ?? [];
   const resolvedTheme = useTheme((s) => s.resolved);
   const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme]);
+  const optionPalette = useMemo(() => readOptionPalette(), [resolvedTheme]);
+  const customRenderers = useMemo(
+    () => [createOptionCellRenderer(optionPalette)],
+    [optionPalette],
+  );
   const gridColumns: GridColumn[] = useMemo(
     () => [
       ...columns.map((c) => ({
@@ -705,6 +694,7 @@ export default function TableView() {
           columns={gridColumns}
           rows={total}
           theme={gridTheme}
+          customRenderers={customRenderers}
           getCellContent={getCellContent}
           onCellEdited={onCellEdited}
           onCellClicked={onCellClicked}
