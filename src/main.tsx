@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import "@glideapps/glide-data-grid/dist/index.css";
 import "./styles.css";
 import App from "./App";
+import { installContextMenuGuard } from "./contextMenu";
+
+installContextMenuGuard();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

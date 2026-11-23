@@ -302,6 +302,18 @@ export const zh = {
     unchecked: "☐ 未勾选",
     multiValuePlaceholder: "逗号分隔多个值",
   },
+  viewConfig: {
+    filterCount: "筛选 {count} 项",
+    sortCount: "排序 {count} 项",
+    noValue: "（空）",
+    valueSeparator: "、",
+    and: "且",
+    or: "或",
+    edit: "编辑",
+    expand: "展开筛选与排序",
+    collapse: "收起筛选与排序",
+    unknownColumn: "已删除的列",
+  },
   ops: {
     eq: "等于",
     neq: "不等于",

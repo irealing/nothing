@@ -24,6 +24,7 @@ import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import type { ColumnMeta, Json, Row } from "../types";
 import { colType, choicesOf, formulaResultType, isReverse, sqlNameOf } from "../types";
 import FilterSortPanel from "./FilterSortPanel";
+import ViewConfigBar from "./ViewConfigBar";
 import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
 import { InlineCellEditor } from "./GridEditors";
@@ -689,6 +690,14 @@ export default function TableView() {
             : t("common.delete")}
         </button>
       </div>
+      {activeView?.kind === "grid" && (
+        <ViewConfigBar
+          key={activeView.id}
+          view={activeView}
+          columns={columns}
+          onEdit={() => setPanelOpen(true)}
+        />
+      )}
       <div className="grid-wrap">
         <DataEditor
           ref={gridRef}

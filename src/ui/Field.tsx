@@ -58,6 +58,40 @@ export const Textarea = forwardRef<
 });
 
 /**
+ * Token-styled checkbox that keeps a real `<input type="checkbox">` for
+ * keyboard, form and testing semantics. The native control is transparent and
+ * overlaid by `.ui-check-box`; clicking the surrounding label toggles it.
+ */
+export function Checkbox({
+  checked,
+  onChange,
+  disabled,
+  className,
+  children,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <label className={className ? `ui-check ${className}` : "ui-check"}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="ui-check-box" aria-hidden>
+        <IconCheck size={11} />
+      </span>
+      {children != null && <span className="ui-check-text">{children}</span>}
+    </label>
+  );
+}
+
+/**
  * Form-level Enter policy shared by multi-field dialogs.
  *
  * Browser implicit submission fires from *any* single-line input, which used to

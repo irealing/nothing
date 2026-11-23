@@ -34,6 +34,10 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
 
   const gridViews = views.filter((v) => v.kind === "grid");
   const sqlViews = views.filter((v) => v.kind === "sql");
+  // A table's implicit default view is recreated on demand. Deleting the last
+  // grid view would just bring it back under the default name, so there is
+  // nothing meaningful to offer there.
+  const canDeleteGrid = gridViews.length > 1;
 
   if (!activeTableId && sqlViews.length === 0) return null;
 
@@ -78,22 +82,26 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
               >
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>
-              <MenuSeparator />
-              <MenuItem
-                danger
-                onSelect={() => {
-                  void confirm({
-                    title: t("view.deleteTitle"),
-                    description: t("view.deleteConfirm", { name: v.name }),
-                    confirmLabel: t("common.delete"),
-                    danger: true,
-                  }).then((ok) => {
-                    if (ok) void deleteView(v.id);
-                  });
-                }}
-              >
-                <IconTrash size={14} /> {t("view.delete")}
-              </MenuItem>
+              {canDeleteGrid && (
+                <>
+                  <MenuSeparator />
+                  <MenuItem
+                    danger
+                    onSelect={() => {
+                      void confirm({
+                        title: t("view.deleteTitle"),
+                        description: t("view.deleteConfirm", { name: v.name }),
+                        confirmLabel: t("common.delete"),
+                        danger: true,
+                      }).then((ok) => {
+                        if (ok) void deleteView(v.id);
+                      });
+                    }}
+                  >
+                    <IconTrash size={14} /> {t("view.delete")}
+                  </MenuItem>
+                </>
+              )}
             </Menu>
           )}
         </div>

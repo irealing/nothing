@@ -5,6 +5,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useWorkspace } from "../stores/workspace";
 import type {
+  Choice,
   ColumnMeta,
   FilterNode,
   FilterOp,
@@ -14,68 +15,23 @@ import type {
   ViewMeta,
 } from "../types";
 import { isFilterGroup } from "../types";
-import { choicesOf, colType, formulaResultType } from "../types";
-import { IconPlus, IconSliders, IconSortAsc, IconSortDesc, IconX } from "./icons";
+import { choicesOf, colType } from "../types";
+import { IconChevronDown, IconPlus, IconSliders, IconSortAsc, IconSortDesc, IconX } from "./icons";
 import { PanelDialog } from "../ui/Dialog";
+import { Checkbox, Select } from "../ui/Field";
+import { Popover } from "../ui/Popover";
+import { tagChipStyle } from "../theme/grid";
 import { t } from "../i18n";
-
-type Kind = "text" | "select" | "multi_select" | "number" | "date" | "checkbox" | "relation";
-
-const OP_LABELS: Record<FilterOp, string> = {
-  eq: t("ops.eq"),
-  neq: t("ops.neq"),
-  contains: t("ops.contains"),
-  not_contains: t("ops.not_contains"),
-  starts_with: t("ops.starts_with"),
-  ends_with: t("ops.ends_with"),
-  is_empty: t("ops.is_empty"),
-  is_not_empty: t("ops.is_not_empty"),
-  gt: t("ops.gt"),
-  gte: t("ops.gte"),
-  lt: t("ops.lt"),
-  lte: t("ops.lte"),
-  in: t("ops.in"),
-  not_in: t("ops.not_in"),
-  before: t("ops.before"),
-  after: t("ops.after"),
-  on: t("ops.on"),
-};
-
-const OPS_BY_KIND: Record<Kind, FilterOp[]> = {
-  text: ["eq", "neq", "contains", "not_contains", "starts_with", "ends_with", "is_empty", "is_not_empty"],
-  select: ["eq", "neq", "contains", "is_empty", "is_not_empty", "in", "not_in"],
-  multi_select: ["contains", "not_contains", "is_empty", "is_not_empty", "in"],
-  number: ["eq", "neq", "gt", "gte", "lt", "lte", "is_empty", "is_not_empty"],
-  date: ["before", "after", "on", "eq", "neq", "gt", "gte", "lt", "lte", "is_empty", "is_not_empty"],
-  checkbox: ["eq", "neq"],
-  relation: ["is_empty", "is_not_empty"],
-};
-
-const NO_VALUE_OPS: FilterOp[] = ["is_empty", "is_not_empty"];
-
-function effectiveKind(col: ColumnMeta | undefined): Kind {
-  if (!col) return "text";
-  const t = colType(col);
-  if (t === "formula") {
-    const rt = formulaResultType(col) ?? "text";
-    if (rt === "number") return "number";
-    if (rt === "date") return "date";
-    if (rt === "checkbox") return "checkbox";
-    return "text";
-  }
-  if (t === "relation") return "relation";
-  if (t === "multi_select") return "multi_select";
-  if (t === "select") return "select";
-  if (t === "number") return "number";
-  if (t === "date") return "date";
-  if (t === "checkbox") return "checkbox";
-  return "text";
-}
-
-function choicesOfColumn(col: ColumnMeta | undefined): string[] {
-  if (!col) return [];
-  return choicesOf(col).map((c) => c.name);
-}
+import {
+  NO_VALUE_OPS,
+  OPS_BY_KIND,
+  OP_LABELS,
+  effectiveKind,
+  initialFilterValue,
+  isListOp,
+  normalizeFilterValue,
+  type FilterKind,
+} from "./filterModel";
 
 
 /** Column label with its optional emoji icon. */
@@ -116,6 +72,111 @@ function prune(node: FilterNode): FilterNode | null {
 
 // ---- value editors -----------------------------------------------------------
 
+function ChoiceChip({ choice }: { choice: Pick<Choice, "icon" | "name" | "color"> }) {
+  return (
+    <span
+      className="filter-choice-chip"
+      style={choice.color ? tagChipStyle(choice.color) : undefined}
+    >
+      {choice.icon ? `${choice.icon} ` : ""}
+      {choice.name}
+    </span>
+  );
+}
+
+function SingleChoicePicker({
+  choices,
+  value,
+  onChange,
+}: {
+  choices: Choice[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="filter-value">
+      <Select
+        value={value}
+        onChange={onChange}
+        ariaLabel={t("filter.valuePlaceholder")}
+        placeholder={t("common.choose")}
+        options={choices.map((c) => ({
+          value: c.name,
+          label: `${c.icon ? `${c.icon} ` : ""}${c.name}`,
+          leading: c.color ? (
+            <span
+              className="filter-choice-dot"
+              style={{ background: tagChipStyle(c.color).background }}
+            />
+          ) : undefined,
+        }))}
+      />
+    </div>
+  );
+}
+
+function MultiChoicePicker({
+  choices,
+  value,
+  onChange,
+}: {
+  choices: Choice[];
+  value: string[];
+  onChange: (value: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = new Set(value);
+  const known = new Map(choices.map((c) => [c.name, c]));
+  const labels = value.map((name) => known.get(name) ?? { name, icon: null, color: null });
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      align="start"
+      className="filter-choice-popover"
+      trigger={
+        <button
+          type="button"
+          className="filter-value ui-input filter-choice-trigger"
+          aria-expanded={open}
+          aria-label={t("filter.valuePlaceholder")}
+        >
+          <span className="filter-choice-trigger-text">
+            {labels.length === 0 ? (
+              <span className="filter-choice-placeholder">{t("common.choose")}</span>
+            ) : (
+              labels
+                .map((label) => `${label.icon ? `${label.icon} ` : ""}${label.name}`)
+                .join(t("viewConfig.valueSeparator"))
+            )}
+          </span>
+          <IconChevronDown size={12} />
+        </button>
+      }
+    >
+      <div className="filter-choice-list">
+        {choices.map((c) => (
+          <Checkbox
+            key={c.id}
+            className="filter-choice-item"
+            checked={selected.has(c.name)}
+            onChange={(on) =>
+              onChange(
+                on
+                  ? [...value.filter((name) => name !== c.name), c.name]
+                  : value.filter((name) => name !== c.name),
+              )
+            }
+          >
+            <ChoiceChip choice={c} />
+          </Checkbox>
+        ))}
+      </div>
+    </Popover>
+  );
+}
+
 function ValueInput({
   kind,
   col,
@@ -123,7 +184,7 @@ function ValueInput({
   value,
   onChange,
 }: {
-  kind: Kind;
+  kind: FilterKind;
   col: ColumnMeta | undefined;
   op: FilterOp;
   value: Json;
@@ -131,7 +192,24 @@ function ValueInput({
 }) {
   if (NO_VALUE_OPS.includes(op)) return null;
 
-  if (op === "in" || op === "not_in") {
+  const choices = col ? choicesOf(col) : [];
+  if ((kind === "select" || kind === "multi_select") && choices.length > 0) {
+    return isListOp(op) ? (
+      <MultiChoicePicker
+        choices={choices}
+        value={Array.isArray(value) ? value.map(String) : []}
+        onChange={onChange}
+      />
+    ) : (
+      <SingleChoicePicker
+        choices={choices}
+        value={typeof value === "string" ? value : ""}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (isListOp(op)) {
     const text = Array.isArray(value) ? (value as Json[]).join(",") : String(value ?? "");
     return (
       <input
@@ -186,26 +264,7 @@ function ValueInput({
         </select>
       );
     case "select":
-    case "multi_select": {
-      const choices = choicesOfColumn(col);
-      if (choices.length > 0 && op !== "not_contains") {
-        return (
-          <select
-            className="filter-value"
-            value={typeof value === "string" ? value : ""}
-            onChange={(e) => onChange(e.target.value)}
-          >
-            <option value="" disabled>
-              {t("common.choose")}
-            </option>
-            {choices.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        );
-      }
+    case "multi_select":
       return (
         <input
           className="filter-value"
@@ -214,7 +273,6 @@ function ValueInput({
           onChange={(e) => onChange(e.target.value)}
         />
       );
-    }
     default:
       return (
         <input
@@ -263,7 +321,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
     const rule: FilterRule = {
       column_id: col.id,
       op,
-      value: kind === "number" ? 0 : kind === "checkbox" ? true : "",
+      value: normalizeFilterValue(kind, op, initialFilterValue(kind)),
     };
     setDraft((d) => {
       let root = d.filters;
@@ -379,7 +437,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
               Object.assign(r, {
                 column_id: e.target.value,
                 op: nextOp,
-                value: nextKind === "number" ? 0 : nextKind === "checkbox" ? true : "",
+                value: normalizeFilterValue(nextKind, nextOp, rule.value),
               });
             }
             setFilters(next);
@@ -395,9 +453,13 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
           className="filter-op"
           value={rule.op}
           onChange={(e) => {
+            const nextOp = e.target.value as FilterOp;
             const next = clone(draft.filters!);
             const r = childAtPath(next, path);
-            if (!isFilterGroup(r)) r.op = e.target.value as FilterOp;
+            if (!isFilterGroup(r)) {
+              r.op = nextOp;
+              r.value = normalizeFilterValue(kind, nextOp, r.value);
+            }
             setFilters(next);
           }}
         >
@@ -543,16 +605,16 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
             <h4>{t("filter.hidden")}</h4>
             <div className="hidden-cols">
               {columns.map((c) => (
-                <label className="hidden-col" key={c.id}>
-                  <input
-                    type="checkbox"
-                    checked={hiddenIds.has(c.id)}
-                    onChange={(e) => {
-                      void updateViewColumn(view.id, c.id, { hidden: e.target.checked });
-                    }}
-                  />
+                <Checkbox
+                  className="hidden-col"
+                  key={c.id}
+                  checked={hiddenIds.has(c.id)}
+                  onChange={(checked) => {
+                    void updateViewColumn(view.id, c.id, { hidden: checked });
+                  }}
+                >
                   {colLabel(c)}
-                </label>
+                </Checkbox>
               ))}
             </div>
           </section>

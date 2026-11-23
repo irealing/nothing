@@ -2182,6 +2182,191 @@ input[type="checkbox"] {
   color: var(--text-mid);
 }
 
+/* ---------- filter value pickers ---------- */
+
+.filter-choice-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.filter-choice-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filter-choice-trigger-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-choice-placeholder {
+  color: var(--text-weak);
+}
+
+.filter-choice-popover {
+  min-width: 190px;
+  max-width: 280px;
+}
+
+.filter-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.filter-choice-item {
+  padding: 5px 8px;
+  border-radius: var(--radius);
+}
+
+.filter-choice-item:hover {
+  background: var(--bg-hover);
+}
+
+.filter-choice-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- active view config summary ---------- */
+
+.view-config {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 14px;
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.view-config-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-mid);
+  font: inherit;
+  cursor: pointer;
+}
+
+.view-config-head:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.view-config-caret {
+  transition: transform 0.15s ease;
+}
+
+.view-config-caret.open {
+  transform: rotate(180deg);
+}
+
+.view-config-edit {
+  margin-left: auto;
+}
+
+.view-config-body {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+
+.view-config-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.view-config-label {
+  flex-shrink: 0;
+  padding-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-weak);
+}
+
+.view-config-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.view-config-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-config-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 440px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+.view-config-chip-col {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.view-config-chip-op {
+  color: var(--text-weak);
+  white-space: nowrap;
+}
+
+.view-config-chip-value {
+  min-width: 0;
+  color: var(--text-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-config-join {
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
 /* ---------- popovers ---------- */
 
 .popover {
@@ -2799,6 +2984,68 @@ input[type="checkbox"] {
   cursor: not-allowed;
 }
 
+/* Shared checkbox: native input stays focusable, the visible box is ours. */
+.ui-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+}
+
+.ui-check > input {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ui-check-box {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg);
+  color: transparent;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.ui-check:hover > .ui-check-box {
+  border-color: var(--accent);
+}
+
+.ui-check > input:checked + .ui-check-box {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.ui-check > input:focus-visible + .ui-check-box {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.ui-check > input:disabled + .ui-check-box,
+.ui-check > input:disabled ~ .ui-check-text {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-check-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ui-textarea {
   height: auto;
   min-height: 84px;
@@ -3271,12 +3518,15 @@ input[type="checkbox"] {
 
 .ui-color-popover {
   padding: 10px;
-}.panel-layer {
+}
+
+.panel-layer {
   position: fixed;
   inset: 0;
   z-index: 101;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   padding: 72px 24px 24px;
   pointer-events: none;
 }
@@ -3284,7 +3534,9 @@ input[type="checkbox"] {
 .panel-layer > .panel {
   pointer-events: auto;
   max-height: 100%;
-}/* welcome footer now holds the local-only note + theme switch */
+}
+
+/* welcome footer now holds the local-only note + theme switch */
 .welcome-foot {
   justify-content: space-between;
 }
