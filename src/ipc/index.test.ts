@@ -11,6 +11,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import {
+  appInfo,
   csvImport,
   csvPreview,
   IpcError,
@@ -103,6 +104,13 @@ describe("ipc argument mapping", () => {
 
     await takeOpenRequest();
     expect(mockInvoke).toHaveBeenCalledWith("take_open_request", {});
+  });
+
+  it("requests build metadata without arguments", async () => {
+    mockInvoke.mockResolvedValue({ version: "0.1.0" });
+    const info = await appInfo();
+    expect(mockInvoke).toHaveBeenCalledWith("app_info", {});
+    expect(info.version).toBe("0.1.0");
   });
 });
 

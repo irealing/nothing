@@ -5,6 +5,7 @@ import { t } from "../i18n";
 import { Field, Input } from "../ui/Field";
 import { ThemeSwitch } from "../ui/ThemeSwitch";
 import { IconDatabase, IconFolder, IconLock, IconPlus } from "./icons";
+import { VersionChip } from "./AboutDialog";
 
 /**
  * Two modes in one card:
@@ -270,6 +271,7 @@ export default function Welcome() {
           <span>
             <span className="dot" /> {t("welcome.localOnly")}
           </span>
+          <VersionChip />
           <ThemeSwitch compact />
         </div>
       </div>

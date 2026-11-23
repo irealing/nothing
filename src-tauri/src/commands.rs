@@ -173,6 +173,37 @@ pub fn workspace_change_password(state: State<AppState>, new_password: String) -
 }
 
 // ---------------------------------------------------------------------------
+// Build metadata (About dialog / bug reports)
+// ---------------------------------------------------------------------------
+
+/// Enough to pin a bug report to one binary. Available without a workspace:
+/// the welcome screen shows it precisely when opening a workspace fails.
+#[derive(Serialize)]
+pub struct AppInfo {
+    pub version: &'static str,
+    /// `git describe --tags --long --always --dirty` (a bare short SHA before
+    /// the first tag), stamped by `build.rs`; `"unknown"` without git.
+    pub git: &'static str,
+    pub branch: &'static str,
+    /// RFC3339 UTC compile time, stamped by `build.rs`.
+    pub build_time: &'static str,
+    pub platform: String,
+    pub tauri_version: &'static str,
+}
+
+#[tauri::command]
+pub fn app_info() -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        git: env!("NOTHING_GIT_DESCRIBE"),
+        branch: env!("NOTHING_GIT_BRANCH"),
+        build_time: env!("NOTHING_BUILD_TIME"),
+        platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+        tauri_version: tauri::VERSION,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // App settings (recent files, last table/view) & shell open requests
 // ---------------------------------------------------------------------------
 
@@ -434,4 +465,24 @@ pub fn csv_preview(path: String, preview_rows: Option<usize>) -> CmdResult<CsvPr
 #[tauri::command]
 pub fn csv_import(state: State<AppState>, options: ImportCsvOptions) -> CmdResult<ImportReport> {
     with_ws(&state, |ws| ws.import_csv(options))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_info_is_stamped_by_the_build() {
+        let info = app_info();
+        assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
+        assert!(!info.git.is_empty());
+        assert!(!info.branch.is_empty());
+        assert!(
+            info.build_time.contains('T'),
+            "expected RFC3339 build time, got {}",
+            info.build_time
+        );
+        assert!(!info.platform.is_empty());
+        assert!(!info.tauri_version.is_empty());
+    }
 }

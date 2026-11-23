@@ -49,6 +49,8 @@ pub fn run() {
             commands::workspace_close,
             commands::workspace_info,
             commands::workspace_change_password,
+            // build metadata
+            commands::app_info,
             // app settings & shell open requests
             commands::settings_get,
             commands::settings_ui,

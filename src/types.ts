@@ -293,6 +293,17 @@ export interface WorkspaceInfo {
   format_version: number;
 }
 
+/** Build metadata for the About dialog; `build_time` is RFC3339 UTC. */
+export interface AppInfo {
+  version: string;
+  /** `git describe --tags --long --always --dirty`, or "unknown" when built without git. */
+  git: string;
+  branch: string;
+  build_time: string;
+  platform: string;
+  tauri_version: string;
+}
+
 // ---- app settings (plain-text `settings.json` in the OS app config dir) ----
 
 export interface RecentWorkspace {

@@ -6,6 +6,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { t } from "../i18n";
 import type {
+  AppInfo,
   Cells,
   ColumnMeta,
   ColumnPatch,
@@ -64,6 +65,10 @@ export const workspaceInfo = () => call<WorkspaceInfo | null>("workspace_info");
 
 export const workspaceChangePassword = (newPassword: string) =>
   call<void>("workspace_change_password", { newPassword });
+
+// ---- build metadata ----
+
+export const appInfo = () => call<AppInfo>("app_info");
 
 // ---- app settings & shell open requests ----
 

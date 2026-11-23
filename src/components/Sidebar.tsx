@@ -18,6 +18,7 @@ import {
 import { ThemeSwitch } from "../ui/ThemeSwitch";
 import { Tooltip } from "../ui/Tooltip";
 import { EmojiMenu } from "../ui/ColumnPickers";
+import { VersionChip } from "./AboutDialog";
 
 export default function Sidebar() {
   const info = useWorkspace((s) => s.info);
@@ -191,6 +192,9 @@ export default function Sidebar() {
           </Tooltip>
         </div>
         <p className="nav-hint">{t("sidebar.renameHint")}</p>
+        <div className="sidebar-foot-meta">
+          <VersionChip />
+        </div>
       </div>
 
       {showCreateTable && <CreateTableDialog onClose={() => setShowCreateTable(false)} />}

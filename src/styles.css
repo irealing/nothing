@@ -565,6 +565,26 @@ body,
   margin: 0;
 }
 
+.sidebar-foot-meta {
+  margin-top: 6px;
+}
+
+/* Weak build stamp (sidebar / welcome); clicking opens the About dialog. */
+.version-chip {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-weak);
+  cursor: pointer;
+  text-align: left;
+}
+
+.version-chip:hover {
+  color: var(--text-mid);
+}
+
 /* ---------- toolbar ---------- */
 
 .toolbar {
@@ -1734,6 +1754,33 @@ input[type="checkbox"] {
 
 .modal-actions .hint {
   flex: 0 1 auto;
+}
+
+/* ---------- about dialog ---------- */
+
+.about-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 7px 16px;
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.about-list dt {
+  color: var(--text-weak);
+}
+
+.about-list dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.btn.ghost.about-copy {
+  color: var(--text-weak);
+  font-size: 12px;
 }
 
 /* ---------- toast ---------- */
@@ -3648,6 +3695,10 @@ input[type="checkbox"] {
   gap: 6px;
   min-width: 0;
   line-height: 1.45;
+}
+
+.welcome-foot .version-chip {
+  margin-left: auto;
 }
 
 .theme-switch.compact {
