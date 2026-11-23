@@ -156,6 +156,15 @@ describe("ColumnDialog", () => {
     expect(screen.getByDisplayValue("备注")).toBeTruthy();
   });
 
+  it("adds options from the header action", async () => {
+    const user = userEvent.setup();
+    render(<ColumnDialog existing={SELECT_COL} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("button", { name: "添加选项" }));
+
+    expect(screen.getAllByPlaceholderText(/^选项 \d+$/)).toHaveLength(2);
+  });
+
   it("greys out the default value control until it is enabled", async () => {
     const user = userEvent.setup();
     render(<ColumnDialog existing={TEXT_COL} onClose={() => {}} />);
@@ -163,7 +172,7 @@ describe("ColumnDialog", () => {
     const value = screen.getByPlaceholderText("新行默认填这个值") as HTMLInputElement;
     expect(value.disabled).toBe(true);
 
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByText("新行使用默认值"));
     expect(value.disabled).toBe(false);
   });
 });

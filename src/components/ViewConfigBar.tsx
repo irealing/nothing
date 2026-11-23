@@ -1,63 +1,50 @@
-// Read-only summary of the active grid view's filters/sorts. The view tabs only
-// show the view name, so without this the rules are invisible until the panel
-// is opened again. Collapsed by default to keep the grid area intact.
+// Inline editor for the active grid view's filters/sorts. The collapsed row
+// keeps the rules visible at a glance; expanding it mounts the same shared
+// FilterEditor the modal panel uses, so the summary is actionable rather than
+// read-only. Hidden columns stay in the modal panel (opened from here).
 
-import { Fragment, useMemo, useState, type ReactNode } from "react";
-import type { ColumnMeta, FilterNode, ViewMeta } from "../types";
-import { isFilterGroup } from "../types";
+import { useEffect, useState } from "react";
+import { useWorkspace } from "../stores/workspace";
+import type { ColumnMeta, GridConfig, ViewMeta } from "../types";
 import { t } from "../i18n";
-import { formatFilterValue, filterRuleCount, OP_LABELS } from "./filterModel";
-import { IconChevronDown, IconSliders, IconSortAsc, IconSortDesc } from "./icons";
+import { filterRuleCount } from "./filterModel";
+import { IconChevronDown, IconSliders } from "./icons";
+import FilterEditor, { editableConfig, pruneFilters } from "./FilterEditor";
 
-function columnLabel(col: ColumnMeta | undefined): string {
-  if (!col) return t("viewConfig.unknownColumn");
-  return col.icon ? `${col.icon} ${col.name}` : col.name;
-}
+const EMPTY_SORTS: GridConfig["sorts"] = [];
 
 export default function ViewConfigBar({
   view,
   columns,
-  onEdit,
+  onOpenPanel,
 }: {
   view: ViewMeta;
   columns: ColumnMeta[];
-  onEdit: () => void;
+  onOpenPanel: () => void;
 }) {
+  const updateView = useWorkspace((s) => s.updateView);
   const [open, setOpen] = useState(false);
-  const colById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<GridConfig>(() =>
+    editableConfig(view.data.kind === "grid" ? view.data : { filters: null, sorts: [] }),
+  );
 
-  if (view.data.kind !== "grid") return null;
-  const { filters, sorts } = view.data;
+  const grid = view.data.kind === "grid" ? view.data : null;
+  const filters = grid?.filters ?? null;
+  const sorts = grid?.sorts ?? EMPTY_SORTS;
   const filterCount = filterRuleCount(filters);
   const showFilters = filterCount > 0;
   const showSorts = sorts.length > 0;
+
+  // A save from the modal panel (or any external view update) replaces the
+  // draft while the inline editor is closed. Open edits must survive column
+  // resizes and other metadata writes.
+  useEffect(() => {
+    if (!open) setDraft(editableConfig({ filters, sorts }));
+  }, [filters, sorts, open]);
+
+  if (!grid) return null;
   if (!showFilters && !showSorts) return null;
-
-  const renderFilter = (node: FilterNode, key: string): ReactNode => {
-    if (isFilterGroup(node)) {
-      const joiner = node.op === "and" ? t("viewConfig.and") : t("viewConfig.or");
-      return (
-        <span className="view-config-group" key={key}>
-          {node.children.map((child, i) => (
-            <Fragment key={`${key}.${i}`}>
-              {i > 0 && <span className="view-config-join">{joiner}</span>}
-              {renderFilter(child, `${key}.${i}`)}
-            </Fragment>
-          ))}
-        </span>
-      );
-    }
-
-    const col = colById.get(node.column_id);
-    const value = formatFilterValue(col, node);
-    return (
-      <span className="view-config-chip" key={key}>
-        <span className="view-config-chip-col">{columnLabel(col)}</span>
-        <span className="view-config-chip-op">{OP_LABELS[node.op]}</span>
-        {value && <span className="view-config-chip-value">{value}</span>}
-      </span>
-    );
-  };
 
   const summary = [
     showFilters ? t("viewConfig.filterCount", { count: filterCount }) : "",
@@ -66,6 +53,34 @@ export default function ViewConfigBar({
     .filter(Boolean)
     .join(" · ");
 
+  // Opening always starts from the saved view: a collapsed edit is an abort.
+  const toggle = () => {
+    if (!open) setDraft(editableConfig({ filters, sorts }));
+    setOpen(!open);
+  };
+
+  const cancel = () => {
+    setDraft(editableConfig({ filters, sorts }));
+    setOpen(false);
+  };
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await updateView(view.id, {
+        data: {
+          kind: "grid",
+          filters: pruneFilters(draft.filters),
+          sorts: draft.sorts,
+        },
+      });
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="view-config">
       <button
@@ -73,43 +88,50 @@ export default function ViewConfigBar({
         className="view-config-head"
         aria-expanded={open}
         title={open ? t("viewConfig.collapse") : t("viewConfig.expand")}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggle}
       >
         <IconChevronDown size={12} className={open ? "view-config-caret open" : "view-config-caret"} />
         <IconSliders size={13} />
         <span>{summary}</span>
       </button>
-      <button type="button" className="btn ghost small view-config-edit" onClick={onEdit}>
-        {t("viewConfig.edit")}
+      <button
+        type="button"
+        className="btn ghost small view-config-edit"
+        onClick={() => {
+          setOpen(false);
+          setDraft(editableConfig({ filters, sorts }));
+          onOpenPanel();
+        }}
+      >
+        {t("viewConfig.hiddenColumns")}
       </button>
       {open && (
-        <div className="view-config-body">
-          {showFilters && filters && (
-            <div className="view-config-section">
-              <span className="view-config-label">{t("filter.filters")}</span>
-              <div className="view-config-chips">{renderFilter(filters, "f")}</div>
-            </div>
-          )}
-          {showSorts && (
-            <div className="view-config-section">
-              <span className="view-config-label">{t("filter.sorts")}</span>
-              <div className="view-config-chips">
-                {sorts.map((sort, i) => {
-                  const col = colById.get(sort.column_id);
-                  return (
-                    <span className="view-config-chip" key={`${sort.column_id}.${i}`}>
-                      <span className="view-config-chip-col">{columnLabel(col)}</span>
-                      <span className="view-config-chip-op">
-                        {sort.desc ? t("filter.desc") : t("filter.asc")}
-                      </span>
-                      {sort.desc ? <IconSortDesc size={12} /> : <IconSortAsc size={12} />}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+        <>
+          <div className="view-config-body">
+            <FilterEditor
+              filters={draft.filters}
+              sorts={draft.sorts}
+              columns={columns}
+              onFiltersChange={(filters) => setDraft((d) => ({ ...d, filters }))}
+              onSortsChange={(sorts) => setDraft((d) => ({ ...d, sorts }))}
+            />
+          </div>
+          <div className="view-config-foot">
+            <button
+              className="btn ghost small"
+              onClick={() => setDraft({ filters: null, sorts: [] })}
+            >
+              {t("filter.reset")}
+            </button>
+            <div className="toolbar-spacer" />
+            <button className="btn small" onClick={cancel}>
+              {t("common.cancel")}
+            </button>
+            <button className="btn primary small" disabled={saving} onClick={() => void save()}>
+              {t("filter.saveApply")}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

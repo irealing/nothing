@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 //
-// The filter panel is the only place where stored filter values are edited.
-// These tests pin the three behaviours that used to fall back to free text:
-// a single choice, an "in list" multi-choice, and the token-styled hidden-column
-// checkbox (which still exposes a real checkbox role).
+// The filter panel and the inline view-config bar share one rule editor.
+// These tests pin the behaviours that used to fall back to free text:
+// a single choice, an "in list" multi-choice, an empty select, independent
+// pickers per select column, and the token-styled hidden-column checkbox.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -56,6 +56,21 @@ function column(
 const TEXT = column("c1", "标题", "text");
 const STATUS = column("c2", "状态", "select");
 const TAGS = column("c3", "标签", "multi_select");
+const EMPTY_SELECT: ColumnMeta = {
+  ...column("c4", "空列表", "select"),
+  data: { kind: "select", sql_name: "c_c4", choices: [] },
+};
+const PRIORITY: ColumnMeta = {
+  ...column("c5", "优先级", "select"),
+  data: {
+    kind: "select",
+    sql_name: "c_c5",
+    choices: [
+      { id: "p1", name: "高", icon: null, color: "red", position: 0 },
+      { id: "p2", name: "低", icon: null, color: "gray", position: 1 },
+    ],
+  },
+};
 
 function viewWith(filters: unknown, sorts: { column_id: string; desc: boolean }[] = []): ViewMeta {
   return {
@@ -161,5 +176,52 @@ describe("FilterSortPanel values", () => {
     await waitFor(() =>
       expect(updateViewColumn).toHaveBeenCalledWith("v1", TEXT.id, { hidden: true }),
     );
+  });
+
+  it("renders an independent picker for every select column", async () => {
+    const user = userEvent.setup();
+    useWorkspace.setState({ columns: [TEXT, STATUS, TAGS, PRIORITY] });
+    const view = viewWith({
+      op: "and",
+      children: [
+        { column_id: STATUS.id, op: "eq", value: "" },
+        { column_id: PRIORITY.id, op: "eq", value: "" },
+      ],
+    });
+    render(<FilterSortPanel view={view} onClose={() => {}} />);
+
+    const triggers = screen.getAllByRole("combobox", { name: "值" });
+    expect(triggers).toHaveLength(2);
+
+    await user.click(triggers[0]);
+    expect(await screen.findByRole("option", { name: /🚧 进行中/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "高" })).toBeNull();
+    await user.keyboard("{Escape}");
+
+    await user.click(triggers[1]);
+    expect(await screen.findByRole("option", { name: "高" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /🚧 进行中/ })).toBeNull();
+  });
+
+  it("explains an empty select instead of falling back to free text", () => {
+    useWorkspace.setState({ columns: [TEXT, EMPTY_SELECT, STATUS, TAGS] });
+    const view = viewWith({
+      op: "and",
+      children: [{ column_id: EMPTY_SELECT.id, op: "eq", value: "" }],
+    });
+    render(<FilterSortPanel view={view} onClose={() => {}} />);
+
+    expect(screen.getByText("该列还没有选项，请先在列设置中添加")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "值" })).toBeNull();
+  });
+
+  it("labels a filter whose column no longer exists", () => {
+    const view = viewWith({
+      op: "and",
+      children: [{ column_id: "deleted", op: "eq", value: "" }],
+    });
+    render(<FilterSortPanel view={view} onClose={() => {}} />);
+
+    expect(screen.getAllByText("已删除的列").length).toBeGreaterThanOrEqual(1);
   });
 });

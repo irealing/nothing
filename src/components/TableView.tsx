@@ -233,6 +233,7 @@ export default function TableView() {
   const activeTableId = useWorkspace((s) => s.activeTableId);
   const tables = useWorkspace((s) => s.tables);
   const visibleColumns = useWorkspace((s) => s.visibleColumns);
+  const allColumns = useWorkspace((s) => s.columns);
   const views = useWorkspace((s) => s.views);
   const activeViewId = useWorkspace((s) => s.activeViewId);
   const total = useWorkspace((s) => s.total);
@@ -694,8 +695,8 @@ export default function TableView() {
         <ViewConfigBar
           key={activeView.id}
           view={activeView}
-          columns={columns}
-          onEdit={() => setPanelOpen(true)}
+          columns={allColumns}
+          onOpenPanel={() => setPanelOpen(true)}
         />
       )}
       <div className="grid-wrap">

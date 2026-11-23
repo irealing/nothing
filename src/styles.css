@@ -2298,7 +2298,54 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 2px 0 4px;
+  padding: 6px 0 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.view-config-body .filter-editor section {
+  margin-bottom: 10px;
+}
+
+.filter-editor h4 {
+  margin: 2px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-weak);
+}
+
+.view-config-body .filter-editor section:last-child {
+  margin-bottom: 0;
+}
+
+.view-config-foot {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.filter-value-note {
+  flex: 1;
+  min-width: 100px;
+  display: flex;
+  align-items: center;
+  height: var(--control-h);
+  padding: 0 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-weak);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .view-config-section {
@@ -2512,11 +2559,45 @@ input[type="checkbox"] {
 .choices-editor {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.choices-editor .btn.dashed {
-  align-self: flex-start;
+.choices-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.choices-count {
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.choice-row {
+  gap: 4px;
+}
+
+.choice-row .ui-input {
+  height: 30px;
+}
+
+.choice-list .choice-icon-btn,
+.choice-list .ui-color-trigger {
+  width: 30px;
+  height: 30px;
 }
 
 /* Per-option appearance: compact emoji trigger + folded color dot. */
@@ -2583,15 +2664,6 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.checkline {
-  flex-direction: row !important;
-  align-items: center;
-  gap: 7px !important;
-  font-size: 13px !important;
-  color: var(--text) !important;
-  cursor: pointer;
 }
 
 /* ---------- sql view panel ---------- */
@@ -3325,6 +3397,34 @@ input[type="checkbox"] {
   min-width: 120px;
 }
 
+.column-form {
+  gap: 10px;
+}
+
+/* `.form label` stacks and greys every label; checkboxes need one row. */
+.column-form .ui-check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.column-form .ui-check > input {
+  width: 14px;
+  height: 14px;
+}
+
+.column-form .modal-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--bg);
+  padding: 10px 0 2px;
+}
+
 .column-type {
   flex: 0 0 146px;
   min-width: 0;
@@ -3430,8 +3530,9 @@ input[type="checkbox"] {
   background: var(--surface-sunken);
 }
 
-.default-row .checkline {
+.default-row > .ui-check {
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .default-value {

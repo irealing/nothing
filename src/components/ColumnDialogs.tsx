@@ -11,7 +11,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import { Dialog } from "../ui/Dialog";
-import { Field, Input, Select, Textarea, handleFormEnter } from "../ui/Field";
+import { Field, Input, Select, Textarea, Checkbox, handleFormEnter } from "../ui/Field";
 import { ColorPicker, EmojiMenu, EmojiPicker } from "../ui/ColumnPickers";
 import { tagCellStyle, tagChipStyle } from "../theme/grid";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconSigma, IconX } from "./icons";
@@ -371,65 +371,73 @@ export default function ColumnDialog({
 
   const choicesEditor = (
     <div className="choices-editor">
-      <span className="field-label">{t("column.choices")}</span>
-      {choices.map((c, i) => (
-        <div className="extra-col-row choice-row" key={c.id ?? i}>
-          <EmojiMenu
-            value={c.icon ?? null}
-            onChange={(icon) =>
-              setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, icon } : x)))
-            }
-            trigger={
-              <button
-                type="button"
-                className={c.icon ? "choice-icon-btn" : "choice-icon-btn empty"}
-                title={t("column.choiceIcon")}
-                aria-label={t("column.choiceIcon")}
-              >
-                {c.icon ?? <IconPlus size={12} />}
-              </button>
-            }
-          />
-          <Input
-            value={c.name}
-            placeholder={t("column.choicePlaceholder", { n: i + 1 })}
-            ref={(el) => {
-              const key = c.id ?? String(i);
-              if (el) choiceRefs.current.set(key, el);
-              else choiceRefs.current.delete(key);
-            }}
-            onChange={(e) =>
-              setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
-            }
-            onKeyDown={(e) => {
-              if (e.key !== "Enter") return;
-              // Let an IME confirm its candidate first.
-              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-              e.preventDefault();
-              e.stopPropagation();
-              if (!c.name.trim()) return;
-              addChoice(i);
-            }}
-          />
-          <ColorPicker
-            value={(c.color as ColumnColor | null) ?? null}
-            onChange={(color) =>
-              setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, color } : x)))
-            }
-          />
-          <button
-            type="button"
-            className="btn-icon danger"
-            title={t("column.deleteChoice")}
-            onClick={() => setChoiceList((list) => list.filter((_, j) => j !== i))}
-          >
-            <IconX size={13} />
-          </button>
-        </div>
-      ))}
-      <button type="button" className="btn dashed" onClick={() => addChoice()}>
-        <IconPlus size={14} /> {t("column.addChoice")}
-      </button>
+      <div className="choices-head">
+        <span className="field-label">{t("column.choices")}</span>
+        <span className="choices-count">{t("column.choiceCount", { count: choices.length })}</span>
+        <div className="toolbar-spacer" />
+        <button type="button" className="btn dashed small" onClick={() => addChoice()}>
+          <IconPlus size={13} /> {t("column.addChoice")}
+        </button>
+      </div>
+      <div className="choice-list">
+        {choices.map((c, i) => (
+          <div className="extra-col-row choice-row" key={c.id ?? i}>
+            <EmojiMenu
+              value={c.icon ?? null}
+              onChange={(icon) =>
+                setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, icon } : x)))
+              }
+              trigger={
+                <button
+                  type="button"
+                  className={c.icon ? "choice-icon-btn" : "choice-icon-btn empty"}
+                  title={t("column.choiceIcon")}
+                  aria-label={t("column.choiceIcon")}
+                >
+                  {c.icon ?? <IconPlus size={12} />}
+                </button>
+              }
+            />
+            <Input
+              value={c.name}
+              placeholder={t("column.choicePlaceholder", { n: i + 1 })}
+              ref={(el) => {
+                const key = c.id ?? String(i);
+                if (el) choiceRefs.current.set(key, el);
+                else choiceRefs.current.delete(key);
+              }}
+              onChange={(e) =>
+                setChoiceList((list) =>
+                  list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                )
+              }
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                // Let an IME confirm its candidate first.
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (!c.name.trim()) return;
+                addChoice(i);
+              }}
+            />
+            <ColorPicker
+              value={(c.color as ColumnColor | null) ?? null}
+              onChange={(color) =>
+                setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, color } : x)))
+              }
+            />
+            <button
+              type="button"
+              className="btn-icon danger"
+              title={t("column.deleteChoice")}
+              onClick={() => setChoiceList((list) => list.filter((_, j) => j !== i))}
+            >
+              <IconX size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
       <p className="hint">{t("column.choicesHint")}</p>
     </div>
   );
@@ -447,15 +455,13 @@ export default function ColumnDialog({
         );
       case "checkbox":
         return (
-          <label className="checkline">
-            <input
-              type="checkbox"
-              disabled={!defaultEnabled}
-              checked={defaultValue === true}
-              onChange={(e) => setDefaultValue(e.target.checked)}
-            />
+          <Checkbox
+            disabled={!defaultEnabled}
+            checked={defaultValue === true}
+            onChange={setDefaultValue}
+          >
             {t("column.defaultCheckbox")}
-          </label>
+          </Checkbox>
         );
       case "date": {
         const nowMode = isNowToken(defaultValue);
@@ -550,7 +556,7 @@ export default function ColumnDialog({
       wide
     >
       <form
-        className="form"
+        className="form column-form"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -632,14 +638,9 @@ export default function ColumnDialog({
                 }))}
               />
             </Field>
-            <label className="checkline">
-              <input
-                type="checkbox"
-                checked={single}
-                onChange={(e) => setSingle(e.target.checked)}
-              />
+            <Checkbox checked={single} onChange={setSingle}>
               {t("column.singleRelation")}
-            </label>
+            </Checkbox>
             {!existing && (
               <Field label={t("column.reverseName")}>
                 <Input
@@ -700,15 +701,13 @@ export default function ColumnDialog({
         ) : (
           <>
             <div className="default-row" data-off={!defaultEnabled || defaultBlocked}>
-              <label className="checkline">
-                <input
-                  type="checkbox"
-                  checked={defaultEnabled}
-                  disabled={defaultBlocked}
-                  onChange={(e) => toggleDefault(e.target.checked)}
-                />
+              <Checkbox
+                checked={defaultEnabled}
+                disabled={defaultBlocked}
+                onChange={toggleDefault}
+              >
                 {t("column.defaultEnable")}
-              </label>
+              </Checkbox>
               {defaultBlocked ? (
                 <span className="default-note">{t("cell.noChoices")}</span>
               ) : (
