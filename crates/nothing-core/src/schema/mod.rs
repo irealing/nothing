@@ -321,11 +321,12 @@ pub fn default_cell_value(
 // ---------------------------------------------------------------------------
 
 /// A select / multi-select choice. Choices are real nodes (`kind='option'`),
-/// not a JSON array, so they can carry a stable id, order and color.
+/// not a JSON array, so they can carry a stable id, order, icon and color.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OptionMeta {
     pub id: String,
     pub name: String,
+    pub icon: Option<String>,
     pub color: Option<ColumnColor>,
     pub position: i64,
 }
@@ -528,6 +529,9 @@ pub struct NewChoice {
     #[serde(default)]
     pub id: Option<String>,
     pub name: String,
+    /// Emoji icon; empty/whitespace clears it (full replacement semantics).
+    #[serde(default)]
+    pub icon: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
 }
@@ -873,6 +877,7 @@ pub(crate) fn option_from_raw(r: RawMeta) -> rusqlite::Result<OptionMeta> {
     Ok(OptionMeta {
         id: r.id,
         name: r.name.ok_or_else(|| internal("选项缺少名称"))?,
+        icon: r.icon,
         color: parse_color(r.color.as_deref())?,
         position: r.position,
     })
@@ -1293,7 +1298,7 @@ pub(crate) fn insert_column_node(conn: &Connection, c: &ColumnMeta) -> Result<()
             "option",
             Some(&o.name),
             o.position,
-            None,
+            o.icon.as_deref(),
             o.color.map(|c| c.as_str()),
             None,
             None,
@@ -1463,6 +1468,7 @@ fn build_choices(new: &[NewChoice], base_position: i64) -> Result<Vec<OptionMeta
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(new_id),
             name,
+            icon: normalize_icon(c.icon.as_deref())?,
             color: normalize_color(c.color.as_deref())?,
             position: base_position + i as i64,
         });

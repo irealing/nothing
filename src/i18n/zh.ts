@@ -195,6 +195,8 @@ export const zh = {
     choiceDuplicate: "选项名不能重复",
     addChoice: "添加选项",
     deleteChoice: "删除选项",
+    choiceIcon: "选项图标",
+    editOptions: "编辑选项…",
     choicesHint: "收窄选项列表时，已有的非法值会被置空（数据库事务保证）。",
     targetTable: "目标表",
     selfRelation: "（本表，自关联）",

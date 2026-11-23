@@ -35,6 +35,7 @@ fn choices(names: &[&str]) -> Vec<NewChoice> {
         .map(|c| NewChoice {
             id: None,
             name: c.to_string(),
+            icon: None,
             color: None,
         })
         .collect()

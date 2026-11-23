@@ -13,8 +13,9 @@ import { useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import type { ColumnMeta, Json, Row } from "../types";
 import { choicesOf } from "../types";
+import { tagChipStyle } from "../theme/grid";
 import { Dialog } from "../ui/Dialog";
-import { IconCheck, IconLink, IconSearch, IconX } from "./icons";
+import { IconCheck, IconLink, IconPencil, IconSearch, IconX } from "./icons";
 
 export interface Anchor {
   x: number;
@@ -33,15 +34,18 @@ export function SelectPopover({
   anchor,
   onCommit,
   onClose,
+  onEditOptions,
 }: {
   col: ColumnMeta;
   value: Json;
   anchor: Anchor;
   onCommit: (v: Json) => void;
   onClose: () => void;
+  /** Opens the column editor on this column (option icon/color live there). */
+  onEditOptions?: () => void;
 }) {
   const multi = col.data.kind === "multi_select";
-  const choices = choicesOf(col).map((c) => c.name);
+  const choices = choicesOf(col);
   const selected: string[] = multi
     ? Array.isArray(value)
       ? (value as Json[]).map(String)
@@ -92,18 +96,25 @@ export function SelectPopover({
             </button>
           </div>
           {choices.length === 0 && <div className="popover-empty">{t("cell.noChoices")}</div>}
-          {choices.map((c) => (
-            <div
-              key={c}
-              className={local.includes(c) ? "popover-item selected" : "popover-item"}
-              onClick={() => toggle(c)}
-            >
-              <span className="popover-check">
-                {local.includes(c) ? <IconCheck size={13} /> : null}
-              </span>
-              {c}
-            </div>
-          ))}
+          {choices.map((c) => {
+            const on = local.includes(c.name);
+            return (
+              <div
+                key={c.id}
+                className={on ? "popover-item selected" : "popover-item"}
+                onClick={() => toggle(c.name)}
+              >
+                <span className="popover-check">{on ? <IconCheck size={13} /> : null}</span>
+                {c.icon && <span className="popover-icon">{c.icon}</span>}
+                <span
+                  className="popover-tag"
+                  style={c.color ? tagChipStyle(c.color) : undefined}
+                >
+                  {c.name}
+                </span>
+              </div>
+            );
+          })}
           {!multi && (
             <>
               <div className="popover-sep" />
@@ -115,6 +126,23 @@ export function SelectPopover({
                 }}
               >
                 {t("cell.clear")}
+              </div>
+            </>
+          )}
+          {onEditOptions && (
+            <>
+              <div className="popover-sep" />
+              <div
+                className="popover-item"
+                onClick={() => {
+                  onClose();
+                  onEditOptions();
+                }}
+              >
+                <span className="popover-check">
+                  <IconPencil size={12} />
+                </span>
+                {t("column.editOptions")}
               </div>
             </>
           )}

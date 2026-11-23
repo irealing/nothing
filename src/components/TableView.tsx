@@ -22,7 +22,7 @@ import { t } from "../i18n";
 import { confirm } from "../ui/ConfirmDialog";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import type { ColumnMeta, Json, Row } from "../types";
-import { colType, formulaResultType, isReverse, sqlNameOf } from "../types";
+import { colType, choicesOf, formulaResultType, isReverse, sqlNameOf } from "../types";
 import FilterSortPanel from "./FilterSortPanel";
 import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
@@ -157,11 +157,16 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
     }
     case "multi_select":
     case "select": {
-      const pills = Array.isArray(value)
+      const choiceIcon = new Map(choicesOf(col).map((c) => [c.name, c.icon]));
+      const raw = Array.isArray(value)
         ? (value as Json[]).map((v) => String(v))
         : value === null || value === undefined || value === ""
           ? []
           : [String(value)];
+      const pills = raw.map((name) => {
+        const icon = choiceIcon.get(name);
+        return icon ? `${icon} ${name}` : name;
+      });
       return {
         kind: GridCellKind.Bubble,
         data: pills,
@@ -487,6 +492,19 @@ export default function TableView() {
     [columns],
   );
 
+  // Glide's header caret (`hasMenu: true`) fires this instead of a context
+  // menu; route it to the same column menu so the affordance is not inert.
+  const onHeaderMenuClick = useCallback(
+    (colIndex: number, bounds: Rectangle) => {
+      const meta = columns[colIndex];
+      if (!meta) return;
+      setEditor(null);
+      setPicker(null);
+      setColMenu({ col: meta, x: bounds.x, y: bounds.y + bounds.height });
+    },
+    [columns],
+  );
+
   // Clicking the leading glyph (emoji or default type icon) edits the emoji.
   // The glyph occupies the first ~28px; the title starts right after it.
   const onHeaderClicked = useCallback(
@@ -683,6 +701,7 @@ export default function TableView() {
           onCellActivated={onCellActivated}
           onHeaderClicked={onHeaderClicked}
           onHeaderContextMenu={onHeaderContextMenu}
+          onHeaderMenuClick={onHeaderMenuClick}
           onVisibleRegionChanged={onVisibleRegionChanged}
           rowMarkers={{ kind: "both" }}
           gridSelection={gridSelection}
@@ -731,6 +750,10 @@ export default function TableView() {
           anchor={picker.anchor}
           onCommit={(v) => void updateCell(pickerRow.rid, picker.col.id, v)}
           onClose={() => setPicker(null)}
+          onEditOptions={() => {
+            setPicker(null);
+            setColDialog({ existing: picker.col });
+          }}
         />
       )}
       {picker && pickerRow && colType(picker.col) === "relation" && (

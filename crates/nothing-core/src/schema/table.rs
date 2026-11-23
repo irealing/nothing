@@ -18,9 +18,9 @@ use super::ident::{
 };
 use super::{
     build_column_meta, insert_column_node, insert_node, insert_table_node, load_column,
-    load_columns, load_table, load_table_by_name, next_position, normalize_color, touch_table,
-    validate_default_value, ColumnData, ColumnMeta, ColumnPatch, ColumnType, FormulaData,
-    FormulaResultType, NewChoice, NewColumn, OptionMeta, RelationData, TableMeta,
+    load_columns, load_table, load_table_by_name, next_position, normalize_color, normalize_icon,
+    touch_table, validate_default_value, ColumnData, ColumnMeta, ColumnPatch, ColumnType,
+    FormulaData, FormulaResultType, NewChoice, NewColumn, OptionMeta, RelationData, TableMeta,
 };
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
@@ -992,6 +992,7 @@ fn sync_choices(
     let mut next = Vec::with_capacity(input.len());
     for (i, c) in input.iter().enumerate() {
         let name = validate_user_name("选项名", &c.name)?;
+        let icon = normalize_icon(c.icon.as_deref())?;
         let color = normalize_color(c.color.as_deref())?;
         let requested = c.id.clone().filter(|s| !s.is_empty());
         let matched = requested
@@ -1013,6 +1014,7 @@ fn sync_choices(
         next.push(OptionMeta {
             id,
             name,
+            icon,
             color,
             position: i as i64,
         });
@@ -1034,9 +1036,15 @@ fn sync_choices(
                     renames.push((prev.name.clone(), c.name.clone()));
                 }
                 conn.execute(
-                    r#"UPDATE "_meta" SET "name" = ?1, "color" = ?2, "position" = ?3
-                       WHERE "id" = ?4 AND "kind" = 'option'"#,
-                    rusqlite::params![c.name, c.color.map(|v| v.as_str()), c.position, c.id],
+                    r#"UPDATE "_meta" SET "name" = ?1, "icon" = ?2, "color" = ?3, "position" = ?4
+                       WHERE "id" = ?5 AND "kind" = 'option'"#,
+                    rusqlite::params![
+                        c.name,
+                        c.icon,
+                        c.color.map(|v| v.as_str()),
+                        c.position,
+                        c.id
+                    ],
                 )?;
             }
             None => insert_node(
@@ -1046,7 +1054,7 @@ fn sync_choices(
                 "option",
                 Some(&c.name),
                 c.position,
-                None,
+                c.icon.as_deref(),
                 c.color.map(|v| v.as_str()),
                 None,
                 None,

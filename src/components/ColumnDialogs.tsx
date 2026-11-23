@@ -12,7 +12,7 @@ import { useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import { Dialog } from "../ui/Dialog";
 import { Field, Input, Select, Textarea, handleFormEnter } from "../ui/Field";
-import { ColorPicker, EmojiPicker } from "../ui/ColumnPickers";
+import { ColorPicker, EmojiMenu, EmojiPicker } from "../ui/ColumnPickers";
 import { tagCellStyle, tagChipStyle } from "../theme/grid";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconSigma, IconX } from "./icons";
 import type {
@@ -130,7 +130,21 @@ function ColumnPreview({
       </div>
       <div className="column-preview-cell" style={cellStyle}>
         <span className="column-preview-value" style={{ textAlign: contentAlign }}>
-          {previewValue(type, choices)}
+          {type === "select" || type === "multi_select" ? (
+            <span
+              className="column-preview-tag"
+              style={
+                choices[0]?.color
+                  ? tagChipStyle(choices[0].color as ColumnColor)
+                  : undefined
+              }
+            >
+              {choices[0]?.icon ? `${choices[0].icon} ` : ""}
+              {choices[0]?.name.trim() || t("column.previewUntitled")}
+            </span>
+          ) : (
+            previewValue(type, choices)
+          )}
         </span>
       </div>
     </div>
@@ -155,7 +169,14 @@ export default function ColumnDialog({
   const [name, setName] = useState(existing?.name ?? "");
   const [type, setType] = useState<ColumnType>(initialType);
   const [choices, setChoices] = useState<NewChoice[]>(() =>
-    existing ? choicesOf(existing).map((c) => ({ id: c.id, name: c.name, color: c.color })) : [],
+    existing
+      ? choicesOf(existing).map((c) => ({
+          id: c.id,
+          name: c.name,
+          icon: c.icon,
+          color: c.color,
+        }))
+      : [],
   );
   const [targetTableId, setTargetTableId] = useState(
     existing?.data.kind === "relation" ? existing.data.target_table_id : "",
@@ -246,7 +267,7 @@ export default function ColumnDialog({
 
   /** Append an empty option after `index` (defaults to the end) and focus it. */
   const addChoice = (index?: number) => {
-    const choice: NewChoice = { id: crypto.randomUUID(), name: "" };
+    const choice: NewChoice = { id: crypto.randomUUID(), name: "", icon: null, color: null };
     setChoiceList((list) => {
       const at = index === undefined ? list.length : Math.min(index + 1, list.length);
       return [...list.slice(0, at), choice, ...list.slice(at)];
@@ -297,8 +318,8 @@ export default function ColumnDialog({
         if (type !== initialType) patch.type = type;
         if (!existingReverse) {
           if (type === "select" || type === "multi_select") {
-            const before = choicesOf(existing).map((c) => ({ id: c.id, name: c.name }));
-            const after = cleanedChoices.map((c) => ({ id: c.id, name: c.name }));
+            const before = choicesOf(existing).map((c) => [c.id, c.name, c.icon, c.color]);
+            const after = cleanedChoices.map((c) => [c.id ?? null, c.name, c.icon ?? null, c.color ?? null]);
             if (JSON.stringify(before) !== JSON.stringify(after)) patch.choices = cleanedChoices;
           }
           if (type === "relation") {
@@ -352,7 +373,23 @@ export default function ColumnDialog({
     <div className="choices-editor">
       <span className="field-label">{t("column.choices")}</span>
       {choices.map((c, i) => (
-        <div className="extra-col-row" key={c.id ?? i}>
+        <div className="extra-col-row choice-row" key={c.id ?? i}>
+          <EmojiMenu
+            value={c.icon ?? null}
+            onChange={(icon) =>
+              setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, icon } : x)))
+            }
+            trigger={
+              <button
+                type="button"
+                className={c.icon ? "choice-icon-btn" : "choice-icon-btn empty"}
+                title={t("column.choiceIcon")}
+                aria-label={t("column.choiceIcon")}
+              >
+                {c.icon ?? <IconPlus size={12} />}
+              </button>
+            }
+          />
           <Input
             value={c.name}
             placeholder={t("column.choicePlaceholder", { n: i + 1 })}
@@ -373,6 +410,12 @@ export default function ColumnDialog({
               if (!c.name.trim()) return;
               addChoice(i);
             }}
+          />
+          <ColorPicker
+            value={(c.color as ColumnColor | null) ?? null}
+            onChange={(color) =>
+              setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, color } : x)))
+            }
           />
           <button
             type="button"
@@ -450,7 +493,10 @@ export default function ColumnDialog({
             }
             disabled={!defaultEnabled}
             onChange={(v) => setDefaultValue(v)}
-            options={choices.map((c) => ({ value: c.name, label: c.name }))}
+            options={choices.map((c) => ({
+              value: c.name,
+              label: `${c.icon ? `${c.icon} ` : ""}${c.name}`,
+            }))}
           />
         );
       case "multi_select": {
@@ -472,6 +518,7 @@ export default function ColumnDialog({
                     )
                   }
                 >
+                  {c.icon ? `${c.icon} ` : ""}
                   {c.name}
                 </button>
               );

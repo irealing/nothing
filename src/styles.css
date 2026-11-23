@@ -2250,6 +2250,24 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
+.popover-icon {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.popover-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- relation picker ---------- */
 
 .relation-modal {
@@ -2314,6 +2332,36 @@ input[type="checkbox"] {
 
 .choices-editor .btn.dashed {
   align-self: flex-start;
+}
+
+/* Per-option appearance: compact emoji trigger + folded color dot. */
+.choice-icon-btn {
+  width: var(--control-h);
+  height: var(--control-h);
+  flex-shrink: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-weak);
+  font-size: 15px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.choice-icon-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.choice-icon-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .ref-chips {
@@ -3095,6 +3143,21 @@ input[type="checkbox"] {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.column-preview-tag {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .column-align-row {

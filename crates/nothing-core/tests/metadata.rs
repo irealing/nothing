@@ -4,7 +4,9 @@
 mod common;
 
 use common::{db_path, raw, PASSWORD};
-use nothing_core::{AppError, ColumnColor, ColumnPatch, ColumnType, NewColumn, Workspace};
+use nothing_core::{
+    AppError, ColumnColor, ColumnPatch, ColumnType, NewChoice, NewColumn, Workspace,
+};
 
 fn col(name: &str, t: ColumnType) -> NewColumn {
     NewColumn {
@@ -132,6 +134,105 @@ fn icon_and_color_round_trip_and_clear() {
         )
         .unwrap();
     assert!(updated.icon.is_none());
+}
+
+#[test]
+fn option_icon_and_color_round_trip() {
+    let (_dir, ws) = common::create_ws("option-icon.nothing");
+    let choice = |id: &str, name: &str, icon: Option<&str>, color: Option<&str>| NewChoice {
+        id: Some(id.into()),
+        name: name.into(),
+        icon: icon.map(str::to_string),
+        color: color.map(str::to_string),
+    };
+    let table = ws
+        .create_table(
+            "任务",
+            vec![
+                col("标题", ColumnType::Text),
+                NewColumn {
+                    name: "状态".into(),
+                    col_type: ColumnType::Select,
+                    choices: vec![
+                        choice("o1", "待办", Some("📝"), Some("blue")),
+                        choice("o2", "完成", None, None),
+                    ],
+                    target_table_id: None,
+                    single: false,
+                    reverse_name: None,
+                    formula_expr: None,
+                    formula_result_type: None,
+                    icon: None,
+                    color: None,
+                    align: None,
+                    default_value: None,
+                },
+            ],
+        )
+        .unwrap();
+
+    let cols = ws.list_columns(&table.id).unwrap();
+    let choices = cols[1].choices();
+    assert_eq!(choices[0].icon.as_deref(), Some("📝"));
+    assert_eq!(choices[0].color, Some(ColumnColor::Blue));
+    assert!(choices[1].icon.is_none());
+
+    // Only presentation fields change: stable ids keep cell values intact.
+    let updated = ws
+        .update_column(
+            &table.id,
+            &cols[1].id,
+            ColumnPatch {
+                choices: Some(vec![
+                    choice("o1", "待办", Some("🔥"), Some("orange")),
+                    choice("o2", "完成", Some("✅"), Some("green")),
+                ]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let choices = updated.choices();
+    assert_eq!(choices[0].id, "o1");
+    assert_eq!(choices[0].icon.as_deref(), Some("🔥"));
+    assert_eq!(choices[0].color, Some(ColumnColor::Orange));
+    assert_eq!(choices[1].icon.as_deref(), Some("✅"));
+    assert_eq!(choices[1].color, Some(ColumnColor::Green));
+
+    // Empty / whitespace-only icon clears it.
+    let cleared = ws
+        .update_column(
+            &table.id,
+            &cols[1].id,
+            ColumnPatch {
+                choices: Some(vec![
+                    choice("o1", "待办", Some("   "), None),
+                    choice("o2", "完成", Some("✅"), Some("green")),
+                ]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(cleared.choices()[0].icon.is_none());
+    assert!(cleared.choices()[0].color.is_none());
+
+    // An invalid option icon rolls the whole option sync back.
+    let err = ws
+        .update_column(
+            &table.id,
+            &cols[1].id,
+            ColumnPatch {
+                choices: Some(vec![
+                    choice("o1", "待办", Some(&"x".repeat(64)), Some("red")),
+                    choice("o2", "完成", Some("✅"), Some("green")),
+                ]),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+    let after = ws.list_columns(&table.id).unwrap();
+    assert!(after[1].choices()[0].icon.is_none());
+    assert!(after[1].choices()[0].color.is_none());
 }
 
 #[test]

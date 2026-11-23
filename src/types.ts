@@ -32,6 +32,7 @@ export type ColumnAlign = "left" | "center" | "right";
 export interface Choice {
   id: string;
   name: string;
+  icon: string | null;
   color: ColumnColor | null;
   position: number;
 }
@@ -39,6 +40,7 @@ export interface Choice {
 export interface NewChoice {
   id?: string | null;
   name: string;
+  icon?: string | null;
   color?: string | null;
 }
 

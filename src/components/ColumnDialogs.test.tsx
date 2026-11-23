@@ -40,7 +40,7 @@ const SELECT_COL: ColumnMeta = {
   data: {
     kind: "select",
     sql_name: "c_status",
-    choices: [{ id: "a", name: "待办", color: null, position: 0 }],
+    choices: [{ id: "a", name: "待办", icon: null, color: null, position: 0 }],
   },
 };
 
@@ -93,7 +93,7 @@ describe("ColumnDialog", () => {
       data: {
         kind: "select",
         sql_name: "c_status",
-        choices: [{ id: "a", name: "  ", color: null, position: 0 }],
+        choices: [{ id: "a", name: "  ", icon: null, color: null, position: 0 }],
       },
     };
     render(<ColumnDialog existing={blank} onClose={() => {}} />);
@@ -112,8 +112,8 @@ describe("ColumnDialog", () => {
         kind: "select",
         sql_name: "c_status",
         choices: [
-          { id: "a", name: "待办", color: null, position: 0 },
-          { id: "b", name: "待办", color: null, position: 1 },
+          { id: "a", name: "待办", icon: null, color: null, position: 0 },
+          { id: "b", name: "待办", icon: null, color: null, position: 1 },
         ],
       },
     };
@@ -123,6 +123,25 @@ describe("ColumnDialog", () => {
 
     expect(await screen.findByText("选项名不能重复")).toBeTruthy();
     expect(updateColumn).not.toHaveBeenCalled();
+  });
+
+  it("submits option color changes even when names are unchanged", async () => {
+    const user = userEvent.setup();
+    render(<ColumnDialog existing={SELECT_COL} onClose={() => {}} />);
+
+    // Two color triggers: the column's and the option row's (last one).
+    const colorTriggers = screen.getAllByRole("button", { name: "颜色" });
+    await user.click(colorTriggers[colorTriggers.length - 1]);
+    await user.click(await screen.findByRole("radio", { name: "blue" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(updateColumn).toHaveBeenCalledTimes(1));
+    expect(updateColumn).toHaveBeenCalledWith(
+      "c1",
+      expect.objectContaining({
+        choices: [expect.objectContaining({ id: "a", name: "待办", color: "blue" })],
+      }),
+    );
   });
 
   it("stays open when the backend rejects the change", async () => {

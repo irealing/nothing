@@ -68,7 +68,7 @@ src-tauri/               Tauri 薄壳：commands/ 只做参数校验与转发；
 - `kind` + `parent_id`：逻辑树（表 → 列 → 选项；表 → 网格视图 → 视图列）。`parent_id` 同时是生命周期所有者，`ON DELETE CASCADE`
 - `table` 节点：`sql_name`（`t_xxxx`）、`title_col_id`（自引用 FK，标题列）、`icon`/`color`
 - `column` 节点：`col_type`、`sql_name`（**仅物理列**，关联/反向列为 NULL）、`align`、`default_value`、`formula_expr`/`formula_result_type`；`target_table_id`/`single`/`origin_id` 仅关联列使用
-- `option` 节点：选项的 `name`/`color`/`position`，不再是 `opts` JSON 数组
+- `option` 节点：选项的 `name`/`icon`/`color`/`position`，不再是 `opts` JSON 数组
 - `view` 节点：`view_kind`，`filters`/`sorts` 只存筛选树与排序；`sql` 视图只存 `statement`
 - `view_column` 节点：`ref_id`（基列）、`width`、`position`、`hidden`。**宽度/顺序/隐藏按视图隔离**，同一列在不同视图互不影响
 - 反向关联列：`origin_id` 指向源关联列（FK `ON DELETE CASCADE`），与源列共享同一张 `r_xxxx` 表

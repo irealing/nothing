@@ -267,11 +267,13 @@ fn select_choices_change_nullifies_invalid_values() {
         NewChoice {
             id: Some("1".into()),
             name: "待办".into(),
+            icon: None,
             color: None,
         },
         NewChoice {
             id: Some("2".into()),
             name: "进行中".into(),
+            icon: None,
             color: None,
         },
     ];

@@ -362,6 +362,7 @@ fn type_change_clears_incompatible_default_and_choices_change_prunes_it() {
                 choices: Some(vec![NewChoice {
                     id: Some("1".into()),
                     name: "待办".into(),
+                    icon: None,
                     color: None,
                 }]),
                 ..Default::default()
