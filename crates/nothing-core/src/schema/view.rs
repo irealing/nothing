@@ -356,7 +356,7 @@ impl Workspace {
                 rusqlite::params![
                     name,
                     icon,
-                    color.map(|c| c.as_str()),
+                    color.as_ref().map(|c| c.as_str()),
                     position,
                     filters,
                     sorts,

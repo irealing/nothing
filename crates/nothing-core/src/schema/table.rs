@@ -473,7 +473,7 @@ impl Workspace {
             conn.execute(
                 r#"UPDATE "_meta" SET "color" = ?1, "updated_at" = ?2
                    WHERE "id" = ?3 AND "kind" = 'table'"#,
-                rusqlite::params![color.map(|c| c.as_str()), now_iso(), table_id],
+                rusqlite::params![color.as_ref().map(|c| c.as_str()), now_iso(), table_id],
             )?;
             load_table(conn, table_id)
         })
@@ -742,7 +742,7 @@ impl Workspace {
                 },
                 color: match &patch.color {
                     Some(raw) => super::normalize_column_color(Some(raw))?,
-                    None => old.color,
+                    None => old.color.clone(),
                 },
                 default_value: match &patch.default_value {
                     Some(v) if v.is_null() => None,
@@ -797,7 +797,7 @@ impl Workspace {
                         new_meta.col_type().as_str(),
                         new_meta.width,
                         new_meta.icon,
-                        new_meta.color.map(|c| c.as_str()),
+                        new_meta.color.as_ref().map(|c| c.as_str()),
                         new_meta.align.map(|a| a.as_str()),
                         new_meta
                             .default_value
@@ -1041,7 +1041,7 @@ fn sync_choices(
                     rusqlite::params![
                         c.name,
                         c.icon,
-                        c.color.map(|v| v.as_str()),
+                        c.color.as_ref().map(|v| v.as_str()),
                         c.position,
                         c.id
                     ],
@@ -1055,7 +1055,7 @@ fn sync_choices(
                 Some(&c.name),
                 c.position,
                 c.icon.as_deref(),
-                c.color.map(|v| v.as_str()),
+                c.color.as_ref().map(|v| v.as_str()),
                 None,
                 None,
                 None,

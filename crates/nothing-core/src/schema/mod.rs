@@ -100,10 +100,10 @@ impl ColumnType {
 
 /// Presentation-only color of a column (header tint + cell background tint).
 ///
-/// Stored as a palette **token** (never a hex value) so the light and dark
-/// themes can each resolve it to their own shades.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// Either one of the curated palette **tokens** (so the light and dark themes
+/// can each resolve it to their own shades) or a user-picked `#rrggbb` value.
+/// Custom colors are still presentation data, never part of the SQL.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ColumnColor {
     Gray,
     Blue,
@@ -114,10 +114,27 @@ pub enum ColumnColor {
     Purple,
     Pink,
     Brown,
+    Amber,
+    Lime,
+    Teal,
+    Cyan,
+    Sky,
+    Indigo,
+    Violet,
+    Plum,
+    Crimson,
+    /// User-picked color, stored normalized as `#rrggbb` (lowercase, expanded).
+    Custom(String),
 }
 
+/// Every preset token, in picker order.
+pub const COLUMN_COLOR_TOKENS: [&str; 18] = [
+    "gray", "brown", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "sky", "blue",
+    "indigo", "violet", "purple", "plum", "pink", "crimson", "red",
+];
+
 impl ColumnColor {
-    pub fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             ColumnColor::Gray => "gray",
             ColumnColor::Blue => "blue",
@@ -128,11 +145,39 @@ impl ColumnColor {
             ColumnColor::Purple => "purple",
             ColumnColor::Pink => "pink",
             ColumnColor::Brown => "brown",
+            ColumnColor::Amber => "amber",
+            ColumnColor::Lime => "lime",
+            ColumnColor::Teal => "teal",
+            ColumnColor::Cyan => "cyan",
+            ColumnColor::Sky => "sky",
+            ColumnColor::Indigo => "indigo",
+            ColumnColor::Violet => "violet",
+            ColumnColor::Plum => "plum",
+            ColumnColor::Crimson => "crimson",
+            ColumnColor::Custom(hex) => hex,
         }
     }
 
+    /// Strict parse used when writing: unknown tokens and malformed hex are
+    /// rejected so a typo never reaches `_meta`.
     pub fn parse(s: &str) -> Result<Self> {
-        Ok(match s {
+        if let Some(color) = Self::parse_preset(s) {
+            return Ok(color);
+        }
+        match normalize_hex(s) {
+            Some(hex) => Ok(ColumnColor::Custom(hex)),
+            None => Err(AppError::InvalidInput(format!("未知的列颜色: {s}"))),
+        }
+    }
+
+    /// Lenient parse used when reading: presentation values written by a newer
+    /// version degrade to "no color" instead of failing the whole table load.
+    pub fn parse_lenient(s: &str) -> Option<Self> {
+        Self::parse_preset(s).or_else(|| normalize_hex(s).map(ColumnColor::Custom))
+    }
+
+    fn parse_preset(s: &str) -> Option<Self> {
+        Some(match s {
             "gray" => ColumnColor::Gray,
             "blue" => ColumnColor::Blue,
             "green" => ColumnColor::Green,
@@ -142,8 +187,56 @@ impl ColumnColor {
             "purple" => ColumnColor::Purple,
             "pink" => ColumnColor::Pink,
             "brown" => ColumnColor::Brown,
-            other => return Err(AppError::InvalidInput(format!("未知的列颜色: {other}"))),
+            "amber" => ColumnColor::Amber,
+            "lime" => ColumnColor::Lime,
+            "teal" => ColumnColor::Teal,
+            "cyan" => ColumnColor::Cyan,
+            "sky" => ColumnColor::Sky,
+            "indigo" => ColumnColor::Indigo,
+            "violet" => ColumnColor::Violet,
+            "plum" => ColumnColor::Plum,
+            "crimson" => ColumnColor::Crimson,
+            _ => return None,
         })
+    }
+}
+
+impl Serialize for ColumnColor {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ColumnColor {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        ColumnColor::parse(&raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Normalize a `#rgb` / `#rrggbb` string to lowercase `#rrggbb`.
+fn normalize_hex(raw: &str) -> Option<String> {
+    let rest = raw.trim().strip_prefix('#')?;
+    if !rest.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    match rest.len() {
+        3 => {
+            let mut hex = String::with_capacity(7);
+            hex.push('#');
+            for c in rest.chars() {
+                hex.push(c.to_ascii_lowercase());
+                hex.push(c.to_ascii_lowercase());
+            }
+            Some(hex)
+        }
+        6 => Some(format!("#{}", rest.to_ascii_lowercase())),
+        _ => None,
     }
 }
 
@@ -831,12 +924,9 @@ pub(crate) fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawMeta> {
 }
 
 fn parse_color(raw: Option<&str>) -> rusqlite::Result<Option<ColumnColor>> {
-    match raw {
-        None => Ok(None),
-        Some(token) => ColumnColor::parse(token).map(Some).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        }),
-    }
+    // Lenient on read: a value written by a newer build (unknown token or a
+    // custom color we cannot parse) only loses its tint, never the table.
+    Ok(raw.and_then(ColumnColor::parse_lenient))
 }
 
 fn parse_align(raw: Option<&str>) -> rusqlite::Result<Option<ColumnAlign>> {
@@ -1218,7 +1308,7 @@ pub(crate) fn insert_table_node(conn: &Connection, t: &TableMeta) -> Result<()> 
         Some(&t.name),
         t.position,
         t.icon.as_deref(),
-        t.color.map(|c| c.as_str()),
+        t.color.as_ref().map(|c| c.as_str()),
         None,
         Some(&t.sql_name),
         t.title_col_id.as_deref(),
@@ -1267,7 +1357,7 @@ pub(crate) fn insert_column_node(conn: &Connection, c: &ColumnMeta) -> Result<()
         Some(&c.name),
         c.position,
         c.icon.as_deref(),
-        c.color.map(|c| c.as_str()),
+        c.color.as_ref().map(|c| c.as_str()),
         Some(c.width),
         c.sql_name(),
         None,
@@ -1299,7 +1389,7 @@ pub(crate) fn insert_column_node(conn: &Connection, c: &ColumnMeta) -> Result<()
             Some(&o.name),
             o.position,
             o.icon.as_deref(),
-            o.color.map(|c| c.as_str()),
+            o.color.as_ref().map(|c| c.as_str()),
             None,
             None,
             None,
@@ -1340,7 +1430,7 @@ pub(crate) fn insert_view_node(conn: &Connection, v: &ViewMeta) -> Result<()> {
         Some(&v.name),
         v.position,
         v.icon.as_deref(),
-        v.color.map(|c| c.as_str()),
+        v.color.as_ref().map(|c| c.as_str()),
         None,
         None,
         None,

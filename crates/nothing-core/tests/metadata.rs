@@ -353,3 +353,100 @@ fn create_table_with_invalid_icon_rolls_back() {
     assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
     assert!(ws.list_tables().unwrap().is_empty());
 }
+
+#[test]
+fn every_palette_token_round_trips() {
+    for token in nothing_core::COLUMN_COLOR_TOKENS {
+        let parsed = ColumnColor::parse(token).unwrap();
+        assert_eq!(parsed.as_str(), token);
+        assert_eq!(ColumnColor::parse_lenient(token), Some(parsed));
+    }
+}
+
+#[test]
+fn custom_color_is_normalized_and_round_trips() {
+    let (_dir, ws) = common::create_ws("custom-color.nothing");
+    let table = ws
+        .create_table("任务", vec![col("标题", ColumnType::Text)])
+        .unwrap();
+    let cols = ws.list_columns(&table.id).unwrap();
+
+    let updated = ws
+        .update_column(
+            &table.id,
+            &cols[0].id,
+            ColumnPatch {
+                color: Some("#3B82F6".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(updated.color, Some(ColumnColor::Custom("#3b82f6".into())));
+    assert_eq!(
+        updated.color.as_ref().map(ColumnColor::as_str),
+        Some("#3b82f6")
+    );
+
+    // `#rgb` expands to the canonical six-digit form.
+    let expanded = ws
+        .update_column(
+            &table.id,
+            &cols[0].id,
+            ColumnPatch {
+                color: Some("#fB0".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(expanded.color, Some(ColumnColor::Custom("#ffbb00".into())));
+
+    // Whitespace still clears, malformed values are rejected on write.
+    let cleared = ws
+        .update_column(
+            &table.id,
+            &cols[0].id,
+            ColumnPatch {
+                color: Some("  ".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(cleared.color.is_none());
+
+    for bad in ["chartreuse", "#12345", "#gggggg", "rgb(1,2,3)"] {
+        let err = ws
+            .update_column(
+                &table.id,
+                &cols[0].id,
+                ColumnPatch {
+                    color: Some(bad.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)), "{bad}: {err:?}");
+    }
+}
+
+#[test]
+fn unknown_color_token_degrades_on_read() {
+    let (dir, ws) = common::create_ws("stale-color.nothing");
+    let table = ws
+        .create_table("任务", vec![col("标题", ColumnType::Text)])
+        .unwrap();
+    let cols = ws.list_columns(&table.id).unwrap();
+
+    // Simulate a token written by a newer build.
+    let conn = raw(&db_path(&dir, "stale-color.nothing"));
+    conn.execute(
+        r#"UPDATE "_meta" SET "color" = ?1 WHERE "id" = ?2"#,
+        rusqlite::params!["future-hue", cols[0].id],
+    )
+    .unwrap();
+    drop(conn);
+
+    // The table still loads; the unknown tint simply disappears.
+    let after = ws.list_columns(&table.id).unwrap();
+    assert_eq!(after[0].id, cols[0].id);
+    assert!(after[0].color.is_none());
+}

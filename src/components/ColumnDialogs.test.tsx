@@ -132,7 +132,7 @@ describe("ColumnDialog", () => {
     // Two color triggers: the column's and the option row's (last one).
     const colorTriggers = screen.getAllByRole("button", { name: "颜色" });
     await user.click(colorTriggers[colorTriggers.length - 1]);
-    await user.click(await screen.findByRole("radio", { name: "blue" }));
+    await user.click(await screen.findByRole("radio", { name: "蓝色" }));
     await user.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(updateColumn).toHaveBeenCalledTimes(1));

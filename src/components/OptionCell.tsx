@@ -149,7 +149,7 @@ function isOptionCell(cell: CustomCell): cell is OptionCell {
 
 function colorsFor(pill: OptionPill, palette: OptionPalette): ChipColors {
   if (!pill.color) return palette.neutral;
-  return palette.byColor[pill.color] ?? palette.neutral;
+  return palette.resolve(pill.color);
 }
 
 export function createOptionCellRenderer(

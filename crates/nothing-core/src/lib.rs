@@ -23,5 +23,5 @@ pub use schema::{
     ColumnAlign, ColumnColor, ColumnData, ColumnMeta, ColumnPatch, ColumnType, FilterNode,
     FilterOp, FilterRule, FormulaData, FormulaResultType, GridConfig, LogicOp, NewChoice,
     NewColumn, NewView, OptionMeta, RelationData, SortSpec, SqlConfig, TableMeta, ViewColumnMeta,
-    ViewColumnPatch, ViewData, ViewKind, ViewMeta, ViewPatch,
+    ViewColumnPatch, ViewData, ViewKind, ViewMeta, ViewPatch, COLUMN_COLOR_TOKENS,
 };

@@ -101,7 +101,7 @@ src-tauri/               Tauri 薄壳：commands/ 只做参数校验与转发；
 - **浮层只走 `src/ui/`**：`Dialog` / `PanelDialog` / `Menu` / `Popover` / `Tooltip` 由 Radix 提供行为（portal、焦点陷阱与归还、Esc、外点关闭、键盘导航），样式仍写在本项目 CSS。禁止在组件里手写 `modal-backdrop`、`dropdown-menu` + backdrop、`window.confirm`。canvas 网格没有 DOM 锚点，浮层用 `.virtual-anchor`（坐标处的 1×1 fixed 元素）挂到 Radix。
 - **表单只走 `src/ui/Field.tsx`**：`Field` 管 label / hint / error，控件统一 `--control-h` 高度与 hover / focus / invalid / disabled 四态。不要在组件里写裸 `<input>`（网格内的 `.cell-editor` 与搜索框除外，它们有特殊焦点语义）。
 - **颜色只能引用 token**：组件与 CSS 禁止写 hex/rgba，一律用 `--bg / --text / --accent / --tag-*` 等变量；主题切换只改 `[data-theme]`。Glide 的 `Theme` 由 `src/theme/grid.ts` 从 CSS 变量推导，切主题后必须重算（`useMemo` 依赖 `resolved`）。
-- **列外观**：列节点的 `icon` 是 emoji 字符串，`color` 是 9 色调色板 token（gray/blue/green/yellow/orange/red/purple/pink/brown），**不是 hex**；暗色主题靠 token 的另一套值。列颜色作用于列头与单元格底色，不改文字颜色。
+- **列外观**：列节点的 `icon` 是 emoji 字符串；`color` 是 18 色预设 token（gray/brown/orange/amber/yellow/lime/green/teal/cyan/sky/blue/indigo/violet/purple/plum/pink/crimson/red）或用户用拾色器选出的 `#rrggbb`。**预设色只能引用 token**；自定义色由 `src/theme/color.ts` 按当前主题推导出 chip / swatch / 列头 / 单元格底色，组件里不写裸 hex，也不提供 hex 输入框。写入时后端严格校验，读取到未知 token 时降级为无颜色。列颜色作用于列头与单元格底色，不改文字颜色。
 - **文案只走 `src/i18n/`**：组件禁止新增中文字面量，用 `t("ns.key")`（键由 `zh.ts` 推导，拼错 = 编译失败）。新增语言只需加 `en.ts` 并在 `i18n/index.ts` 注册。用户数据（表名/列名/选项/视图名）不翻译。日期与数字展示走 `src/i18n/format.ts`，存储格式不变。
 - **外观偏好存 `localStorage`**（`nothing.theme`），不进加密库——它不是工作区数据，不应触发 `format_version` 迁移。
 

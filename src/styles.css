@@ -17,6 +17,15 @@
 @import "@radix-ui/colors/purple.css";
 @import "@radix-ui/colors/pink.css";
 @import "@radix-ui/colors/brown.css";
+@import "@radix-ui/colors/amber.css";
+@import "@radix-ui/colors/lime.css";
+@import "@radix-ui/colors/teal.css";
+@import "@radix-ui/colors/cyan.css";
+@import "@radix-ui/colors/sky.css";
+@import "@radix-ui/colors/indigo.css";
+@import "@radix-ui/colors/violet.css";
+@import "@radix-ui/colors/plum.css";
+@import "@radix-ui/colors/crimson.css";
 @import "@radix-ui/colors/gray-dark.css";
 @import "@radix-ui/colors/blue-dark.css";
 @import "@radix-ui/colors/green-dark.css";
@@ -26,6 +35,15 @@
 @import "@radix-ui/colors/purple-dark.css";
 @import "@radix-ui/colors/pink-dark.css";
 @import "@radix-ui/colors/brown-dark.css";
+@import "@radix-ui/colors/amber-dark.css";
+@import "@radix-ui/colors/lime-dark.css";
+@import "@radix-ui/colors/teal-dark.css";
+@import "@radix-ui/colors/cyan-dark.css";
+@import "@radix-ui/colors/sky-dark.css";
+@import "@radix-ui/colors/indigo-dark.css";
+@import "@radix-ui/colors/violet-dark.css";
+@import "@radix-ui/colors/plum-dark.css";
+@import "@radix-ui/colors/crimson-dark.css";
 
 :root {
   /* ---- structure (theme independent) ---- */
@@ -149,6 +167,109 @@
   --tag-brown-header-fg: var(--brown-12);
   --tag-brown-cell-bg: var(--brown-3);
   --tag-brown-cell-bg-hover: var(--brown-4);
+
+  --chip-amber-bg: var(--amber-4);
+  --chip-amber-fg: var(--amber-12);
+  --chip-amber-border: var(--amber-7);
+  --swatch-amber-bg: var(--amber-9);
+  --swatch-amber-fg: #3d2400;
+  --tag-amber-header-bg: var(--amber-5);
+  --tag-amber-header-fg: var(--amber-12);
+  --tag-amber-cell-bg: var(--amber-3);
+  --tag-amber-cell-bg-hover: var(--amber-4);
+
+  --chip-lime-bg: var(--lime-4);
+  --chip-lime-fg: var(--lime-12);
+  --chip-lime-border: var(--lime-7);
+  --swatch-lime-bg: var(--lime-9);
+  --swatch-lime-fg: #1f2d00;
+  --tag-lime-header-bg: var(--lime-5);
+  --tag-lime-header-fg: var(--lime-12);
+  --tag-lime-cell-bg: var(--lime-3);
+  --tag-lime-cell-bg-hover: var(--lime-4);
+
+  --chip-teal-bg: var(--teal-4);
+  --chip-teal-fg: var(--teal-12);
+  --chip-teal-border: var(--teal-7);
+  --swatch-teal-bg: var(--teal-9);
+  --swatch-teal-fg: #ffffff;
+  --tag-teal-header-bg: var(--teal-5);
+  --tag-teal-header-fg: var(--teal-12);
+  --tag-teal-cell-bg: var(--teal-3);
+  --tag-teal-cell-bg-hover: var(--teal-4);
+
+  --chip-cyan-bg: var(--cyan-4);
+  --chip-cyan-fg: var(--cyan-12);
+  --chip-cyan-border: var(--cyan-7);
+  --swatch-cyan-bg: var(--cyan-9);
+  --swatch-cyan-fg: #ffffff;
+  --tag-cyan-header-bg: var(--cyan-5);
+  --tag-cyan-header-fg: var(--cyan-12);
+  --tag-cyan-cell-bg: var(--cyan-3);
+  --tag-cyan-cell-bg-hover: var(--cyan-4);
+
+  --chip-sky-bg: var(--sky-4);
+  --chip-sky-fg: var(--sky-12);
+  --chip-sky-border: var(--sky-7);
+  --swatch-sky-bg: var(--sky-9);
+  --swatch-sky-fg: #0a2a33;
+  --tag-sky-header-bg: var(--sky-5);
+  --tag-sky-header-fg: var(--sky-12);
+  --tag-sky-cell-bg: var(--sky-3);
+  --tag-sky-cell-bg-hover: var(--sky-4);
+
+  --chip-indigo-bg: var(--indigo-4);
+  --chip-indigo-fg: var(--indigo-12);
+  --chip-indigo-border: var(--indigo-7);
+  --swatch-indigo-bg: var(--indigo-9);
+  --swatch-indigo-fg: #ffffff;
+  --tag-indigo-header-bg: var(--indigo-5);
+  --tag-indigo-header-fg: var(--indigo-12);
+  --tag-indigo-cell-bg: var(--indigo-3);
+  --tag-indigo-cell-bg-hover: var(--indigo-4);
+
+  --chip-violet-bg: var(--violet-4);
+  --chip-violet-fg: var(--violet-12);
+  --chip-violet-border: var(--violet-7);
+  --swatch-violet-bg: var(--violet-9);
+  --swatch-violet-fg: #ffffff;
+  --tag-violet-header-bg: var(--violet-5);
+  --tag-violet-header-fg: var(--violet-12);
+  --tag-violet-cell-bg: var(--violet-3);
+  --tag-violet-cell-bg-hover: var(--violet-4);
+
+  --chip-plum-bg: var(--plum-4);
+  --chip-plum-fg: var(--plum-12);
+  --chip-plum-border: var(--plum-7);
+  --swatch-plum-bg: var(--plum-9);
+  --swatch-plum-fg: #ffffff;
+  --tag-plum-header-bg: var(--plum-5);
+  --tag-plum-header-fg: var(--plum-12);
+  --tag-plum-cell-bg: var(--plum-3);
+  --tag-plum-cell-bg-hover: var(--plum-4);
+
+  --chip-crimson-bg: var(--crimson-4);
+  --chip-crimson-fg: var(--crimson-12);
+  --chip-crimson-border: var(--crimson-7);
+  --swatch-crimson-bg: var(--crimson-9);
+  --swatch-crimson-fg: #ffffff;
+  --tag-crimson-header-bg: var(--crimson-5);
+  --tag-crimson-header-fg: var(--crimson-12);
+  --tag-crimson-cell-bg: var(--crimson-3);
+  --tag-crimson-cell-bg-hover: var(--crimson-4);
+
+  /* Custom-color entry point: a hue wheel built from the palette steps. */
+  --swatch-custom-bg: conic-gradient(
+    from 210deg,
+    var(--red-9),
+    var(--orange-9),
+    var(--yellow-9),
+    var(--lime-9),
+    var(--teal-9),
+    var(--blue-9),
+    var(--violet-9),
+    var(--red-9)
+  );
 }
 
 /* ---- light theme (default) ---- */
@@ -3418,10 +3539,9 @@ input[type="checkbox"] {
 }
 
 .ui-swatches {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(10, 24px);
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .ui-swatch {
@@ -3447,6 +3567,80 @@ input[type="checkbox"] {
 .ui-swatch.none {
   background: var(--surface-sunken);
   color: var(--text-weak);
+}
+
+.ui-swatch.custom {
+  background: var(--swatch-custom-bg);
+}
+
+.ui-swatch-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ---- inline custom-color panel ---- */
+
+.ui-color-palette {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-color-custom {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ui-color-custom .react-colorful {
+  width: 100%;
+  height: 148px;
+}
+
+.ui-color-custom .react-colorful__saturation {
+  border-radius: var(--radius);
+  border-bottom: none;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.ui-color-custom .react-colorful__hue {
+  height: 12px;
+  border-radius: 999px;
+  margin-top: 10px;
+}
+
+.ui-color-custom .react-colorful__pointer {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.ui-color-custom .react-colorful__interactive:focus .react-colorful__pointer {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.ui-color-custom-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ui-color-preview {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+
+.ui-color-custom-done {
+  margin-left: auto;
 }
 
 .ui-tooltip {

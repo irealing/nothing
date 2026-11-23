@@ -13,17 +13,32 @@ export type ColumnType =
 
 export type FormulaResultType = "number" | "text" | "date" | "checkbox";
 
-/** Presentation palette token for a column (never a hex value). */
-export type ColumnColor =
+/** Curated presentation palette tokens (never a hex value). */
+export type PresetColor =
   | "gray"
-  | "blue"
-  | "green"
-  | "yellow"
+  | "brown"
   | "orange"
-  | "red"
+  | "amber"
+  | "yellow"
+  | "lime"
+  | "green"
+  | "teal"
+  | "cyan"
+  | "sky"
+  | "blue"
+  | "indigo"
+  | "violet"
   | "purple"
+  | "plum"
   | "pink"
-  | "brown";
+  | "crimson"
+  | "red";
+
+/**
+ * A presentation color: a palette token or a user-picked `#rrggbb` value.
+ * Custom colors are presentation data only; they never reach the SQL.
+ */
+export type ColumnColor = PresetColor | `#${string}`;
 
 /** Explicit cell alignment; `null` on a column means "by type". */
 export type ColumnAlign = "left" | "center" | "right";

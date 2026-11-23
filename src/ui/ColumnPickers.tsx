@@ -1,10 +1,12 @@
 // Column presentation pickers: a curated emoji set (with recents) and the
-// nine palette swatches. Both are presentation-only, so both can be cleared.
+// palette swatches. Both are presentation-only, so both can be cleared.
 
 import * as Popover from "@radix-ui/react-popover";
 import { useState, type ReactNode } from "react";
-import type { ColumnColor } from "../types";
-import { TAG_COLORS, swatchStyle } from "../theme/grid";
+import { HexColorPicker } from "react-colorful";
+import type { ColumnColor, PresetColor } from "../types";
+import { TAG_COLORS, isPresetColor, swatchStyle } from "../theme/grid";
+import { normalizeHex } from "../theme/color";
 import { IconCheck, IconX } from "../components/icons";
 import { t } from "../i18n";
 import { Popover as PopoverShell } from "./Popover";
@@ -168,36 +170,98 @@ export function EmojiPicker({
 export function ColorSwatches({
   value,
   onChange,
+  onDone,
 }: {
   value: ColumnColor | null;
   onChange: (color: ColumnColor | null) => void;
+  /** Called after the inline custom-color panel is confirmed. */
+  onDone?: () => void;
 }) {
+  const custom = value !== null && !isPresetColor(value) ? value : null;
+  const [customOpen, setCustomOpen] = useState(false);
+  // Seed the picker with the current custom value, or a pleasant default the
+  // first time. Nothing is emitted until the user actually moves the pointer.
+  const [draft, setDraft] = useState<string>(custom ?? "#3b82f6");
+
+  const openCustom = () => {
+    setDraft(custom ?? draft);
+    setCustomOpen(true);
+  };
+
   return (
-    <div className="ui-swatches" role="radiogroup" aria-label={t("column.color")}>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={value === null}
-        aria-label={t("column.noColor")}
-        className="ui-swatch none"
-        onClick={() => onChange(null)}
-      >
-        <IconX size={11} />
-      </button>
-      {TAG_COLORS.map((color) => (
+    <div className="ui-color-palette">
+      <div className="ui-swatches" role="radiogroup" aria-label={t("column.color")}>
         <button
-          key={color}
           type="button"
           role="radio"
-          aria-checked={value === color}
-          aria-label={color}
-          className="ui-swatch"
-          style={swatchStyle(color)}
-          onClick={() => onChange(color)}
+          aria-checked={value === null}
+          aria-label={t("column.noColor")}
+          className="ui-swatch none"
+          onClick={() => onChange(null)}
         >
-          {value === color && <IconCheck size={11} />}
+          <IconX size={11} />
         </button>
-      ))}
+        {TAG_COLORS.map((color: PresetColor) => (
+          <button
+            key={color}
+            type="button"
+            role="radio"
+            aria-checked={value === color}
+            aria-label={t(`column.colors.${color}`)}
+            title={t(`column.colors.${color}`)}
+            className="ui-swatch"
+            style={swatchStyle(color)}
+            onClick={() => onChange(color)}
+          >
+            {value === color && <IconCheck size={11} />}
+          </button>
+        ))}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={custom !== null}
+          aria-label={t("column.customColor")}
+          title={t("column.customColor")}
+          className="ui-swatch custom"
+          onClick={openCustom}
+        >
+          {custom !== null && (
+            <span className="ui-swatch-check">
+              <IconCheck size={10} />
+            </span>
+          )}
+        </button>
+      </div>
+      {customOpen && (
+        <div className="ui-color-custom">
+          <HexColorPicker
+            color={draft}
+            onChange={(hex) => {
+              const normalized = normalizeHex(hex);
+              if (!normalized) return;
+              setDraft(normalized);
+              onChange(normalized);
+            }}
+          />
+          <div className="ui-color-custom-foot">
+            <span
+              className="ui-color-preview"
+              style={{ background: draft }}
+              aria-hidden="true"
+            />
+            <button
+              type="button"
+              className="btn primary small ui-color-custom-done"
+              onClick={() => {
+                setCustomOpen(false);
+                onDone?.();
+              }}
+            >
+              {t("column.customColorDone")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -238,9 +302,16 @@ export function ColorPicker({
       <ColorSwatches
         value={value}
         onChange={(color) => {
-          onChange(color);
-          setOpen(false);
+          // Preset and "no color" picks close immediately; the custom panel
+          // stays open while the user drags inside its picker.
+          if (color === null || isPresetColor(color)) {
+            onChange(color);
+            setOpen(false);
+          } else {
+            onChange(color);
+          }
         }}
+        onDone={() => setOpen(false)}
       />
     </PopoverShell>
   );
