@@ -11,6 +11,7 @@ import { errorText, t } from "../i18n";
 import { Popover } from "../ui/Popover";
 import { IconChevronDown, IconChevronRight, IconTable } from "./icons";
 import type { ColumnMeta, TableMeta } from "../types";
+import { colType, isReverse, sqlNameOf } from "../types";
 
 export interface SchemaGroup {
   table: TableMeta;
@@ -36,8 +37,8 @@ export function groupSchema(
       );
       return {
         table,
-        physical: cols.filter((c) => c.type !== "relation" && !c.is_reverse),
-        relations: cols.filter((c) => c.type === "relation" && !c.is_reverse),
+        physical: cols.filter((c) => colType(c) !== "relation" && !isReverse(c)),
+        relations: cols.filter((c) => colType(c) === "relation" && !isReverse(c)),
       };
     });
 }
@@ -158,8 +159,8 @@ export function SchemaBrowser({
                     {g.physical.map((c) => (
                       <div className="schema-col" key={c.id}>
                         <span className="schema-name">{c.name}</span>
-                        <code className="schema-sql">{c.sql_name}</code>
-                        <span className="schema-type">{c.type}</span>
+                        <code className="schema-sql">{sqlNameOf(c)}</code>
+                        <span className="schema-type">{colType(c)}</span>
                       </div>
                     ))}
                     {g.relations.map((c) => (

@@ -61,6 +61,7 @@ describe("ImportCsvDialog", () => {
         sql_name: "t_x",
         title_col_id: "c1",
         icon: null,
+        color: null,
         position: 0,
         created_at: "",
         updated_at: "",

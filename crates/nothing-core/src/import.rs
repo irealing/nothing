@@ -399,7 +399,12 @@ impl Workspace {
                 name: name.clone(),
                 // 第一列恒为标题列，必须是文本。
                 col_type: if i == 0 { ColumnType::Text } else { *ty },
-                opts: None,
+                choices: Vec::new(),
+                target_table_id: None,
+                single: false,
+                reverse_name: None,
+                formula_expr: None,
+                formula_result_type: None,
                 icon: None,
                 color: None,
                 align: None,
@@ -464,7 +469,10 @@ fn insert_rows(
         quote_ident("_created"),
         quote_ident("_updated"),
     ];
-    names.extend(cols.iter().map(|c| quote_ident(&c.sql_name)));
+    names.extend(
+        cols.iter()
+            .map(|c| quote_ident(c.sql_name().unwrap_or_default())),
+    );
     let sql = format!(
         "INSERT INTO {} ({}) VALUES ({})",
         quote_ident(&table.sql_name),

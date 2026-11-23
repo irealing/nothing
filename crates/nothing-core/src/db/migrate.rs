@@ -1,166 +1,177 @@
-//! Workspace bootstrap and format-version migrations.
+//! Workspace bootstrap and format-version checks.
 //!
-//! 铁律 7: every `format_version` bump must ship an idempotent, transactional
-//! step migration here; workspaces upgrade one version at a time.
+//! Format v4 replaced the three typed metadata tables (`_tables`, `_columns`,
+//! `_views`) with a **single** self-referencing `_meta` node table. The Rust
+//! object model (see [`crate::schema`]) is the source of truth for invariants;
+//! SQL only stores typed fields and provides a safety net (CHECK + FK).
+//!
+//! 铁律 7 is intentionally relaxed for this pre-release reset: older workspace
+//! files are rejected with a clear "format too old" error instead of being
+//! migrated, because the app has no released users yet.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use crate::db::{APP_VERSION, MAGIC};
 use crate::error::{AppError, Result};
 use crate::schema::ident::now_iso;
 
 /// Format version understood by this build of nothing-core.
-pub const CURRENT_FORMAT_VERSION: u32 = 3;
+pub const CURRENT_FORMAT_VERSION: u32 = 4;
 
-/// Full DDL for format version 1 (manifest + metadata tables).
-///
-/// Metadata tables are STRICT (铁律: exact typing) and use `_` prefix.
-/// User-facing names never collide with these because physical object names
-/// are generated (`t_/c_/r_/v_` + ULID).
-const V1_SCHEMA: &str = r#"
+/// Full DDL for the current format: manifest + one polymorphic metadata node
+/// table + the indexes that encode per-kind uniqueness and tree ordering.
+const V4_SCHEMA: &str = r#"
 CREATE TABLE "_nothing" (
   "key"   TEXT PRIMARY KEY,
   "value" TEXT NOT NULL
 ) STRICT;
 
-CREATE TABLE "_tables" (
-  "id"           TEXT PRIMARY KEY,
-  "name"         TEXT NOT NULL UNIQUE,
-  "sql_name"     TEXT NOT NULL UNIQUE,
-  "title_col_id" TEXT,
-  "icon"         TEXT,
-  "position"     INTEGER NOT NULL DEFAULT 0,
-  "created_at"   TEXT NOT NULL,
-  "updated_at"   TEXT NOT NULL
+-- One node table for every metadata object:
+--   table / column / option / view / view_column
+-- `parent_id` is the containment edge (and lifetime owner); the other id
+-- columns are cross references (title column, relation target, reverse origin,
+-- base column projected by a view column).
+CREATE TABLE "_meta" (
+  "id"         TEXT PRIMARY KEY,
+  "parent_id"  TEXT REFERENCES "_meta"("id") ON DELETE CASCADE,
+  "kind"       TEXT NOT NULL CHECK ("kind" IN
+                 ('table','column','option','view','view_column')),
+  "name"       TEXT,
+  "position"   INTEGER NOT NULL DEFAULT 0,
+  "icon"       TEXT,
+  "color"      TEXT,
+  "width"      INTEGER,
+  "created_at" TEXT NOT NULL,
+  "updated_at" TEXT NOT NULL,
+
+  -- table / column physical name
+  "sql_name"     TEXT,
+  "title_col_id" TEXT REFERENCES "_meta"("id") ON DELETE SET NULL,
+
+  -- column
+  "col_type" TEXT CHECK ("col_type" IS NULL OR "col_type" IN
+                ('text','number','select','multi_select','date',
+                 'checkbox','relation','formula')),
+  "align"         TEXT CHECK ("align" IS NULL OR "align" IN ('left','center','right')),
+  "default_value" TEXT,
+
+  -- relation column
+  "target_table_id" TEXT REFERENCES "_meta"("id") ON DELETE CASCADE,
+  "single"          INTEGER CHECK ("single" IS NULL OR "single" IN (0,1)),
+  "origin_id"       TEXT REFERENCES "_meta"("id") ON DELETE CASCADE,
+
+  -- formula column
+  "formula_expr"        TEXT,
+  "formula_result_type" TEXT CHECK ("formula_result_type" IS NULL OR
+                                    "formula_result_type" IN ('number','text','date','checkbox')),
+
+  -- view
+  "view_kind" TEXT CHECK ("view_kind" IS NULL OR "view_kind" IN ('grid','sql')),
+  "filters"   TEXT,
+  "sorts"     TEXT,
+  "statement" TEXT,
+
+  -- view_column
+  "ref_id" TEXT REFERENCES "_meta"("id") ON DELETE CASCADE,
+  "hidden" INTEGER CHECK ("hidden" IS NULL OR "hidden" IN (0,1)),
+
+  CHECK (
+    -- table
+    ("kind"='table'
+       AND "parent_id" IS NULL AND "name" IS NOT NULL
+       AND "sql_name" IS NOT NULL AND "col_type" IS NULL
+       AND "view_kind" IS NULL AND "ref_id" IS NULL
+       AND "width" IS NULL AND "hidden" IS NULL)
+    OR
+    -- column
+    ("kind"='column'
+       AND "parent_id" IS NOT NULL AND "name" IS NOT NULL
+       AND "col_type" IS NOT NULL AND "width" IS NOT NULL
+       AND "view_kind" IS NULL AND "ref_id" IS NULL AND "hidden" IS NULL
+       AND CASE "col_type"
+             WHEN 'relation' THEN
+               "sql_name" IS NULL AND "target_table_id" IS NOT NULL
+               AND "single" IS NOT NULL AND "formula_expr" IS NULL
+               AND "formula_result_type" IS NULL
+             WHEN 'formula' THEN
+               "sql_name" IS NOT NULL AND "formula_expr" IS NOT NULL
+               AND "formula_result_type" IS NOT NULL
+               AND "target_table_id" IS NULL AND "single" IS NULL
+             ELSE
+               "sql_name" IS NOT NULL AND "target_table_id" IS NULL
+               AND "single" IS NULL AND "origin_id" IS NULL
+               AND "formula_expr" IS NULL AND "formula_result_type" IS NULL
+           END)
+    OR
+    -- select choice
+    ("kind"='option'
+       AND "parent_id" IS NOT NULL AND "name" IS NOT NULL
+       AND "col_type" IS NULL AND "sql_name" IS NULL
+       AND "view_kind" IS NULL AND "ref_id" IS NULL
+       AND "width" IS NULL AND "hidden" IS NULL)
+    OR
+    -- view
+    ("kind"='view'
+       AND "name" IS NOT NULL AND "view_kind" IS NOT NULL
+       AND "col_type" IS NULL AND "sql_name" IS NULL
+       AND "ref_id" IS NULL AND "width" IS NULL AND "hidden" IS NULL
+       AND ("view_kind" <> 'grid' OR "statement" IS NULL)
+       AND ("view_kind" <> 'sql' OR ("filters" IS NULL AND "sorts" IS NULL)))
+    OR
+    -- view column (a view's own column node, projecting a base column)
+    ("kind"='view_column'
+       AND "parent_id" IS NOT NULL AND "name" IS NULL
+       AND "ref_id" IS NOT NULL AND "width" IS NOT NULL AND "hidden" IS NOT NULL
+       AND "col_type" IS NULL AND "view_kind" IS NULL AND "sql_name" IS NULL)
+  )
 ) STRICT;
 
-CREATE TABLE "_columns" (
-  "id"         TEXT PRIMARY KEY,
-  "table_id"   TEXT NOT NULL REFERENCES "_tables"("id") ON DELETE CASCADE,
-  "name"       TEXT NOT NULL,
-  "sql_name"   TEXT NOT NULL,
-  "type"       TEXT NOT NULL,
-  "opts"       TEXT NOT NULL DEFAULT '{}',
-  "position"   INTEGER NOT NULL DEFAULT 0,
-  "width"      INTEGER NOT NULL DEFAULT 160,
-  "visible"    INTEGER NOT NULL DEFAULT 1,
-  "is_reverse" INTEGER NOT NULL DEFAULT 0,
-  "reverse_of" TEXT,
-  "created_at" TEXT NOT NULL,
-  UNIQUE("table_id", "name")
-) STRICT;
-
-CREATE TABLE "_views" (
-  "id"         TEXT PRIMARY KEY,
-  "table_id"   TEXT REFERENCES "_tables"("id") ON DELETE CASCADE,
-  "name"       TEXT NOT NULL,
-  "kind"       TEXT NOT NULL,
-  "config"     TEXT NOT NULL DEFAULT '{}',
-  "position"   INTEGER NOT NULL DEFAULT 0,
-  "created_at" TEXT NOT NULL,
-  UNIQUE("table_id", "name")
-) STRICT;
+CREATE UNIQUE INDEX "u_meta_table_name"  ON "_meta"("name") WHERE "kind" = 'table';
+CREATE UNIQUE INDEX "u_meta_column_name" ON "_meta"("parent_id","name") WHERE "kind" = 'column';
+CREATE UNIQUE INDEX "u_meta_option_name" ON "_meta"("parent_id","name") WHERE "kind" = 'option';
+CREATE UNIQUE INDEX "u_meta_view_name"   ON "_meta"(COALESCE("parent_id",''),"name") WHERE "kind" = 'view';
+CREATE UNIQUE INDEX "u_meta_view_col"    ON "_meta"("parent_id","ref_id") WHERE "kind" = 'view_column';
+CREATE UNIQUE INDEX "u_meta_sql_name"    ON "_meta"("sql_name") WHERE "sql_name" IS NOT NULL;
+CREATE INDEX "i_meta_children" ON "_meta"("parent_id","kind","position");
+CREATE INDEX "i_meta_kind"     ON "_meta"("kind","position");
 "#;
 
-/// Create the v1 metadata schema in a fresh (empty) encrypted database, then
-/// run the same step migrations an existing workspace would run. Fresh files
-/// and old files therefore travel through one code path.
+/// Create the current metadata schema in a fresh (empty) encrypted database.
 pub fn bootstrap(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
-    tx.execute_batch(V1_SCHEMA)?;
+    tx.execute_batch(V4_SCHEMA)?;
     tx.execute(
         r#"INSERT INTO "_nothing"("key", "value") VALUES
              ('magic', ?1),
              ('format_version', ?2),
              ('created_at', ?3),
              ('created_by', ?4)"#,
-        rusqlite::params![MAGIC, "1", now_iso(), format!("nothing {APP_VERSION}"),],
+        rusqlite::params![
+            MAGIC,
+            CURRENT_FORMAT_VERSION.to_string(),
+            now_iso(),
+            format!("nothing {APP_VERSION}"),
+        ],
     )?;
     tx.commit()?;
-    verify_and_migrate(conn)
-}
-
-/// v1 → v2: presentation metadata for columns (emoji icon + palette color).
-///
-/// Idempotent: each column is added only when `PRAGMA table_info` does not
-/// already report it, so a half-applied or re-run step is harmless.
-fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
-    for (name, decl) in [("icon", "TEXT"), ("color", "TEXT")] {
-        if !has_column(conn, "_columns", name)? {
-            conn.execute_batch(&format!(
-                r#"ALTER TABLE "_columns" ADD COLUMN "{name}" {decl}"#
-            ))?;
-        }
-    }
     Ok(())
 }
 
-/// v2 → v3: column alignment and default values.
-///
-/// Additive only (two nullable TEXT columns), so the step stays idempotent and
-/// needs no data backfill.
-fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
-    for (name, decl) in [("align", "TEXT"), ("default_value", "TEXT")] {
-        if !has_column(conn, "_columns", name)? {
-            conn.execute_batch(&format!(
-                r#"ALTER TABLE "_columns" ADD COLUMN "{name}" {decl}"#
-            ))?;
-        }
-    }
-    Ok(())
-}
-
-/// Whether `table` already has `column` (used to keep migrations idempotent).
-fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
-    let exists: bool = conn
-        .query_row(
-            "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
-            rusqlite::params![table, column],
-            |_| Ok(true),
-        )
-        .optional()?
-        .unwrap_or(false);
-    Ok(exists)
-}
-
-/// Verify the file is a nothing workspace and migrate it to the current
-/// format version if needed.
+/// Verify the file is a nothing workspace and that its format is supported.
 pub fn verify_and_migrate(conn: &mut Connection) -> Result<()> {
     let magic = manifest_get(conn, "magic")?;
     if magic.as_deref() != Some(MAGIC) {
         return Err(AppError::NotANothingDb);
     }
-    let mut version = read_format_version(conn)?;
+    let version = read_format_version(conn)?;
     if version > CURRENT_FORMAT_VERSION {
         return Err(AppError::FormatTooNew(version));
     }
-    // 铁律 7: one transactional, idempotent step per version, applied in
-    // order so any old workspace upgrades level by level.
-    while version < CURRENT_FORMAT_VERSION {
-        let next = version + 1;
-        let tx = conn.transaction()?;
-        match version {
-            1 => migrate_v1_to_v2(&tx)?,
-            2 => migrate_v2_to_v3(&tx)?,
-            other => {
-                return Err(AppError::Internal(format!(
-                    "缺少从格式版本 v{other} 升级的迁移脚本"
-                )))
-            }
-        }
-        set_format_version(&tx, next)?;
-        tx.commit()?;
-        version = next;
+    if version < CURRENT_FORMAT_VERSION {
+        // Pre-release hard cut: v1–v3 used three separate metadata tables and
+        // are not migrated. Refuse loudly instead of half-reading them.
+        return Err(AppError::FormatTooOld(version));
     }
-    Ok(())
-}
-
-/// Write `format_version` (only ever called inside a migration transaction).
-fn set_format_version(conn: &Connection, version: u32) -> Result<()> {
-    conn.execute(
-        r#"UPDATE "_nothing" SET "value" = ?1 WHERE "key" = 'format_version'"#,
-        [version.to_string()],
-    )?;
     Ok(())
 }
 
@@ -172,6 +183,7 @@ pub fn read_format_version(conn: &Connection) -> Result<u32> {
 
 /// Read a manifest key; `Ok(None)` if the manifest table or key is absent.
 fn manifest_get(conn: &Connection, key: &str) -> Result<Option<String>> {
+    use rusqlite::OptionalExtension;
     let has_manifest: bool = conn
         .query_row(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_nothing'",

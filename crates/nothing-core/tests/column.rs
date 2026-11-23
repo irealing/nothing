@@ -4,9 +4,7 @@
 mod common;
 
 use common::{emp_task_fixture, object_exists, raw, raw_insert_row};
-use nothing_core::{
-    AppError, Choice, ColumnOpts, ColumnPatch, ColumnType, FormulaResultType, SelectOpts,
-};
+use nothing_core::{AppError, ColumnPatch, ColumnType, FormulaResultType, NewChoice};
 
 /// Path helper for the workspace file in each test.
 fn dbp(dir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
@@ -33,10 +31,10 @@ fn check_constraints_enforced_by_database() {
     let conn = raw(&dbp(&dir, "c.nothing"));
     raw_insert_row(&conn, sql, "row1");
     let (c_status, c_tags, c_date, c_done) = (
-        &cols[1].sql_name,
-        &cols[2].sql_name,
-        &cols[3].sql_name,
-        &cols[4].sql_name,
+        cols[1].sql_name().unwrap(),
+        cols[2].sql_name().unwrap(),
+        cols[3].sql_name().unwrap(),
+        cols[4].sql_name().unwrap(),
     );
 
     // select: invalid choice rejected by CHECK
@@ -112,7 +110,7 @@ fn ui_rename_never_touches_physical_column() {
         )
         .unwrap();
     assert_eq!(renamed.name, "预计小时");
-    assert_eq!(renamed.sql_name, f.task_cols[1].sql_name); // 铁律 3
+    assert_eq!(renamed.sql_name(), f.task_cols[1].sql_name()); // 铁律 3
     let after = ws.physical_columns(&f.task_table.id).unwrap();
     assert_eq!(before, after);
 
@@ -144,7 +142,7 @@ fn type_change_converts_values_in_one_transaction() {
         )
         .unwrap();
     let cols = ws.list_columns(&table.id).unwrap();
-    let val_sql = cols[1].sql_name.clone();
+    let val_sql = cols[1].sql_name().unwrap().to_string();
     let conn = raw(&dbp(&dir, "tc.nothing"));
     let sql = table.sql_name.clone();
     raw_insert_row(&conn, &sql, "r1");
@@ -173,8 +171,8 @@ fn type_change_converts_values_in_one_transaction() {
             },
         )
         .unwrap();
-    assert_eq!(updated.col_type, ColumnType::Number);
-    assert_eq!(updated.sql_name, val_sql); // physical name preserved
+    assert_eq!(updated.col_type(), ColumnType::Number);
+    assert_eq!(updated.sql_name().unwrap(), val_sql); // physical name preserved
 
     let v1: f64 = conn
         .query_row(
@@ -247,7 +245,8 @@ fn select_choices_change_nullifies_invalid_values() {
     conn.execute(
         &format!(
             r#"UPDATE "{}" SET "{}" = '完成' WHERE _rid='r1'"#,
-            table.sql_name, cols[1].sql_name
+            table.sql_name,
+            cols[1].sql_name().unwrap()
         ),
         [],
     )
@@ -255,7 +254,8 @@ fn select_choices_change_nullifies_invalid_values() {
     conn.execute(
         &format!(
             r#"UPDATE "{}" SET "{}" = '待办' WHERE _rid='r2'"#,
-            table.sql_name, cols[1].sql_name
+            table.sql_name,
+            cols[1].sql_name().unwrap()
         ),
         [],
     )
@@ -263,23 +263,23 @@ fn select_choices_change_nullifies_invalid_values() {
     drop(conn);
 
     // remove "完成" from choices
-    let new_opts = ColumnOpts::Select(SelectOpts {
-        choices: vec![
-            Choice {
-                id: "1".into(),
-                name: "待办".into(),
-            },
-            Choice {
-                id: "2".into(),
-                name: "进行中".into(),
-            },
-        ],
-    });
+    let new_choices = vec![
+        NewChoice {
+            id: Some("1".into()),
+            name: "待办".into(),
+            color: None,
+        },
+        NewChoice {
+            id: Some("2".into()),
+            name: "进行中".into(),
+            color: None,
+        },
+    ];
     ws.update_column(
         &table.id,
         &cols[1].id,
         ColumnPatch {
-            opts: Some(new_opts),
+            choices: Some(new_choices),
             ..Default::default()
         },
     )
@@ -290,7 +290,8 @@ fn select_choices_change_nullifies_invalid_values() {
         .query_row(
             &format!(
                 r#"SELECT "{}" FROM "{}" WHERE _rid='r1'"#,
-                cols[1].sql_name, table.sql_name
+                cols[1].sql_name().unwrap(),
+                table.sql_name
             ),
             [],
             |r| r.get(0),
@@ -301,7 +302,8 @@ fn select_choices_change_nullifies_invalid_values() {
         .query_row(
             &format!(
                 r#"SELECT "{}" FROM "{}" WHERE _rid='r2'"#,
-                cols[1].sql_name, table.sql_name
+                cols[1].sql_name().unwrap(),
+                table.sql_name
             ),
             [],
             |r| r.get(0),
@@ -313,7 +315,8 @@ fn select_choices_change_nullifies_invalid_values() {
         .execute(
             &format!(
                 r#"UPDATE "{}" SET "{}" = '完成' WHERE _rid='r1'"#,
-                table.sql_name, cols[1].sql_name
+                table.sql_name,
+                cols[1].sql_name().unwrap()
             ),
             [],
         )
@@ -357,7 +360,7 @@ fn fts_index_tracks_searchable_columns() {
     let cols = ws.list_columns(&table.id).unwrap();
     let conn = raw(&dbp(&dir, "fts.nothing"));
     let sql = &table.sql_name;
-    let title = &cols[0].sql_name;
+    let title = cols[0].sql_name().unwrap();
     raw_insert_row(&conn, sql, "r1");
     conn.execute(
         &format!(r#"UPDATE "{sql}" SET "{title}" = '数据库系统概念' WHERE _rid='r1'"#),
@@ -383,7 +386,7 @@ fn fts_index_tracks_searchable_columns() {
     conn.execute(
         &format!(
             r#"UPDATE "{sql}" SET "{}" = '事务与恢复' WHERE _rid='r1'"#,
-            body.sql_name
+            body.sql_name().unwrap()
         ),
         [],
     )
@@ -408,7 +411,7 @@ fn fts_index_tracks_searchable_columns() {
         .unwrap()
         .map(|r| r.unwrap())
         .collect();
-    assert!(!cols[0].contains(&body.sql_name), "{}", cols[0]);
+    assert!(!cols[0].contains(body.sql_name().unwrap()), "{}", cols[0]);
 }
 
 #[test]

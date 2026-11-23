@@ -90,7 +90,7 @@ fn compile_node(ctx: &Ctx, node: &FilterNode) -> Result<(String, Vec<Value>)> {
 
 fn compile_rule(ctx: &Ctx, rule: &FilterRule) -> Result<(String, Vec<Value>)> {
     let col = ctx.col(&rule.column_id)?;
-    match col.col_type {
+    match col.col_type() {
         ColumnType::Relation => compile_relation_rule(ctx, col, rule.op),
         ColumnType::MultiSelect => compile_multi_select_rule(col, rule),
         ColumnType::Checkbox => compile_checkbox_rule(col, rule),
@@ -99,7 +99,10 @@ fn compile_rule(ctx: &Ctx, rule: &FilterRule) -> Result<(String, Vec<Value>)> {
         ColumnType::Formula => {
             // Formulas are physical (generated) columns: filter on the stored
             // value using the result type's semantics.
-            let rt = col.opts.formula()?.result_type;
+            let rt = col
+                .formula()
+                .ok_or_else(|| AppError::Internal("公式列缺少公式数据".into()))?
+                .result_type;
             match rt {
                 FormulaResultType::Number => compile_number_rule(col, rule),
                 FormulaResultType::Checkbox => compile_checkbox_rule(col, rule),
@@ -113,14 +116,14 @@ fn compile_rule(ctx: &Ctx, rule: &FilterRule) -> Result<(String, Vec<Value>)> {
 }
 
 fn q(col: &ColumnMeta) -> String {
-    quote_ident(&col.sql_name)
+    quote_ident(col.sql_name().unwrap_or_default())
 }
 
 fn unsupported(col: &ColumnMeta, op: FilterOp) -> AppError {
     AppError::InvalidInput(format!(
         "列「{}」（{}）不支持筛选操作 {:?}",
         col.name,
-        col.col_type.as_str(),
+        col.col_type().as_str(),
         op
     ))
 }
@@ -398,15 +401,13 @@ fn compile_relation_rule(
 ) -> Result<(String, Vec<Value>)> {
     // Relation columns live in junction tables: only emptiness is filterable
     // in M2. Source columns own side "a"; reverse columns own side "b".
-    let source_col_id = if col.is_reverse {
-        col.reverse_of
-            .as_deref()
-            .ok_or_else(|| AppError::Internal("反向列缺少 reverse_of".into()))?
+    let source_col_id = if let Some(origin) = col.origin_id() {
+        origin
     } else {
         col.id.as_str()
     };
     let junction = quote_ident(&junction_sql_name(source_col_id));
-    let side = if col.is_reverse { "b" } else { "a" };
+    let side = if col.is_reverse() { "b" } else { "a" };
     let owner = quote_ident(&ctx.table.sql_name);
     let exists = format!("EXISTS (SELECT 1 FROM {junction} WHERE \"{side}\" = {owner}.\"_rid\")");
     Ok(match op {
@@ -440,26 +441,28 @@ mod tests {
     //! tests/query.rs against a real encrypted workspace.
 
     use super::*;
-    use crate::schema::{ColumnOpts, PlainOpts};
+    use crate::schema::ColumnData;
 
     fn col(id: &str, sql: &str, t: ColumnType) -> ColumnMeta {
+        let sql_name = sql.to_string();
+        let data = match t {
+            ColumnType::Number => ColumnData::Number { sql_name },
+            ColumnType::Date => ColumnData::Date { sql_name },
+            ColumnType::Checkbox => ColumnData::Checkbox { sql_name },
+            _ => ColumnData::Text { sql_name },
+        };
         ColumnMeta {
             id: id.into(),
             table_id: "T".into(),
             name: id.into(),
-            sql_name: sql.into(),
-            col_type: t,
-            opts: ColumnOpts::Plain(PlainOpts {}),
             position: 0,
             width: 160,
-            visible: true,
-            is_reverse: false,
-            reverse_of: None,
             icon: None,
             color: None,
             align: None,
             default_value: None,
             created_at: String::new(),
+            data,
         }
     }
 
@@ -470,6 +473,7 @@ mod tests {
             sql_name: "t_x".into(),
             title_col_id: None,
             icon: None,
+            color: None,
             position: 0,
             created_at: String::new(),
             updated_at: String::new(),
@@ -487,7 +491,6 @@ mod tests {
                 value: serde_json::Value::String(evil.into()),
             })),
             sorts: vec![],
-            hidden_columns: vec![],
         };
         let c = compile(&table(), &cols, &cfg).unwrap();
         // The evil string is NOT part of the SQL text…
@@ -511,7 +514,6 @@ mod tests {
                 value: serde_json::json!("100%_\\x"),
             })),
             sorts: vec![],
-            hidden_columns: vec![],
         };
         let c = compile(&table(), &cols, &cfg).unwrap();
         match &c.where_params[0] {
@@ -556,7 +558,6 @@ mod tests {
                 column_id: "n".into(),
                 desc: true,
             }],
-            hidden_columns: vec![],
         };
         let c = compile(&table(), &cols, &cfg).unwrap();
         assert_eq!(

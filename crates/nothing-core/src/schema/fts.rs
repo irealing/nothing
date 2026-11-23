@@ -53,7 +53,7 @@ pub(crate) fn rebuild(conn: &Connection, table: &TableMeta, cols: &[ColumnMeta])
 
     let searchable: Vec<&ColumnMeta> = cols
         .iter()
-        .filter(|c| c.is_physical() && c.col_type.is_searchable())
+        .filter(|c| c.is_physical() && c.col_type().is_searchable())
         .collect();
     if searchable.is_empty() {
         return Ok(());
@@ -65,17 +65,17 @@ pub(crate) fn rebuild(conn: &Connection, table: &TableMeta, cols: &[ColumnMeta])
     let content = quote_literal(&table.sql_name)?;
     let col_list: Vec<String> = searchable
         .iter()
-        .map(|c| quote_ident(&c.sql_name))
+        .map(|c| quote_ident(c.sql_name().unwrap_or_default()))
         .collect();
     let cols_sql = col_list.join(", ");
     let new_vals: Vec<String> = searchable
         .iter()
-        .map(|c| format!("new.{}", quote_ident(&c.sql_name)))
+        .map(|c| format!("new.{}", quote_ident(c.sql_name().unwrap_or_default())))
         .collect();
     let new_vals = new_vals.join(", ");
     let old_vals: Vec<String> = searchable
         .iter()
-        .map(|c| format!("old.{}", quote_ident(&c.sql_name)))
+        .map(|c| format!("old.{}", quote_ident(c.sql_name().unwrap_or_default())))
         .collect();
     let old_vals = old_vals.join(", ");
 

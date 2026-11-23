@@ -5,7 +5,8 @@ use std::sync::Mutex;
 
 use nothing_core::{
     Cells, ColumnMeta, ColumnPatch, CsvPreview, ImportCsvOptions, ImportReport, NewColumn, NewView,
-    Row, RowPage, SqlResult, TableMeta, ViewMeta, ViewPatch, ViewResult, Workspace,
+    Row, RowPage, SqlResult, TableMeta, ViewColumnMeta, ViewColumnPatch, ViewMeta, ViewPatch,
+    ViewResult, Workspace,
 };
 use serde::Serialize;
 use tauri::State;
@@ -53,6 +54,7 @@ impl From<nothing_core::AppError> for CommandError {
             nothing_core::AppError::WrongPassword => "WrongPassword",
             nothing_core::AppError::NotANothingDb => "NotANothingDb",
             nothing_core::AppError::FormatTooNew(_) => "FormatTooNew",
+            nothing_core::AppError::FormatTooOld(_) => "FormatTooOld",
             nothing_core::AppError::NotFound(_) => "NotFound",
             nothing_core::AppError::AlreadyExists(_) => "AlreadyExists",
             nothing_core::AppError::InvalidInput(_) => "InvalidInput",
@@ -264,6 +266,15 @@ pub fn table_set_icon(
 }
 
 #[tauri::command]
+pub fn table_set_color(
+    state: State<AppState>,
+    table_id: String,
+    color: Option<String>,
+) -> CmdResult<TableMeta> {
+    with_ws(&state, |ws| ws.set_table_color(&table_id, color.as_deref()))
+}
+
+#[tauri::command]
 pub fn column_list(state: State<AppState>, table_id: String) -> CmdResult<Vec<ColumnMeta>> {
     with_ws(&state, |ws| ws.list_columns(&table_id))
 }
@@ -366,6 +377,18 @@ pub fn view_update(
 #[tauri::command]
 pub fn view_delete(state: State<AppState>, view_id: String) -> CmdResult<()> {
     with_ws(&state, |ws| ws.delete_view(&view_id))
+}
+
+#[tauri::command]
+pub fn view_column_update(
+    state: State<AppState>,
+    view_id: String,
+    column_id: String,
+    patch: ViewColumnPatch,
+) -> CmdResult<ViewColumnMeta> {
+    with_ws(&state, |ws| {
+        ws.update_view_column(&view_id, &column_id, patch)
+    })
 }
 
 #[tauri::command]

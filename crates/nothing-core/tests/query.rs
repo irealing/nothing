@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use common::{emp_task_fixture, object_exists, raw};
 use nothing_core::{
     AppError, Cells, ColumnType, FilterNode, FilterOp, FilterRule, FormulaResultType, GridConfig,
-    LogicOp, NewView, SortSpec, SqlConfig, ViewConfig, ViewKind, ViewResult,
+    LogicOp, NewView, SortSpec, SqlConfig, ViewColumnPatch, ViewData, ViewKind, ViewResult,
 };
 
 fn dbp(dir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
@@ -51,7 +51,7 @@ fn full_fixture(ws: &nothing_core::Workspace) -> Full {
     let mut sql = HashMap::new();
     for c in &cols {
         id.insert(c.name.clone(), c.id.clone());
-        sql.insert(c.name.clone(), c.sql_name.clone());
+        sql.insert(c.name.clone(), c.sql_name().unwrap().to_string());
     }
     Full { table, id, sql }
 }
@@ -67,7 +67,7 @@ fn make_grid(ws: &nothing_core::Workspace, table_id: &str, name: &str, cfg: Grid
         table_id: Some(table_id.into()),
         name: name.into(),
         kind: ViewKind::Grid,
-        config: ViewConfig::Grid(cfg),
+        data: ViewData::Grid(cfg),
     })
     .unwrap()
     .id
@@ -244,7 +244,7 @@ fn relation_cells_titles_and_reverse_editing() {
         )
         .unwrap();
     let emp_cols = ws.list_columns(&f.emp_table.id).unwrap();
-    let reverse = emp_cols.iter().find(|c| c.is_reverse).unwrap();
+    let reverse = emp_cols.iter().find(|c| c.is_reverse()).unwrap();
     let emp_name = &emp_cols[0].id;
 
     let zhang = ws
@@ -374,9 +374,17 @@ fn grid_view_filters_sorts_hidden_and_pagination() {
                 column_id: f.c("工时").to_string(),
                 desc: true,
             }],
-            hidden_columns: vec![f.c("完成").to_string()],
         },
     );
+    ws.update_view_column(
+        &view,
+        f.c("完成"),
+        ViewColumnPatch {
+            hidden: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let page = run_grid(&ws, &view);
     assert_eq!(page.total, 3); // 5.0, 9.0, 5.0
     let titles: Vec<&str> = page
@@ -402,7 +410,6 @@ fn grid_view_filters_sorts_hidden_and_pagination() {
                 column_id: f.c("工时").to_string(),
                 desc: true,
             }],
-            hidden_columns: vec![],
         },
     );
     let page = run_grid(&ws, &view2);
@@ -433,7 +440,7 @@ fn filter_ops_coverage() {
         ws.update_view(
             &view,
             nothing_core::ViewPatch {
-                config: Some(ViewConfig::Grid(cfg)),
+                data: Some(ViewData::Grid(cfg)),
                 ..Default::default()
             },
         )
@@ -599,7 +606,7 @@ fn filter_ops_coverage() {
         .update_view(
             &view,
             nothing_core::ViewPatch {
-                config: Some(ViewConfig::Grid(GridConfig {
+                data: Some(ViewData::Grid(GridConfig {
                     filters: Some(rule(
                         f.c("完成"),
                         FilterOp::Contains,
@@ -679,7 +686,7 @@ fn relation_filters_empty_not_empty() {
     ws.update_view(
         &view,
         nothing_core::ViewPatch {
-            config: Some(ViewConfig::Grid(GridConfig {
+            data: Some(ViewData::Grid(GridConfig {
                 filters: Some(rule(
                     rel.id.as_str(),
                     FilterOp::IsEmpty,
@@ -706,7 +713,7 @@ fn filter_values_are_data_never_sql() {
     let t = &f.table.id;
 
     let payloads = [
-        "x'; DROP TABLE _tables; --",
+        "x'; DROP TABLE _meta; --",
         "x' OR '1'='1",
         "x\"); DELETE FROM whatever; --",
         "-- comment",
@@ -726,7 +733,7 @@ fn filter_values_are_data_never_sql() {
         ws.update_view(
             &view,
             nothing_core::ViewPatch {
-                config: Some(ViewConfig::Grid(GridConfig {
+                data: Some(ViewData::Grid(GridConfig {
                     filters: Some(rule(f.c("标题"), FilterOp::Eq, serde_json::json!(p))),
                     ..Default::default()
                 })),
@@ -742,7 +749,7 @@ fn filter_values_are_data_never_sql() {
         ws.update_view(
             &view,
             nothing_core::ViewPatch {
-                config: Some(ViewConfig::Grid(GridConfig {
+                data: Some(ViewData::Grid(GridConfig {
                     filters: Some(rule(f.c("标题"), FilterOp::Contains, serde_json::json!(p))),
                     ..Default::default()
                 })),
@@ -756,7 +763,7 @@ fn filter_values_are_data_never_sql() {
     // Everything still exists.
     assert_eq!(ws.list_tables().unwrap().len(), 1);
     let conn = raw(&dbp(&dir, "evil.nothing"));
-    assert!(object_exists(&conn, "_tables"));
+    assert!(object_exists(&conn, "_meta"));
     assert!(object_exists(&conn, &f.table.sql_name));
     assert!(ws.schema_objects("pwn%").unwrap().is_empty());
 
@@ -764,7 +771,7 @@ fn filter_values_are_data_never_sql() {
     ws.update_view(
         &view,
         nothing_core::ViewPatch {
-            config: Some(ViewConfig::Grid(GridConfig {
+            data: Some(ViewData::Grid(GridConfig {
                 filters: Some(rule(
                     f.c("标题"),
                     FilterOp::Eq,
@@ -799,7 +806,7 @@ fn like_wildcards_are_escaped_in_values() {
     ws.update_view(
         &view,
         nothing_core::ViewPatch {
-            config: Some(ViewConfig::Grid(GridConfig {
+            data: Some(ViewData::Grid(GridConfig {
                 filters: Some(rule(
                     f.c("标题"),
                     FilterOp::Contains,
@@ -816,7 +823,7 @@ fn like_wildcards_are_escaped_in_values() {
     ws.update_view(
         &view,
         nothing_core::ViewPatch {
-            config: Some(ViewConfig::Grid(GridConfig {
+            data: Some(ViewData::Grid(GridConfig {
                 filters: Some(rule(
                     f.c("标题"),
                     FilterOp::Contains,
@@ -925,16 +932,16 @@ fn sql_view_execution_and_join() {
             table_id: None,
             name: "员工工时汇总".into(),
             kind: ViewKind::Sql,
-            config: ViewConfig::Sql(SqlConfig {
+            data: ViewData::Sql(SqlConfig {
                 statement: format!(
                     r#"SELECT e.{emp_title} AS 员工, count(*) AS 任务数, sum(t.{hours}) AS 总工时
                        FROM {emp} e
                        JOIN {junction} j ON j.b = e._rid
                        JOIN {task} t ON t._rid = j.a
                        GROUP BY e._rid"#,
-                    emp_title = emp_cols[0].sql_name,
+                    emp_title = emp_cols[0].sql_name().unwrap(),
                     emp = f.emp_table.sql_name,
-                    hours = f.task_cols[1].sql_name,
+                    hours = f.task_cols[1].sql_name().unwrap(),
                     task = f.task_table.sql_name,
                 ),
             }),
@@ -967,8 +974,8 @@ fn sql_view_execution_and_join() {
             &format!(
                 r#"WITH x AS (SELECT {title} AS t, {hours} AS h FROM {task})
                    SELECT t, h, rank() OVER (ORDER BY h DESC) AS rk FROM x ORDER BY h DESC"#,
-                title = f.task_cols[0].sql_name,
-                hours = f.task_cols[1].sql_name,
+                title = f.task_cols[0].sql_name().unwrap(),
+                hours = f.task_cols[1].sql_name().unwrap(),
                 task = f.task_table.sql_name
             ),
             Some(10),
@@ -989,7 +996,7 @@ fn run_sql_is_read_only() {
     for evil in [
         format!("DELETE FROM {}", f.task_table.sql_name),
         format!("UPDATE {} SET _rid = 'x'", f.task_table.sql_name),
-        "DROP TABLE _tables".to_string(),
+        "DROP TABLE _meta".to_string(),
         "PRAGMA query_only = OFF".to_string(),
         format!("SELECT 1; DELETE FROM {}", f.task_table.sql_name),
         "CREATE TABLE hacked (x)".to_string(),
@@ -1002,7 +1009,7 @@ fn run_sql_is_read_only() {
     let conn = raw(&dbp(&dir, "ro.nothing"));
     assert_eq!(common::raw_count(&conn, &f.task_table.sql_name), before);
     assert!(!object_exists(&conn, "hacked"));
-    assert!(object_exists(&conn, "_tables"));
+    assert!(object_exists(&conn, "_meta"));
 
     // a legitimate SELECT still works afterwards
     let r = ws
@@ -1064,7 +1071,6 @@ fn perf_100k_rows_grid_view() {
                 column_id: f.c("工时").to_string(),
                 desc: true,
             }],
-            hidden_columns: vec![],
         },
     );
     let start = std::time::Instant::now();

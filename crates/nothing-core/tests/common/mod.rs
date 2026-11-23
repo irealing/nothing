@@ -4,10 +4,7 @@
 use std::path::Path;
 
 use nothing_core::schema::ident::now_iso;
-use nothing_core::{
-    Choice, ColumnOpts, ColumnType, FormulaOpts, FormulaResultType, NewColumn, RelationOpts,
-    SelectOpts, Workspace,
-};
+use nothing_core::{ColumnType, FormulaResultType, NewChoice, NewColumn, Workspace};
 
 pub const PASSWORD: &str = "test-password-🔒";
 
@@ -32,11 +29,27 @@ pub fn raw(path: &Path) -> rusqlite::Connection {
     conn
 }
 
+fn choices(names: &[&str]) -> Vec<NewChoice> {
+    names
+        .iter()
+        .map(|c| NewChoice {
+            id: None,
+            name: c.to_string(),
+            color: None,
+        })
+        .collect()
+}
+
 pub fn col(name: &str, t: ColumnType) -> NewColumn {
     NewColumn {
         name: name.into(),
         col_type: t,
-        opts: None,
+        choices: Vec::new(),
+        target_table_id: None,
+        single: false,
+        reverse_name: None,
+        formula_expr: None,
+        formula_result_type: None,
         icon: None,
         color: None,
         align: None,
@@ -44,74 +57,33 @@ pub fn col(name: &str, t: ColumnType) -> NewColumn {
     }
 }
 
-pub fn select_col(name: &str, choices: &[&str]) -> NewColumn {
+pub fn select_col(name: &str, opts: &[&str]) -> NewColumn {
     NewColumn {
-        name: name.into(),
-        col_type: ColumnType::Select,
-        opts: Some(ColumnOpts::Select(SelectOpts {
-            choices: choices
-                .iter()
-                .map(|c| Choice {
-                    id: c.to_string(),
-                    name: c.to_string(),
-                })
-                .collect(),
-        })),
-        icon: None,
-        color: None,
-        align: None,
-        default_value: None,
+        choices: choices(opts),
+        ..col(name, ColumnType::Select)
     }
 }
 
-pub fn multi_select_col(name: &str, choices: &[&str]) -> NewColumn {
+pub fn multi_select_col(name: &str, opts: &[&str]) -> NewColumn {
     NewColumn {
-        name: name.into(),
-        col_type: ColumnType::MultiSelect,
-        opts: Some(ColumnOpts::MultiSelect(SelectOpts {
-            choices: choices
-                .iter()
-                .map(|c| Choice {
-                    id: c.to_string(),
-                    name: c.to_string(),
-                })
-                .collect(),
-        })),
-        icon: None,
-        color: None,
-        align: None,
-        default_value: None,
+        choices: choices(opts),
+        ..col(name, ColumnType::MultiSelect)
     }
 }
 
 pub fn relation_col(name: &str, target_table_id: &str, reverse_name: Option<&str>) -> NewColumn {
     NewColumn {
-        name: name.into(),
-        col_type: ColumnType::Relation,
-        opts: Some(ColumnOpts::Relation(RelationOpts {
-            target_table_id: target_table_id.into(),
-            single: false,
-            reverse_name: reverse_name.map(String::from),
-        })),
-        icon: None,
-        color: None,
-        align: None,
-        default_value: None,
+        target_table_id: Some(target_table_id.into()),
+        reverse_name: reverse_name.map(String::from),
+        ..col(name, ColumnType::Relation)
     }
 }
 
 pub fn formula_col(name: &str, expr: &str, result_type: FormulaResultType) -> NewColumn {
     NewColumn {
-        name: name.into(),
-        col_type: ColumnType::Formula,
-        opts: Some(ColumnOpts::Formula(FormulaOpts {
-            expr: expr.into(),
-            result_type,
-        })),
-        icon: None,
-        color: None,
-        align: None,
-        default_value: None,
+        formula_expr: Some(expr.into()),
+        formula_result_type: Some(result_type),
+        ..col(name, ColumnType::Formula)
     }
 }
 

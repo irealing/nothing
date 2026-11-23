@@ -43,7 +43,7 @@ fn split_cells<'a>(
         let value = &cells[id];
         // Validate every cell (including relation payloads) up front.
         json_to_stored(col, value)?;
-        if col.col_type == crate::schema::ColumnType::Relation {
+        if col.col_type() == crate::schema::ColumnType::Relation {
             relations.push((id, *col, value));
         } else {
             physical.push((id, *col, value));
@@ -62,15 +62,13 @@ fn replace_links(
     row_rid: &str,
     value: &serde_json::Value,
 ) -> Result<()> {
-    let source_col_id = if col.is_reverse {
-        col.reverse_of
-            .as_deref()
-            .ok_or_else(|| AppError::Internal("反向列缺少 reverse_of".into()))?
+    let source_col_id = if let Some(origin) = col.origin_id() {
+        origin
     } else {
         col.id.as_str()
     };
     let junction = quote_ident(&junction_sql_name(source_col_id));
-    let fixed_side = if col.is_reverse { "b" } else { "a" };
+    let fixed_side = if col.is_reverse() { "b" } else { "a" };
 
     // Deduplicate, preserve order.
     let mut targets: Vec<String> = Vec::new();
@@ -86,7 +84,10 @@ fn replace_links(
     // Pre-check targets exist so we can report NotFound instead of a raw FK
     // constraint message.
     if !targets.is_empty() {
-        let target_table_id = &col.opts.relation()?.target_table_id;
+        let target_table_id = &col
+            .relation()
+            .ok_or_else(|| AppError::Internal("关联列缺少关联数据".into()))?
+            .target_table_id;
         let target = crate::schema::load_table(conn, target_table_id)?;
         let mut remaining = targets.len();
         for chunk in targets.chunks(IN_CHUNK) {
@@ -158,7 +159,7 @@ fn write_physical(
         ];
         for (_, col, value) in physical {
             if let Some(stored) = json_to_stored(col, value)? {
-                cols_sql.push(quote_ident(&col.sql_name));
+                cols_sql.push(quote_ident(col.sql_name().unwrap_or_default()));
                 params.push(stored);
             }
         }
@@ -174,7 +175,10 @@ fn write_physical(
         let mut params: Vec<rusqlite::types::Value> = Vec::new();
         for (_, col, value) in physical {
             if let Some(stored) = json_to_stored(col, value)? {
-                sets.push(format!("{} = ?", quote_ident(&col.sql_name)));
+                sets.push(format!(
+                    "{} = ?",
+                    quote_ident(col.sql_name().unwrap_or_default())
+                ));
                 params.push(stored);
             }
         }
@@ -200,7 +204,7 @@ fn write_physical(
 /// neither can carry a default.
 fn apply_defaults(cols: &[ColumnMeta], mut cells: Cells) -> Result<Cells> {
     for col in cols {
-        if col.is_reverse || col.col_type == crate::schema::ColumnType::Formula {
+        if col.is_reverse() || col.col_type() == crate::schema::ColumnType::Formula {
             continue;
         }
         if cells.contains_key(&col.id) {

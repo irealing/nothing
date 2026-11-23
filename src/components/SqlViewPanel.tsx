@@ -15,17 +15,17 @@ export default function SqlViewPanel({ view }: { view: ViewMeta }) {
   const updateView = useWorkspace((s) => s.updateView);
   const storedResult = useWorkspace((s) => s.sqlResult);
 
-  const stored = view.config.kind === "sql" ? view.config.statement : "";
+  const stored = view.data.kind === "sql" ? view.data.statement : "";
   const [statement, setStatement] = useState(stored);
   const [preview, setPreview] = useState<SqlResult | null>(null);
   const [running, setRunning] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
-    setStatement(view.config.kind === "sql" ? view.config.statement : "");
+    setStatement(view.data.kind === "sql" ? view.data.statement : "");
     setPreview(null);
     setPreviewError(null);
-  }, [view.id, view.config]);
+  }, [view.id, view.data]);
 
   const dirty = statement.trim() !== stored.trim();
 
@@ -44,7 +44,7 @@ export default function SqlViewPanel({ view }: { view: ViewMeta }) {
   };
 
   const save = async () => {
-    await updateView(view.id, { config: { kind: "sql", statement } });
+    await updateView(view.id, { data: { kind: "sql", statement } });
     setPreview(null);
   };
 

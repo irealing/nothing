@@ -1,5 +1,5 @@
-//! Query layer (M2): row CRUD, the grid-view SQL compiler, FTS search,
-//! read-only SQL view execution, and batched relation-title resolution.
+//! Query layer: row CRUD, the grid-view SQL compiler, FTS search, read-only
+//! SQL view execution, and batched relation-title resolution.
 //!
 //! All generated SQL is either metadata-derived (identifiers) or parameter
 //! bound (values) — 铁律 4. All user-facing reads run on the workspace's
@@ -17,7 +17,7 @@ use rusqlite::types::ValueRef;
 use serde::Serialize;
 
 use crate::error::{AppError, Result};
-use crate::schema::ColumnMeta;
+use crate::schema::{ColumnMeta, ColumnType};
 
 /// Cell values keyed by column id.
 pub type Cells = HashMap<String, serde_json::Value>;
@@ -35,6 +35,7 @@ pub struct Row {
 #[derive(Debug, Clone, Serialize)]
 pub struct RowPage {
     /// Visible columns in display order (includes relation/formula columns).
+    /// `ColumnMeta::width` is the effective width in this view.
     pub columns: Vec<ColumnMeta>,
     pub rows: Vec<Row>,
     /// Total rows matching the view (for pagination).
@@ -97,22 +98,22 @@ pub(crate) fn json_to_stored(
     col: &ColumnMeta,
     value: &serde_json::Value,
 ) -> Result<Option<rusqlite::types::Value>> {
-    use crate::schema::ColumnType;
     use rusqlite::types::Value;
 
-    if col.col_type == ColumnType::Formula {
+    let col_type = col.col_type();
+    if col_type == ColumnType::Formula {
         return Err(AppError::Rejected(format!(
             "公式列「{}」由数据库自动计算，不能手动写入",
             col.name
         )));
     }
-    if col.col_type == ColumnType::Relation {
+    if col_type == ColumnType::Relation {
         // Handled via the junction table by the caller.
         validate_rid_list(col, value)?;
         return Ok(None);
     }
 
-    Ok(Some(match col.col_type {
+    Ok(Some(match col_type {
         ColumnType::Text => match value {
             serde_json::Value::Null => Value::Null,
             serde_json::Value::String(s) => Value::Text(s.clone()),
@@ -179,7 +180,7 @@ pub(crate) fn json_to_stored(
 }
 
 fn validate_choice(col: &ColumnMeta, name: &str) -> Result<()> {
-    let choices = col.opts.select_choices()?;
+    let choices = col.choices();
     if choices.is_empty() || choices.iter().any(|c| c.name == name) {
         Ok(())
     } else {
@@ -191,7 +192,10 @@ fn validate_choice(col: &ColumnMeta, name: &str) -> Result<()> {
 }
 
 fn validate_rid_list(col: &ColumnMeta, value: &serde_json::Value) -> Result<()> {
-    let single = col.opts.relation()?.single;
+    let single = col
+        .relation()
+        .map(|r| r.single)
+        .ok_or_else(|| AppError::Internal("关联列缺少关联数据".into()))?;
     match value {
         serde_json::Value::Null => Ok(()),
         serde_json::Value::Array(items) => {
@@ -219,23 +223,14 @@ fn invalid_cell(col: &ColumnMeta, value: &serde_json::Value) -> Result<rusqlite:
     Err(AppError::InvalidInput(format!(
         "列「{}」（{}）不接受该值: {}",
         col.name,
-        col.col_type.as_str(),
+        col.col_type().as_str(),
         value
     )))
 }
 
 /// Decode a stored SQLite value into the JSON cell form of a column type.
 pub(crate) fn stored_to_json(col: &ColumnMeta, v: ValueRef<'_>) -> Result<serde_json::Value> {
-    use crate::schema::{ColumnType, FormulaResultType};
-    let effective = match col.col_type {
-        ColumnType::Formula => match col.opts.formula()?.result_type {
-            FormulaResultType::Number => ColumnType::Number,
-            FormulaResultType::Text => ColumnType::Text,
-            FormulaResultType::Date => ColumnType::Date,
-            FormulaResultType::Checkbox => ColumnType::Checkbox,
-        },
-        t => t,
-    };
+    let effective = col.effective_type();
     Ok(match (effective, v) {
         (_, ValueRef::Null) => match effective {
             ColumnType::MultiSelect => serde_json::json!([]),

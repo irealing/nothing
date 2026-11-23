@@ -5,7 +5,7 @@ mod common;
 
 use common::{emp_task_fixture, object_exists, raw, raw_insert_row};
 use nothing_core::schema::ident::junction_sql_name;
-use nothing_core::{AppError, ColumnOpts, ColumnPatch, RelationOpts};
+use nothing_core::{AppError, ColumnPatch};
 
 fn dbp(dir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
     dir.path().join(name)
@@ -37,12 +37,18 @@ fn relation_creates_junction_and_reverse_column() {
 
     // reverse column exists in 员工, sharing the same junction
     let emp_cols = ws.list_columns(&f.emp_table.id).unwrap();
-    let reverse = emp_cols.iter().find(|c| c.is_reverse).expect("reverse col");
+    let reverse = emp_cols
+        .iter()
+        .find(|c| c.is_reverse())
+        .expect("reverse col");
     assert_eq!(reverse.name, "相关任务");
-    assert_eq!(reverse.reverse_of.as_deref(), Some(rel.id.as_str()));
+    assert_eq!(reverse.origin_id(), Some(rel.id.as_str()));
     // reverse has no physical column
     let emp_phys = ws.physical_columns(&f.emp_table.id).unwrap();
-    assert!(emp_phys.iter().all(|(n, _)| *n != reverse.sql_name));
+    let reverse_sql = reverse.sql_name();
+    assert!(emp_phys
+        .iter()
+        .all(|(n, _)| Some(n.as_str()) != reverse_sql));
 
     // junction FK definitions point at both tables with CASCADE
     let ddl: String = conn
@@ -176,7 +182,7 @@ fn deleting_reverse_column_keeps_source_and_data() {
         .list_columns(&f.emp_table.id)
         .unwrap()
         .into_iter()
-        .find(|c| c.is_reverse)
+        .find(|c| c.is_reverse())
         .unwrap()
         .id;
     ws.delete_column(&f.emp_table.id, &reverse_id).unwrap();
@@ -212,11 +218,7 @@ fn single_mode_tightening_truncates_extra_links() {
         &f.task_table.id,
         &rel.id,
         ColumnPatch {
-            opts: Some(ColumnOpts::Relation(RelationOpts {
-                target_table_id: f.emp_table.id.clone(),
-                single: true,
-                reverse_name: None,
-            })),
+            single: Some(true),
             ..Default::default()
         },
     )
@@ -255,7 +257,7 @@ fn deleting_target_table_removes_inbound_relation_columns() {
     let task_cols = ws.list_columns(&f.task_table.id).unwrap();
     assert!(task_cols
         .iter()
-        .all(|c| c.col_type != nothing_core::ColumnType::Relation));
+        .all(|c| c.col_type() != nothing_core::ColumnType::Relation));
     assert!(task_cols.iter().any(|c| c.name == "标题"));
     let conn = raw(&dbp(&dir, "dtgt.nothing"));
     assert!(!object_exists(&conn, &junction_sql_name(&rel.id)));
@@ -288,7 +290,7 @@ fn relation_target_must_exist_and_self_relation_allowed() {
             common::relation_col("前置任务", &f.task_table.id, None),
         )
         .unwrap();
-    assert!(rel.opts.relation().is_ok());
+    assert!(rel.relation().is_some());
 }
 
 #[test]

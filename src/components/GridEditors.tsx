@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ColumnMeta, Json } from "../types";
+import { colType } from "../types";
 import type { Anchor } from "./CellEditors";
 import { t } from "../i18n";
 
@@ -22,7 +23,7 @@ export interface InlineEditorRequest {
 /** Text shown in the editor for a cell value. Exported for unit tests. */
 export function textForEditor(col: ColumnMeta, value: Json): string {
   if (value === null || value === undefined) return "";
-  if (col.type === "date" && typeof value === "string") return value.slice(0, 10);
+  if (colType(col) === "date" && typeof value === "string") return value.slice(0, 10);
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
@@ -31,13 +32,13 @@ export function textForEditor(col: ColumnMeta, value: Json): string {
 /** Translate the input text back into a JSON cell value. Invalid numbers are
  * rejected (`undefined`) so the edit is simply discarded. Exported for tests. */
 export function valueFromEditor(col: ColumnMeta, text: string): Json | undefined {
-  if (col.type === "number") {
+  if (colType(col) === "number") {
     const t = text.trim();
     if (t === "") return null;
     const n = Number(t);
     return Number.isNaN(n) ? undefined : n;
   }
-  if (col.type === "date") {
+  if (colType(col) === "date") {
     const t = text.trim();
     return t === "" ? null : t;
   }
@@ -123,14 +124,14 @@ export function InlineCellEditor({
       ref={inputRef}
       className="cell-editor"
       style={style}
-      type={col.type === "number" ? "number" : col.type === "date" ? "date" : "text"}
-      step={col.type === "number" ? "any" : undefined}
-      inputMode={col.type === "number" ? "decimal" : undefined}
+      type={colType(col) === "number" ? "number" : colType(col) === "date" ? "date" : "text"}
+      step={colType(col) === "number" ? "any" : undefined}
+      inputMode={colType(col) === "number" ? "decimal" : undefined}
       value={text}
       placeholder={
-        col.type === "number"
+        colType(col) === "number"
           ? t("cell.numberPlaceholder")
-          : col.type === "date"
+          : colType(col) === "date"
             ? t("cell.datePlaceholder")
             : t("cell.inputPlaceholder")
       }

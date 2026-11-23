@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use super::formula::{self, ColumnRef};
 use super::fts;
 use super::ident::{junction_index_name, junction_sql_name, quote_ident, quote_literal};
-use super::{ColumnMeta, ColumnOpts, ColumnType, FormulaResultType, TableMeta};
+use super::{ColumnData, ColumnMeta, ColumnType, FormulaResultType, OptionMeta, TableMeta};
 use crate::error::{AppError, Result};
 
 /// Resolver for formula compilation against a table's full column set.
@@ -16,11 +16,11 @@ use crate::error::{AppError, Result};
 pub(crate) fn formula_resolver(all: &[ColumnMeta]) -> impl Fn(&str) -> Option<ColumnRef> + '_ {
     move |name: &str| {
         all.iter()
-            .find(|c| !c.is_reverse && c.name == name)
+            .find(|c| !c.is_reverse() && c.name == name)
             .map(|c| ColumnRef {
-                sql_name: c.sql_name.clone(),
-                is_formula: c.col_type == ColumnType::Formula,
-                is_relation: c.col_type == ColumnType::Relation,
+                sql_name: c.sql_name().unwrap_or_default().to_string(),
+                is_formula: c.col_type() == ColumnType::Formula,
+                is_relation: c.col_type() == ColumnType::Relation,
             })
     }
 }
@@ -35,49 +35,50 @@ fn formula_declared_type(rt: FormulaResultType) -> &'static str {
     }
 }
 
+fn choice_literals(choices: &[OptionMeta]) -> Result<String> {
+    choices
+        .iter()
+        .map(|c| quote_literal(&c.name))
+        .collect::<Result<Vec<_>>>()
+        .map(|v| v.join(", "))
+}
+
 /// Full column definition for `CREATE TABLE` / `ALTER TABLE ADD COLUMN`.
 ///
-/// Returns `Ok(None)` for columns without a physical column (relations and
-/// reverse columns — their data lives in the junction table).
+/// Returns `Ok(None)` for columns without a physical column (relations — their
+/// data lives in the junction table).
 pub(crate) fn column_def_sql(col: &ColumnMeta, all: &[ColumnMeta]) -> Result<Option<String>> {
-    if !col.is_physical() {
+    let Some(sql_name) = col.sql_name() else {
         return Ok(None);
-    }
-    let q = quote_ident(&col.sql_name);
-    let def = match col.col_type {
-        ColumnType::Text => format!("{q} TEXT"),
-        ColumnType::Number => format!("{q} REAL"),
-        ColumnType::Date => {
+    };
+    let q = quote_ident(sql_name);
+    let def = match &col.data {
+        ColumnData::Text { .. } => format!("{q} TEXT"),
+        ColumnData::Number { .. } => format!("{q} REAL"),
+        ColumnData::Date { .. } => {
             format!("{q} TEXT CHECK({q} IS NULL OR datetime({q}) IS NOT NULL)")
         }
-        ColumnType::Checkbox => {
+        ColumnData::Checkbox { .. } => {
             format!("{q} INTEGER NOT NULL DEFAULT 0 CHECK({q} IN (0, 1))")
         }
-        ColumnType::Select => {
-            let choices = col.opts.select_choices()?;
+        ColumnData::Select { choices, .. } => {
             let mut def = format!("{q} TEXT");
             if !choices.is_empty() {
-                let lits = choices
-                    .iter()
-                    .map(|c| quote_literal(&c.name))
-                    .collect::<Result<Vec<_>>>()?
-                    .join(", ");
-                def.push_str(&format!(" CHECK({q} IN ({lits}))"));
+                def.push_str(&format!(" CHECK({q} IN ({}))", choice_literals(choices)?));
             }
             def
         }
-        ColumnType::MultiSelect => {
+        ColumnData::MultiSelect { .. } => {
             format!("{q} TEXT NOT NULL DEFAULT '[]' CHECK(json_valid({q}))")
         }
-        ColumnType::Formula => {
-            let opts = col.opts.formula()?;
-            let expr_sql = formula::compile(&opts.expr, &formula_resolver(all))?;
-            let decl = formula_declared_type(opts.result_type);
+        ColumnData::Formula(f) => {
+            let expr_sql = formula::compile(&f.expr, &formula_resolver(all))?;
+            let decl = formula_declared_type(f.result_type);
             // VIRTUAL (not STORED) so the column can be added with
             // ALTER TABLE ADD COLUMN; SQLite still allows indexing it.
             format!("{q} {decl} GENERATED ALWAYS AS ({expr_sql}) VIRTUAL")
         }
-        ColumnType::Relation => return Ok(None),
+        ColumnData::Relation(_) => return Ok(None),
     };
     Ok(Some(def))
 }
@@ -97,7 +98,7 @@ pub(crate) fn create_table_ddl(sql_name: &str, cols: &[ColumnMeta]) -> Result<St
     let (plain, formulas): (Vec<_>, Vec<_>) = cols
         .iter()
         .filter(|c| c.is_physical())
-        .partition(|c| c.col_type != ColumnType::Formula);
+        .partition(|c| c.col_type() != ColumnType::Formula);
     for c in plain.iter().chain(formulas.iter()) {
         if let Some(def) = column_def_sql(c, cols)? {
             defs.push(def);
@@ -144,10 +145,14 @@ pub(crate) fn drop_junction_ddl(col_id: &str) -> String {
     )
 }
 
-/// SQL expression converting value expression `x` into the semantics of
-/// column type `to`. Used when rebuilding a table after a type/options change;
+/// SQL expression converting value expression `x` into the semantics of type
+/// `to`. Used when rebuilding a table after a type/options change;
 /// unconvertible values become NULL (or the type's empty value).
-pub(crate) fn conversion_expr(to: ColumnType, to_opts: &ColumnOpts, x: &str) -> Result<String> {
+pub(crate) fn conversion_expr(
+    to: ColumnType,
+    to_choices: &[OptionMeta],
+    x: &str,
+) -> Result<String> {
     let expr = match to {
         ColumnType::Text => format!("CAST({x} AS TEXT)"),
         ColumnType::Number => {
@@ -163,15 +168,10 @@ pub(crate) fn conversion_expr(to: ColumnType, to_opts: &ColumnOpts, x: &str) -> 
              THEN CAST({x} AS TEXT) ELSE NULL END"
         ),
         ColumnType::Select => {
-            let choices = to_opts.select_choices()?;
-            if choices.is_empty() {
+            if to_choices.is_empty() {
                 "NULL".to_string()
             } else {
-                let lits = choices
-                    .iter()
-                    .map(|c| quote_literal(&c.name))
-                    .collect::<Result<Vec<_>>>()?
-                    .join(", ");
+                let lits = choice_literals(to_choices)?;
                 format!(
                     "CASE WHEN CAST({x} AS TEXT) IN ({lits}) THEN CAST({x} AS TEXT) ELSE NULL END"
                 )
@@ -189,8 +189,8 @@ pub(crate) fn conversion_expr(to: ColumnType, to_opts: &ColumnOpts, x: &str) -> 
 
 /// Rebuild a user table in place from metadata, following SQLite's documented
 /// 12-step ALTER procedure. MUST run with `foreign_keys = OFF` (see
-/// [`crate::db::Workspace::with_fk_off_tx`]) — otherwise dropping the old
-/// table would cascade-delete junction rows.
+/// [`crate::db::Workspace::with_tx`]) — otherwise dropping the old table would
+/// cascade-delete junction rows.
 ///
 /// `conversions` maps physical column name → SELECT expression used to copy
 /// values (e.g. after a type change); columns absent from the map are copied
@@ -217,17 +217,13 @@ pub(crate) fn rebuild_table(
     let mut insert_cols: Vec<String> = BASE_COLUMNS.iter().map(|c| quote_ident(c)).collect();
     let mut select_exprs: Vec<String> = BASE_COLUMNS.iter().map(|c| quote_ident(c)).collect();
     for c in cols.iter().filter(|c| c.is_physical()) {
-        if c.col_type == ColumnType::Formula {
+        if c.col_type() == ColumnType::Formula {
             continue; // recomputed by SQLite
         }
-        let q = quote_ident(&c.sql_name);
+        let name = c.sql_name().unwrap_or_default();
+        let q = quote_ident(name);
         insert_cols.push(q.clone());
-        select_exprs.push(
-            conversions
-                .get(&c.sql_name)
-                .cloned()
-                .unwrap_or_else(|| q.clone()),
-        );
+        select_exprs.push(conversions.get(name).cloned().unwrap_or_else(|| q.clone()));
     }
     conn.execute_batch(&format!(
         "INSERT INTO {qtmp} ({}) SELECT {} FROM {qold};",
@@ -267,16 +263,19 @@ pub(crate) fn formula_dependency_error(col_name: &str, dependents: &[String]) ->
 /// Collect names of formula columns in `cols` whose compiled expression
 /// references `target`'s physical column.
 pub(crate) fn formula_dependents(cols: &[ColumnMeta], target: &ColumnMeta) -> Result<Vec<String>> {
-    let needle = quote_ident(&target.sql_name);
+    let Some(target_sql) = target.sql_name() else {
+        return Ok(Vec::new());
+    };
+    let needle = quote_ident(target_sql);
     let mut out = Vec::new();
     for c in cols {
-        if c.col_type != ColumnType::Formula || !c.is_physical() {
+        if c.col_type() != ColumnType::Formula || !c.is_physical() {
             continue;
         }
-        let opts = c.opts.formula()?;
+        let Some(f) = c.formula() else { continue };
         // Compile against the current set; a formula that no longer compiles
         // is skipped here (update_column validates it separately).
-        if let Ok(sql) = formula::compile(&opts.expr, &formula_resolver(cols)) {
+        if let Ok(sql) = formula::compile(&f.expr, &formula_resolver(cols)) {
             if sql.contains(&needle) {
                 out.push(c.name.clone());
             }

@@ -16,16 +16,17 @@ import { ColorPicker, EmojiPicker } from "../ui/ColumnPickers";
 import { tagCellStyle, tagChipStyle } from "../theme/grid";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconSigma, IconX } from "./icons";
 import type {
-  Choice,
   ColumnAlign,
   ColumnColor,
   ColumnMeta,
-  ColumnOpts,
+  ColumnPatch,
   ColumnType,
   FormulaResultType,
   Json,
+  NewChoice,
   NewColumn,
 } from "../types";
+import { choicesOf, colType, formulaResultType, isReverse } from "../types";
 
 const ALL_TYPES: ColumnType[] = [
   "text",
@@ -38,34 +39,13 @@ const ALL_TYPES: ColumnType[] = [
   "formula",
 ];
 
-function newChoice(name: string): Choice {
-  return { id: crypto.randomUUID(), name };
-}
-
-function optsForType(type: ColumnType, prev?: ColumnOpts): ColumnOpts {
-  switch (type) {
-    case "select":
-      return prev?.kind === "select" ? prev : { kind: "select", choices: [] };
-    case "multi_select":
-      return prev?.kind === "multi_select" ? prev : { kind: "multi_select", choices: [] };
-    case "relation":
-      return prev?.kind === "relation"
-        ? prev
-        : { kind: "relation", target_table_id: "", single: false, reverse_name: null };
-    case "formula":
-      return prev?.kind === "formula" ? prev : { kind: "formula", expr: "", result_type: "number" };
-    default:
-      return { kind: "plain" };
-  }
-}
-
 /** The dynamic date default (`{"kind":"now"}`), resolved on insert. */
 function isNowToken(v: Json | null | undefined): boolean {
   return !!v && typeof v === "object" && !Array.isArray(v) && (v as { kind?: unknown }).kind === "now";
 }
 
 /** Type-appropriate starting point when a default is first enabled. */
-function emptyDefaultFor(type: ColumnType, opts: ColumnOpts): Json {
+function emptyDefaultFor(type: ColumnType, choices: NewChoice[]): Json {
   switch (type) {
     case "number":
       return 0;
@@ -74,7 +54,7 @@ function emptyDefaultFor(type: ColumnType, opts: ColumnOpts): Json {
     case "date":
       return todayIso();
     case "select":
-      return opts.kind === "select" ? (opts.choices[0]?.name ?? "") : "";
+      return choices[0]?.name ?? "";
     case "multi_select":
       return [];
     default:
@@ -89,21 +69,18 @@ function todayIso(): string {
   return local.toISOString().slice(0, 10);
 }
 
-/** Choices are stored trimmed; the dialog only trims on submit so typing keeps
- * the caret where the user put it. */
-function trimChoices(opts: ColumnOpts): ColumnOpts {
-  if (opts.kind !== "select" && opts.kind !== "multi_select") return opts;
-  return { ...opts, choices: opts.choices.map((c) => ({ ...c, name: c.name.trim() })) };
-}
-
-function previewAlign(type: ColumnType, opts: ColumnOpts, align: ColumnAlign | null): ColumnAlign {
+function previewAlign(
+  type: ColumnType,
+  resultType: FormulaResultType,
+  align: ColumnAlign | null,
+): ColumnAlign {
   if (align) return align;
   if (type === "number") return "right";
-  if (type === "formula" && opts.kind === "formula" && opts.result_type === "number") return "right";
+  if (type === "formula" && resultType === "number") return "right";
   return "left";
 }
 
-function previewValue(type: ColumnType, opts: ColumnOpts): string {
+function previewValue(type: ColumnType, choices: NewChoice[]): string {
   switch (type) {
     case "number":
       return "123";
@@ -113,9 +90,7 @@ function previewValue(type: ColumnType, opts: ColumnOpts): string {
       return "✓";
     case "select":
     case "multi_select":
-      return opts.kind === "select" || opts.kind === "multi_select"
-        ? (opts.choices[0]?.name ?? "—")
-        : "—";
+      return choices[0]?.name ?? "—";
     case "formula":
       return t("column.previewSample");
     default:
@@ -128,20 +103,22 @@ function ColumnPreview({
   icon,
   name,
   type,
-  opts,
+  resultType,
+  choices,
   color,
   align,
 }: {
   icon: string | null;
   name: string;
   type: ColumnType;
-  opts: ColumnOpts;
+  resultType: FormulaResultType;
+  choices: NewChoice[];
   color: ColumnColor | null;
   align: ColumnAlign | null;
 }) {
   const headerStyle = color ? tagChipStyle(color) : undefined;
   const cellStyle = color ? tagCellStyle(color) : undefined;
-  const contentAlign = previewAlign(type, opts, align);
+  const contentAlign = previewAlign(type, resultType, align);
   return (
     <div className="column-preview" role="img" aria-label={t("column.preview")}>
       <div className="column-preview-head" style={headerStyle}>
@@ -153,7 +130,7 @@ function ColumnPreview({
       </div>
       <div className="column-preview-cell" style={cellStyle}>
         <span className="column-preview-value" style={{ textAlign: contentAlign }}>
-          {previewValue(type, opts)}
+          {previewValue(type, choices)}
         </span>
       </div>
     </div>
@@ -174,9 +151,25 @@ export default function ColumnDialog({
   const activeTableId = useWorkspace((s) => s.activeTableId);
   const activeTable = tables.find((x) => x.id === activeTableId) ?? null;
 
+  const initialType = existing ? colType(existing) : "text";
   const [name, setName] = useState(existing?.name ?? "");
-  const [type, setType] = useState<ColumnType>(existing?.type ?? "text");
-  const [opts, setOpts] = useState<ColumnOpts>(() => optsForType(existing?.type ?? "text", existing?.opts));
+  const [type, setType] = useState<ColumnType>(initialType);
+  const [choices, setChoices] = useState<NewChoice[]>(() =>
+    existing ? choicesOf(existing).map((c) => ({ id: c.id, name: c.name, color: c.color })) : [],
+  );
+  const [targetTableId, setTargetTableId] = useState(
+    existing?.data.kind === "relation" ? existing.data.target_table_id : "",
+  );
+  const [single, setSingle] = useState(
+    existing?.data.kind === "relation" ? existing.data.single : false,
+  );
+  const [reverseName, setReverseName] = useState("");
+  const [formulaExpr, setFormulaExpr] = useState(
+    existing?.data.kind === "formula" ? existing.data.expr : "",
+  );
+  const [resultType, setResultType] = useState<FormulaResultType>(
+    existing ? (formulaResultType(existing) ?? "number") : "number",
+  );
   const [icon, setIcon] = useState<string | null>(existing?.icon ?? null);
   const [color, setColor] = useState<ColumnColor | null>(existing?.color ?? null);
   const [align, setAlign] = useState<ColumnAlign | null>(existing?.align ?? null);
@@ -197,25 +190,23 @@ export default function ColumnDialog({
     setFocusChoiceId(null);
   }, [focusChoiceId]);
 
+  const existingReverse = existing ? isReverse(existing) : false;
   const isTitle = !!existing && existing.id === activeTable?.title_col_id;
-  const typeLocked = !!existing && (existing.type === "relation" || existing.is_reverse || isTitle);
-  const defaultUnsupported =
-    type === "formula" || type === "relation" || !!existing?.is_reverse;
-  const selectChoices =
-    opts.kind === "select" || opts.kind === "multi_select" ? opts.choices : [];
+  const typeLocked = !!existing && (initialType === "relation" || existingReverse || isTitle);
+  const defaultUnsupported = type === "formula" || type === "relation" || existingReverse;
   const defaultBlocked =
-    (type === "select" || type === "multi_select") && selectChoices.length === 0;
+    (type === "select" || type === "multi_select") && choices.length === 0;
   const showAlign = type !== "select" && type !== "multi_select" && type !== "relation";
 
   // Columns a formula may reference: physical, non-generated, non-reverse.
   const referenceable = useMemo(
-    () => columns.filter((c) => c.type !== "formula" && c.type !== "relation" && !c.is_reverse),
+    () => columns.filter((c) => colType(c) !== "formula" && colType(c) !== "relation" && !isReverse(c)),
     [columns],
   );
 
   const changeType = (next: ColumnType) => {
     setType(next);
-    setOpts((prev) => optsForType(next, prev));
+    if (next !== "select" && next !== "multi_select") setChoices([]);
     // A default is type-specific: start clean instead of sending a value the
     // new type would reject.
     setDefaultEnabled(false);
@@ -227,27 +218,26 @@ export default function ColumnDialog({
     if (!on) {
       setDefaultValue(null);
     } else if (defaultValue === null) {
-      setDefaultValue(emptyDefaultFor(type, opts));
+      setDefaultValue(emptyDefaultFor(type, choices));
     }
   };
 
-  const setChoices = (fn: (choices: Choice[]) => Choice[]) => {
-    if (opts.kind !== "select" && opts.kind !== "multi_select") return;
-    const choices = fn(opts.choices);
-    setOpts({ ...opts, choices });
+  const setChoiceList = (fn: (choices: NewChoice[]) => NewChoice[]) => {
+    const next = fn(choices);
+    setChoices(next);
     if (!defaultEnabled) return;
-    if (choices.length === 0) {
+    if (next.length === 0) {
       setDefaultEnabled(false);
       setDefaultValue(null);
       return;
     }
     // Keep the default valid when choices are renamed or removed.
-    const names = new Set(choices.map((c) => c.name));
-    if (opts.kind === "select") {
+    const names = new Set(next.map((c) => c.name));
+    if (type === "select") {
       setDefaultValue((cur) =>
-        typeof cur === "string" && names.has(cur) ? cur : (choices[0]?.name ?? null),
+        typeof cur === "string" && names.has(cur) ? cur : (next[0]?.name ?? null),
       );
-    } else {
+    } else if (type === "multi_select") {
       setDefaultValue((cur) =>
         Array.isArray(cur) ? cur.map(String).filter((n) => names.has(n)) : [],
       );
@@ -256,37 +246,30 @@ export default function ColumnDialog({
 
   /** Append an empty option after `index` (defaults to the end) and focus it. */
   const addChoice = (index?: number) => {
-    const choice = newChoice("");
-    setChoices((list) => {
+    const choice: NewChoice = { id: crypto.randomUUID(), name: "" };
+    setChoiceList((list) => {
       const at = index === undefined ? list.length : Math.min(index + 1, list.length);
       return [...list.slice(0, at), choice, ...list.slice(at)];
     });
-    setFocusChoiceId(choice.id);
+    setFocusChoiceId(choice.id ?? null);
   };
 
   const submit = async () => {
     if (busy) return;
     if (!name.trim()) return setError(t("column.nameRequired"));
-    const cleanedOpts = trimChoices(opts);
-    if (cleanedOpts.kind === "select" || cleanedOpts.kind === "multi_select") {
-      const names = cleanedOpts.choices.map((c) => c.name);
+    const cleanedChoices = choices.map((c) => ({ ...c, name: c.name.trim() }));
+    if (type === "select" || type === "multi_select") {
+      const names = cleanedChoices.map((c) => c.name);
       if (names.some((n) => !n)) return setError(t("column.choiceRequired"));
       if (new Set(names).size !== names.length) return setError(t("column.choiceDuplicate"));
     }
-    if (type === "relation" && cleanedOpts.kind === "relation" && !cleanedOpts.target_table_id) {
-      return setError(t("column.targetRequired"));
-    }
-    if (type === "formula" && cleanedOpts.kind === "formula" && !cleanedOpts.expr.trim()) {
-      return setError(t("column.formulaRequired"));
-    }
+    if (type === "relation" && !targetTableId) return setError(t("column.targetRequired"));
+    if (type === "formula" && !formulaExpr.trim()) return setError(t("column.formulaRequired"));
     setError(null);
 
     // Normalize type-specific defaults against the (trimmed) choices so a
     // renamed option cannot leave a dangling default behind.
-    const choiceNames =
-      cleanedOpts.kind === "select" || cleanedOpts.kind === "multi_select"
-        ? cleanedOpts.choices.map((c) => c.name)
-        : [];
+    const choiceNames = cleanedChoices.map((c) => c.name);
     let normalized: Json | null = defaultValue;
     if (type === "select" && typeof normalized === "string") {
       normalized = choiceNames.includes(normalized.trim()) ? normalized.trim() : null;
@@ -301,35 +284,61 @@ export default function ColumnDialog({
     const defaultActive =
       defaultEnabled && !defaultBlocked && !(type === "text" && normalized === "");
     const defaultPayload: Json = defaultActive ? normalized : null;
-    // Reverse columns may only change presentation, and the backend rejects any
-    // `opts` patch on them. Omitting unchanged options also avoids an
-    // unnecessary table rebuild.
-    const optsChanged = !existing || JSON.stringify(cleanedOpts) !== JSON.stringify(existing.opts);
     setBusy(true);
     try {
       let ok: boolean;
       if (existing) {
-        ok = await updateColumn(existing.id, {
+        const patch: ColumnPatch = {
           name: name.trim(),
-          ...(type !== existing.type ? { type } : {}),
-          ...(optsChanged ? { opts: cleanedOpts } : {}),
           icon: icon ?? "",
           color: color ?? "",
           align: align ?? "",
-          ...(defaultActive && defaultPayload !== null
-            ? { default_value: defaultPayload }
-            : { clear_default: true }),
-        });
+        };
+        if (type !== initialType) patch.type = type;
+        if (!existingReverse) {
+          if (type === "select" || type === "multi_select") {
+            const before = choicesOf(existing).map((c) => ({ id: c.id, name: c.name }));
+            const after = cleanedChoices.map((c) => ({ id: c.id, name: c.name }));
+            if (JSON.stringify(before) !== JSON.stringify(after)) patch.choices = cleanedChoices;
+          }
+          if (type === "relation") {
+            const rel = existing.data.kind === "relation" ? existing.data : null;
+            if (rel?.target_table_id !== targetTableId) patch.target_table_id = targetTableId;
+            if (rel?.single !== single) patch.single = single;
+          }
+          if (type === "formula") {
+            const f = existing.data.kind === "formula" ? existing.data : null;
+            if (f?.expr !== formulaExpr) patch.formula_expr = formulaExpr;
+            if (f?.result_type !== resultType) patch.formula_result_type = resultType;
+          }
+          if (defaultUnsupported) {
+            // no default payload
+          } else if (defaultActive && defaultPayload !== null) {
+            patch.default_value = defaultPayload;
+          } else {
+            patch.clear_default = true;
+          }
+        }
+        ok = await updateColumn(existing.id, patch);
       } else {
         const col: NewColumn = {
           name: name.trim(),
           type,
-          opts: cleanedOpts,
           icon,
           color,
           align,
           default_value: defaultPayload,
         };
+        if (type === "select" || type === "multi_select") col.choices = cleanedChoices;
+        if (type === "relation") {
+          col.target_table_id = targetTableId;
+          col.single = single;
+          col.reverse_name = reverseName || null;
+        }
+        if (type === "formula") {
+          col.formula_expr = formulaExpr;
+          col.formula_result_type = resultType;
+        }
         ok = await addColumn(col);
       }
       // Keeping the dialog open on failure preserves everything the user typed.
@@ -342,17 +351,18 @@ export default function ColumnDialog({
   const choicesEditor = (
     <div className="choices-editor">
       <span className="field-label">{t("column.choices")}</span>
-      {selectChoices.map((c, i) => (
-        <div className="extra-col-row" key={c.id}>
+      {choices.map((c, i) => (
+        <div className="extra-col-row" key={c.id ?? i}>
           <Input
             value={c.name}
             placeholder={t("column.choicePlaceholder", { n: i + 1 })}
             ref={(el) => {
-              if (el) choiceRefs.current.set(c.id, el);
-              else choiceRefs.current.delete(c.id);
+              const key = c.id ?? String(i);
+              if (el) choiceRefs.current.set(key, el);
+              else choiceRefs.current.delete(key);
             }}
             onChange={(e) =>
-              setChoices((list) => list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
+              setChoiceList((list) => list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
             }
             onKeyDown={(e) => {
               if (e.key !== "Enter") return;
@@ -368,7 +378,7 @@ export default function ColumnDialog({
             type="button"
             className="btn-icon danger"
             title={t("column.deleteChoice")}
-            onClick={() => setChoices((list) => list.filter((_, j) => j !== i))}
+            onClick={() => setChoiceList((list) => list.filter((_, j) => j !== i))}
           >
             <IconX size={13} />
           </button>
@@ -436,18 +446,18 @@ export default function ColumnDialog({
         return (
           <Select
             value={
-              typeof defaultValue === "string" ? defaultValue : (selectChoices[0]?.name ?? "")
+              typeof defaultValue === "string" ? defaultValue : (choices[0]?.name ?? "")
             }
             disabled={!defaultEnabled}
             onChange={(v) => setDefaultValue(v)}
-            options={selectChoices.map((c) => ({ value: c.name, label: c.name }))}
+            options={choices.map((c) => ({ value: c.name, label: c.name }))}
           />
         );
       case "multi_select": {
         const selected = Array.isArray(defaultValue) ? defaultValue.map(String) : [];
         return (
           <div className="ref-chips">
-            {selectChoices.map((c) => {
+            {choices.map((c) => {
               const on = selected.includes(c.name);
               return (
                 <button
@@ -531,7 +541,8 @@ export default function ColumnDialog({
             icon={icon}
             name={name}
             type={type}
-            opts={opts}
+            resultType={resultType}
+            choices={choices}
             color={color}
             align={align}
           />
@@ -558,13 +569,13 @@ export default function ColumnDialog({
 
         {(type === "select" || type === "multi_select") && choicesEditor}
 
-        {type === "relation" && opts.kind === "relation" && (
+        {type === "relation" && (
           <div className="form panel-box">
             <Field label={t("column.targetTable")}>
               <Select
-                value={opts.target_table_id}
+                value={targetTableId}
                 disabled={!!existing}
-                onChange={(v) => setOpts({ ...opts, target_table_id: v })}
+                onChange={setTargetTableId}
                 options={tables.map((table) => ({
                   value: table.id,
                   label:
@@ -577,17 +588,17 @@ export default function ColumnDialog({
             <label className="checkline">
               <input
                 type="checkbox"
-                checked={opts.single}
-                onChange={(e) => setOpts({ ...opts, single: e.target.checked })}
+                checked={single}
+                onChange={(e) => setSingle(e.target.checked)}
               />
               {t("column.singleRelation")}
             </label>
             {!existing && (
               <Field label={t("column.reverseName")}>
                 <Input
-                  value={opts.reverse_name ?? ""}
+                  value={reverseName}
                   placeholder={t("column.noReverse")}
-                  onChange={(e) => setOpts({ ...opts, reverse_name: e.target.value || null })}
+                  onChange={(e) => setReverseName(e.target.value)}
                 />
               </Field>
             )}
@@ -595,14 +606,14 @@ export default function ColumnDialog({
           </div>
         )}
 
-        {type === "formula" && opts.kind === "formula" && (
+        {type === "formula" && (
           <div className="form panel-box">
             <Field label={t("column.formulaExpr")}>
               <Textarea
                 rows={3}
-                value={opts.expr}
+                value={formulaExpr}
                 placeholder={t("column.formulaPlaceholder")}
-                onChange={(e) => setOpts({ ...opts, expr: e.target.value })}
+                onChange={(e) => setFormulaExpr(e.target.value)}
               />
             </Field>
             <div className="ref-chips">
@@ -612,7 +623,7 @@ export default function ColumnDialog({
                   type="button"
                   className="chip"
                   title={t("column.insertRef")}
-                  onClick={() => setOpts({ ...opts, expr: opts.expr + `[${c.name}]` })}
+                  onClick={() => setFormulaExpr((expr) => expr + `[${c.name}]`)}
                 >
                   [{c.name}]
                 </button>
@@ -620,8 +631,8 @@ export default function ColumnDialog({
             </div>
             <Field label={t("column.resultType")}>
               <Select
-                value={opts.result_type}
-                onChange={(v) => setOpts({ ...opts, result_type: v as FormulaResultType })}
+                value={resultType}
+                onChange={(v) => setResultType(v as FormulaResultType)}
                 options={[
                   { value: "number", label: t("types.number") },
                   { value: "text", label: t("types.text") },

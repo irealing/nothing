@@ -6,23 +6,25 @@ import type { ColumnMeta, ColumnType } from "../types";
 import { textForEditor, valueFromEditor } from "./GridEditors";
 
 function col(type: ColumnType): ColumnMeta {
+  const sql_name = "c_x";
+  const data =
+    type === "number"
+      ? ({ kind: "number", sql_name } as const)
+      : type === "date"
+        ? ({ kind: "date", sql_name } as const)
+        : ({ kind: "text", sql_name } as const);
   return {
     id: "c1",
     table_id: "t1",
     name: type,
-    sql_name: "c_x",
-    type,
-    opts: { kind: "plain" },
     position: 0,
     width: 160,
-    visible: true,
-    is_reverse: false,
-    reverse_of: null,
     icon: null,
     color: null,
     align: null,
     default_value: null,
     created_at: "",
+    data,
   };
 }
 

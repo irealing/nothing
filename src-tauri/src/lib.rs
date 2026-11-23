@@ -61,6 +61,7 @@ pub fn run() {
             commands::table_delete,
             commands::table_set_title,
             commands::table_set_icon,
+            commands::table_set_color,
             // columns
             commands::column_list,
             commands::column_add,
@@ -78,6 +79,7 @@ pub fn run() {
             commands::view_create,
             commands::view_update,
             commands::view_delete,
+            commands::view_column_update,
             commands::view_run,
             // search & ad-hoc SQL
             commands::search,

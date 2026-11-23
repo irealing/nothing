@@ -1,8 +1,24 @@
-//! Schema layer: metadata types and all table/column/view operations.
+//! Schema layer: the polymorphic metadata object model and all table/column/
+//! view operations.
 //!
-//! The metadata tables (`_tables`, `_columns`, `_views`) are the source of
-//! truth; physical DDL is always derived from them (which is what makes the
-//! table-rebuild machinery safe).
+//! Storage is a **single** `_meta` node table (`kind` discriminator, self
+//! referencing `parent_id`). SQL is only a typed store + safety net; the Rust
+//! object model below owns the invariants (parent kinds, type/field pairing,
+//! reverse-column lifetime) and the business logic never deals with nullable
+//! row fields.
+//!
+//! Logical tree:
+//!
+//! ```text
+//! table
+//! ├── column ── option (select / multi_select choices)
+//! └── view ──── view_column (the view's own column node: width/order/hidden)
+//! ```
+//!
+//! A relation column is a graph edge, not containment: `target_table_id`
+//! points at the target table and a reverse column (`origin_id`) lives under
+//! the target table but dies with its origin. Both are real foreign keys with
+//! `ON DELETE CASCADE`.
 
 pub mod column;
 pub mod formula;
@@ -11,6 +27,8 @@ pub mod ident;
 pub mod table;
 pub mod view;
 
+use std::collections::HashMap;
+
 use rusqlite::{Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +36,7 @@ use crate::error::{AppError, Result};
 use ident::{new_id, now_iso};
 
 // ---------------------------------------------------------------------------
-// Column types & options
+// Column types & presentation
 // ---------------------------------------------------------------------------
 
 /// User-facing column types, mapped onto real SQLite constructs:
@@ -80,7 +98,6 @@ impl ColumnType {
     }
 }
 
-/// Declared result type of a formula (generated) column.
 /// Presentation-only color of a column (header tint + cell background tint).
 ///
 /// Stored as a palette **token** (never a hex value) so the light and dark
@@ -161,13 +178,57 @@ impl ColumnAlign {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormulaResultType {
+    Number,
+    Text,
+    Date,
+    Checkbox,
+}
+
+impl FormulaResultType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FormulaResultType::Number => "number",
+            FormulaResultType::Text => "text",
+            FormulaResultType::Date => "date",
+            FormulaResultType::Checkbox => "checkbox",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        Ok(match s {
+            "number" => FormulaResultType::Number,
+            "text" => FormulaResultType::Text,
+            "date" => FormulaResultType::Date,
+            "checkbox" => FormulaResultType::Checkbox,
+            other => {
+                return Err(AppError::InvalidInput(format!(
+                    "未知的公式结果类型: {other}"
+                )))
+            }
+        })
+    }
+
+    /// The physical column type a formula result behaves like.
+    pub fn as_column_type(self) -> ColumnType {
+        match self {
+            FormulaResultType::Number => ColumnType::Number,
+            FormulaResultType::Text => ColumnType::Text,
+            FormulaResultType::Date => ColumnType::Date,
+            FormulaResultType::Checkbox => ColumnType::Checkbox,
+        }
+    }
+}
+
 /// Longest accepted icon payload. Emoji can be a ZWJ sequence of a few
 /// scalars, so the limit is generous but still keeps the metadata sane.
 const MAX_ICON_BYTES: usize = 32;
 
-/// Normalize an emoji icon (column or table): trim, empty → `None`, reject
-/// control characters and absurdly long blobs (the UI only offers a curated
-/// emoji list).
+/// Normalize an emoji icon (column, table, view or option): trim, empty →
+/// `None`, reject control characters and absurdly long blobs (the UI only
+/// offers a curated emoji list).
 pub fn normalize_icon(raw: Option<&str>) -> Result<Option<String>> {
     let Some(raw) = raw else { return Ok(None) };
     let icon = raw.trim();
@@ -183,14 +244,19 @@ pub fn normalize_icon(raw: Option<&str>) -> Result<Option<String>> {
     Ok(Some(icon.to_string()))
 }
 
-/// Normalize a column color token; empty string clears it.
-pub fn normalize_column_color(raw: Option<&str>) -> Result<Option<ColumnColor>> {
+/// Normalize a color token; empty string clears it.
+pub fn normalize_color(raw: Option<&str>) -> Result<Option<ColumnColor>> {
     let Some(raw) = raw else { return Ok(None) };
     let token = raw.trim();
     if token.is_empty() {
         return Ok(None);
     }
     ColumnColor::parse(token).map(Some)
+}
+
+/// Backwards-compatible alias used by column code.
+pub fn normalize_column_color(raw: Option<&str>) -> Result<Option<ColumnColor>> {
+    normalize_color(raw)
 }
 
 /// Normalize an alignment token; empty string clears it ("by type").
@@ -225,21 +291,21 @@ pub fn default_cell_value(
         return Ok(serde_json::Value::Null);
     }
     if is_now_default(value) {
-        if col.is_reverse || col.col_type != ColumnType::Date {
+        if col.is_reverse() || col.col_type() != ColumnType::Date {
             return Err(AppError::InvalidInput(
                 "只有日期列可以使用「当前时间」默认值".into(),
             ));
         }
         return Ok(serde_json::Value::String(now_iso()));
     }
-    if col.is_reverse || matches!(col.col_type, ColumnType::Formula | ColumnType::Relation) {
+    if col.is_reverse() || matches!(col.col_type(), ColumnType::Formula | ColumnType::Relation) {
         return Err(AppError::InvalidInput(format!(
             "列「{}」不支持默认值",
             col.name
         )));
     }
-    if matches!(col.col_type, ColumnType::Select | ColumnType::MultiSelect)
-        && col.opts.select_choices()?.is_empty()
+    if matches!(col.col_type(), ColumnType::Select | ColumnType::MultiSelect)
+        && col.choices().is_empty()
     {
         return Err(AppError::InvalidInput(format!(
             "列「{}」还没有选项，无法设置默认值",
@@ -250,179 +316,123 @@ pub fn default_cell_value(
     Ok(value.clone())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FormulaResultType {
-    Number,
-    Text,
-    Date,
-    Checkbox,
-}
+// ---------------------------------------------------------------------------
+// Domain model
+// ---------------------------------------------------------------------------
 
+/// A select / multi-select choice. Choices are real nodes (`kind='option'`),
+/// not a JSON array, so they can carry a stable id, order and color.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Choice {
-    /// Stable ULID of the choice (survives renames in metadata).
+pub struct OptionMeta {
     pub id: String,
-    /// Display name; also the value stored physically and in CHECK.
     pub name: String,
+    pub color: Option<ColumnColor>,
+    pub position: i64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct PlainOpts {}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SelectOpts {
-    pub choices: Vec<Choice>,
-}
-
+/// Reference data of a relation column (a graph edge between two tables).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RelationOpts {
-    /// Table id this relation points at.
+pub struct RelationData {
+    /// Table this relation points at.
     pub target_table_id: String,
     /// Restrict to a single linked row per source row.
-    #[serde(default)]
     pub single: bool,
-    /// Creation-only: when set, a reverse column with this name is created in
-    /// the target table, sharing the same junction table (Notion-style).
-    #[serde(default)]
-    pub reverse_name: Option<String>,
+    /// For reverse columns: the source relation column this is the other side
+    /// of. `None` for a source relation column.
+    pub origin_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FormulaOpts {
+pub struct FormulaData {
+    /// Physical generated-column name.
+    pub sql_name: String,
     /// User-facing formula expression (whitelist syntax, see [`formula`]).
     pub expr: String,
     pub result_type: FormulaResultType,
 }
 
-/// Per-type column options, stored as JSON text in `_columns.opts`.
+/// Polymorphic payload of a column. The variant *is* the column type; there is
+/// no separate nullable field soup.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ColumnOpts {
-    Plain(PlainOpts),
-    Select(SelectOpts),
-    MultiSelect(SelectOpts),
-    Relation(RelationOpts),
-    Formula(FormulaOpts),
+pub enum ColumnData {
+    Text {
+        sql_name: String,
+    },
+    Number {
+        sql_name: String,
+    },
+    Date {
+        sql_name: String,
+    },
+    Checkbox {
+        sql_name: String,
+    },
+    Select {
+        sql_name: String,
+        choices: Vec<OptionMeta>,
+    },
+    MultiSelect {
+        sql_name: String,
+        choices: Vec<OptionMeta>,
+    },
+    Relation(RelationData),
+    Formula(FormulaData),
 }
 
-impl ColumnOpts {
-    /// Sensible default options for a column type.
-    pub fn default_for(t: ColumnType) -> Self {
-        match t {
-            ColumnType::Select | ColumnType::MultiSelect => {
-                ColumnOpts::Select(SelectOpts::default())
-            }
-            ColumnType::Relation => ColumnOpts::Relation(RelationOpts {
-                target_table_id: String::new(),
-                single: false,
-                reverse_name: None,
-            }),
-            ColumnType::Formula => ColumnOpts::Formula(FormulaOpts {
-                expr: String::new(),
-                result_type: FormulaResultType::Number,
-            }),
-            _ => ColumnOpts::Plain(PlainOpts {}),
-        }
-    }
-
-    /// Adapt options across a type change when the caller supplied none:
-    /// select ↔ multi_select keep their choices, everything else resets.
-    pub fn migrated(from: &ColumnOpts, to: ColumnType) -> ColumnOpts {
-        let keep_choices = matches!(
-            (from, to),
-            (ColumnOpts::Select(_), ColumnType::Select)
-                | (ColumnOpts::Select(_), ColumnType::MultiSelect)
-                | (ColumnOpts::MultiSelect(_), ColumnType::Select)
-                | (ColumnOpts::MultiSelect(_), ColumnType::MultiSelect)
-        );
-        if keep_choices {
-            let choices = match from {
-                ColumnOpts::Select(o) | ColumnOpts::MultiSelect(o) => o.choices.clone(),
-                _ => unreachable!(),
-            };
-            return match to {
-                ColumnType::MultiSelect => ColumnOpts::MultiSelect(SelectOpts { choices }),
-                _ => ColumnOpts::Select(SelectOpts { choices }),
-            };
-        }
-        ColumnOpts::default_for(to)
-    }
-
-    pub fn select_choices(&self) -> Result<&[Choice]> {
+impl ColumnData {
+    pub fn col_type(&self) -> ColumnType {
         match self {
-            ColumnOpts::Select(o) | ColumnOpts::MultiSelect(o) => Ok(&o.choices),
-            _ => Err(AppError::Internal("列选项与类型不匹配".into())),
+            ColumnData::Text { .. } => ColumnType::Text,
+            ColumnData::Number { .. } => ColumnType::Number,
+            ColumnData::Date { .. } => ColumnType::Date,
+            ColumnData::Checkbox { .. } => ColumnType::Checkbox,
+            ColumnData::Select { .. } => ColumnType::Select,
+            ColumnData::MultiSelect { .. } => ColumnType::MultiSelect,
+            ColumnData::Relation(_) => ColumnType::Relation,
+            ColumnData::Formula(_) => ColumnType::Formula,
         }
     }
 
-    pub fn relation(&self) -> Result<&RelationOpts> {
+    /// Physical column name; `None` for relations (data lives in a junction).
+    pub fn sql_name(&self) -> Option<&str> {
         match self {
-            ColumnOpts::Relation(o) => Ok(o),
-            _ => Err(AppError::Internal("列选项与类型不匹配".into())),
+            ColumnData::Text { sql_name }
+            | ColumnData::Number { sql_name }
+            | ColumnData::Date { sql_name }
+            | ColumnData::Checkbox { sql_name }
+            | ColumnData::Select { sql_name, .. }
+            | ColumnData::MultiSelect { sql_name, .. } => Some(sql_name),
+            ColumnData::Formula(f) => Some(&f.sql_name),
+            ColumnData::Relation(_) => None,
         }
     }
 
-    pub fn formula(&self) -> Result<&FormulaOpts> {
+    pub fn is_physical(&self) -> bool {
+        !matches!(self, ColumnData::Relation(_))
+    }
+
+    pub fn choices(&self) -> &[OptionMeta] {
         match self {
-            ColumnOpts::Formula(o) => Ok(o),
-            _ => Err(AppError::Internal("列选项与类型不匹配".into())),
+            ColumnData::Select { choices, .. } | ColumnData::MultiSelect { choices, .. } => choices,
+            _ => &[],
+        }
+    }
+
+    pub fn relation(&self) -> Option<&RelationData> {
+        match self {
+            ColumnData::Relation(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    pub fn formula(&self) -> Option<&FormulaData> {
+        match self {
+            ColumnData::Formula(f) => Some(f),
+            _ => None,
         }
     }
 }
-
-/// Validate that options match the column type and are internally consistent.
-pub(crate) fn validate_opts(t: ColumnType, opts: &ColumnOpts) -> Result<()> {
-    match (t, opts) {
-        (
-            ColumnType::Text | ColumnType::Number | ColumnType::Date | ColumnType::Checkbox,
-            ColumnOpts::Plain(_),
-        ) => Ok(()),
-        (ColumnType::Select, ColumnOpts::Select(o))
-        | (ColumnType::MultiSelect, ColumnOpts::MultiSelect(o)) => validate_choices(&o.choices),
-        (ColumnType::Relation, ColumnOpts::Relation(o)) => {
-            if o.target_table_id.is_empty() {
-                return Err(AppError::InvalidInput("关联列必须指定目标表".into()));
-            }
-            if let Some(name) = &o.reverse_name {
-                validate_user_name("反向列名", name)?;
-            }
-            Ok(())
-        }
-        (ColumnType::Formula, ColumnOpts::Formula(o)) => {
-            if o.expr.trim().is_empty() {
-                return Err(AppError::InvalidInput("公式不能为空".into()));
-            }
-            Ok(())
-        }
-        _ => Err(AppError::InvalidInput(format!(
-            "列类型 {} 与提供的选项不匹配",
-            t.as_str()
-        ))),
-    }
-}
-
-fn validate_choices(choices: &[Choice]) -> Result<()> {
-    if choices.len() > 500 {
-        return Err(AppError::InvalidInput("选项过多（最多 500）".into()));
-    }
-    let mut seen = std::collections::HashSet::new();
-    for c in choices {
-        let name = validate_user_name("选项名", &c.name)?;
-        if !seen.insert(name.clone()) {
-            return Err(AppError::AlreadyExists(format!("选项 {name}")));
-        }
-    }
-    Ok(())
-}
-
-fn validate_user_name(kind: &str, name: &str) -> Result<String> {
-    ident::validate_user_name(kind, name)
-}
-
-// ---------------------------------------------------------------------------
-// Metadata structs
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TableMeta {
@@ -432,6 +442,7 @@ pub struct TableMeta {
     /// Text column used as the display name of rows (relation pickers etc.).
     pub title_col_id: Option<String>,
     pub icon: Option<String>,
+    pub color: Option<ColumnColor>,
     pub position: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -443,18 +454,10 @@ pub struct ColumnMeta {
     pub table_id: String,
     /// User-facing name; renaming never touches the physical column (铁律 3).
     pub name: String,
-    /// Physical column name `c_<id>`; unused by relation/reverse columns.
-    pub sql_name: String,
-    #[serde(rename = "type")]
-    pub col_type: ColumnType,
-    pub opts: ColumnOpts,
     pub position: i64,
+    /// Default width; the effective width of a column in a view comes from the
+    /// view's own `ViewColumnMeta`.
     pub width: i64,
-    pub visible: bool,
-    /// True for the auto-created reverse side of a relation column.
-    pub is_reverse: bool,
-    /// For reverse columns: the id of the source relation column.
-    pub reverse_of: Option<String>,
     /// Optional emoji shown before the column name in grid headers.
     pub icon: Option<String>,
     /// Optional palette token tinting the header and the column's cells.
@@ -467,13 +470,66 @@ pub struct ColumnMeta {
     /// the `{"kind":"now"}` token (resolved on insert).
     pub default_value: Option<serde_json::Value>,
     pub created_at: String,
+    /// Polymorphic type-specific payload.
+    pub data: ColumnData,
 }
 
 impl ColumnMeta {
+    pub fn col_type(&self) -> ColumnType {
+        self.data.col_type()
+    }
+
+    pub fn sql_name(&self) -> Option<&str> {
+        self.data.sql_name()
+    }
+
     /// Whether this column is backed by a physical column in the user table.
     pub fn is_physical(&self) -> bool {
-        self.col_type != ColumnType::Relation && !self.is_reverse
+        self.data.is_physical()
     }
+
+    /// True for the auto-created reverse side of a relation column.
+    pub fn is_reverse(&self) -> bool {
+        self.data.relation().is_some_and(|r| r.origin_id.is_some())
+    }
+
+    /// For reverse columns: the id of the source relation column.
+    pub fn origin_id(&self) -> Option<&str> {
+        self.data.relation().and_then(|r| r.origin_id.as_deref())
+    }
+
+    pub fn relation(&self) -> Option<&RelationData> {
+        self.data.relation()
+    }
+
+    pub fn formula(&self) -> Option<&FormulaData> {
+        self.data.formula()
+    }
+
+    pub fn choices(&self) -> &[OptionMeta] {
+        self.data.choices()
+    }
+
+    /// The type whose value semantics a column's stored values follow.
+    pub fn effective_type(&self) -> ColumnType {
+        match self.data.formula() {
+            Some(f) => f.result_type.as_column_type(),
+            None => self.col_type(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Creation / patch inputs (flat DTOs from the frontend)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewChoice {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 /// Request to create a column (used by `create_table` and `add_column`).
@@ -483,17 +539,25 @@ pub struct NewColumn {
     #[serde(rename = "type")]
     pub col_type: ColumnType,
     #[serde(default)]
-    pub opts: Option<ColumnOpts>,
-    /// Emoji shown in the header; `None`/empty means "use the type icon only".
+    pub choices: Vec<NewChoice>,
+    #[serde(default)]
+    pub target_table_id: Option<String>,
+    #[serde(default)]
+    pub single: bool,
+    /// Creation-only: when set, a reverse column with this name is created in
+    /// the target table, sharing the same junction table (Notion-style).
+    #[serde(default)]
+    pub reverse_name: Option<String>,
+    #[serde(default)]
+    pub formula_expr: Option<String>,
+    #[serde(default)]
+    pub formula_result_type: Option<FormulaResultType>,
     #[serde(default)]
     pub icon: Option<String>,
-    /// Palette token; `None`/empty means "no tint".
     #[serde(default)]
     pub color: Option<String>,
-    /// Alignment token; `None`/empty means "by type".
     #[serde(default)]
     pub align: Option<String>,
-    /// Default value written to new rows; `null` means "no default".
     #[serde(default)]
     pub default_value: Option<serde_json::Value>,
 }
@@ -508,10 +572,12 @@ pub struct ColumnPatch {
     pub name: Option<String>,
     #[serde(rename = "type")]
     pub col_type: Option<ColumnType>,
-    pub opts: Option<ColumnOpts>,
+    pub choices: Option<Vec<NewChoice>>,
+    pub target_table_id: Option<String>,
+    pub single: Option<bool>,
+    pub formula_expr: Option<String>,
+    pub formula_result_type: Option<FormulaResultType>,
     pub position: Option<i64>,
-    pub width: Option<i64>,
-    pub visible: Option<bool>,
     pub icon: Option<String>,
     pub color: Option<String>,
     pub align: Option<String>,
@@ -529,10 +595,10 @@ pub struct ColumnPatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewKind {
-    /// Notion-style grid: filter tree + sorts + hidden columns, compiled to
-    /// parameterized SQL by the query layer (M2).
+    /// Notion-style grid: filter tree + sorts + its own column nodes, compiled
+    /// to parameterized SQL by the query layer.
     Grid,
-    /// User-written SELECT, stored as a real SQLite `CREATE VIEW v_<id>`.
+    /// User-written SELECT, stored as metadata and executed read-only.
     Sql,
 }
 
@@ -559,7 +625,7 @@ pub enum LogicOp {
     Or,
 }
 
-/// Filter operators for grid views (compiled in M2).
+/// Filter operators for grid views.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterOp {
@@ -616,21 +682,30 @@ pub struct GridConfig {
     pub filters: Option<FilterNode>,
     #[serde(default)]
     pub sorts: Vec<SortSpec>,
-    #[serde(default)]
-    pub hidden_columns: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SqlConfig {
-    /// A single SELECT/WITH statement (validated, stored as `v_<view_id>`).
+    /// A single SELECT/WITH statement (validated, stored as metadata).
     pub statement: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ViewConfig {
+pub enum ViewData {
     Grid(GridConfig),
     Sql(SqlConfig),
+}
+
+/// A grid view's own column node. Width/order/hidden live here, so the same
+/// base column can differ from view to view.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ViewColumnMeta {
+    pub id: String,
+    pub column_id: String,
+    pub position: i64,
+    pub width: i64,
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -640,146 +715,328 @@ pub struct ViewMeta {
     pub table_id: Option<String>,
     pub name: String,
     pub kind: ViewKind,
-    pub config: ViewConfig,
+    pub icon: Option<String>,
+    pub color: Option<ColorAlias>,
     pub position: i64,
     pub created_at: String,
+    pub data: ViewData,
+    /// The view's own column nodes (grid views only; empty for SQL views).
+    pub columns: Vec<ViewColumnMeta>,
 }
+
+/// `ViewMeta.color` is the same palette token as columns; keep the alias so
+/// the shared type stays obvious in the public API.
+pub type ColorAlias = ColumnColor;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewView {
     pub table_id: Option<String>,
     pub name: String,
     pub kind: ViewKind,
-    pub config: ViewConfig,
+    pub data: ViewData,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ViewColumnPatch {
+    /// Required by `ViewPatch.columns`; omitted by the single-column command
+    /// (which carries the id as a separate argument).
+    #[serde(default)]
+    pub column_id: String,
+    pub position: Option<i64>,
+    pub width: Option<i64>,
+    pub hidden: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ViewPatch {
     pub name: Option<String>,
-    pub config: Option<ViewConfig>,
+    pub data: Option<ViewData>,
+    pub icon: Option<String>,
+    pub color: Option<String>,
     pub position: Option<i64>,
+    /// View-column overrides applied in the same transaction.
+    #[serde(default)]
+    pub columns: Option<Vec<ViewColumnPatch>>,
 }
 
 // ---------------------------------------------------------------------------
-// Row mapping / loading helpers
+// Raw row mapping
 // ---------------------------------------------------------------------------
 
-pub(crate) fn table_from_row(r: &Row<'_>) -> rusqlite::Result<TableMeta> {
-    Ok(TableMeta {
+pub(crate) const META_COLS: &str = r#""id","parent_id","kind","name","position","icon","color","width","created_at","updated_at","sql_name","title_col_id","col_type","align","default_value","target_table_id","single","origin_id","formula_expr","formula_result_type","view_kind","filters","sorts","statement","ref_id","hidden""#;
+
+#[derive(Debug, Clone)]
+pub(crate) struct RawMeta {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub kind: String,
+    pub name: Option<String>,
+    pub position: i64,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub width: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub sql_name: Option<String>,
+    pub title_col_id: Option<String>,
+    pub col_type: Option<String>,
+    pub align: Option<String>,
+    pub default_value: Option<String>,
+    pub target_table_id: Option<String>,
+    pub single: Option<i64>,
+    pub origin_id: Option<String>,
+    pub formula_expr: Option<String>,
+    pub formula_result_type: Option<String>,
+    pub view_kind: Option<String>,
+    pub filters: Option<String>,
+    pub sorts: Option<String>,
+    pub statement: Option<String>,
+    pub ref_id: Option<String>,
+    pub hidden: Option<i64>,
+}
+
+pub(crate) fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawMeta> {
+    Ok(RawMeta {
         id: r.get("id")?,
+        parent_id: r.get("parent_id")?,
+        kind: r.get("kind")?,
         name: r.get("name")?,
-        sql_name: r.get("sql_name")?,
-        title_col_id: r.get("title_col_id")?,
-        icon: r.get("icon")?,
         position: r.get("position")?,
+        icon: r.get("icon")?,
+        color: r.get("color")?,
+        width: r.get("width")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
+        sql_name: r.get("sql_name")?,
+        title_col_id: r.get("title_col_id")?,
+        col_type: r.get("col_type")?,
+        align: r.get("align")?,
+        default_value: r.get("default_value")?,
+        target_table_id: r.get("target_table_id")?,
+        single: r.get("single")?,
+        origin_id: r.get("origin_id")?,
+        formula_expr: r.get("formula_expr")?,
+        formula_result_type: r.get("formula_result_type")?,
+        view_kind: r.get("view_kind")?,
+        filters: r.get("filters")?,
+        sorts: r.get("sorts")?,
+        statement: r.get("statement")?,
+        ref_id: r.get("ref_id")?,
+        hidden: r.get("hidden")?,
     })
 }
 
-pub(crate) fn column_from_row(r: &Row<'_>) -> rusqlite::Result<ColumnMeta> {
-    let type_str: String = r.get("type")?;
-    let opts_str: String = r.get("opts")?;
-    let col_type = ColumnType::parse(&type_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })?;
-    let opts: ColumnOpts = serde_json::from_str(&opts_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })?;
-    let visible: i64 = r.get("visible")?;
-    let is_reverse: i64 = r.get("is_reverse")?;
-    let color_str: Option<String> = r.get("color")?;
-    let color = match color_str.as_deref() {
-        Some(token) => Some(ColumnColor::parse(token).map_err(|e| {
+fn parse_color(raw: Option<&str>) -> rusqlite::Result<Option<ColumnColor>> {
+    match raw {
+        None => Ok(None),
+        Some(token) => ColumnColor::parse(token).map(Some).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        })?),
-        None => None,
+        }),
+    }
+}
+
+fn parse_align(raw: Option<&str>) -> rusqlite::Result<Option<ColumnAlign>> {
+    match raw {
+        None => Ok(None),
+        Some(token) => ColumnAlign::parse(token).map(Some).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        }),
+    }
+}
+
+fn internal(msg: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        0,
+        rusqlite::types::Type::Text,
+        Box::new(AppError::Internal(msg.into())),
+    )
+}
+
+pub(crate) fn table_from_raw(r: RawMeta) -> rusqlite::Result<TableMeta> {
+    if r.kind != "table" {
+        return Err(internal("节点不是表"));
+    }
+    Ok(TableMeta {
+        id: r.id,
+        name: r.name.ok_or_else(|| internal("表缺少名称"))?,
+        sql_name: r.sql_name.ok_or_else(|| internal("表缺少物理名"))?,
+        title_col_id: r.title_col_id,
+        icon: r.icon,
+        color: parse_color(r.color.as_deref())?,
+        position: r.position,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+    })
+}
+
+pub(crate) fn option_from_raw(r: RawMeta) -> rusqlite::Result<OptionMeta> {
+    Ok(OptionMeta {
+        id: r.id,
+        name: r.name.ok_or_else(|| internal("选项缺少名称"))?,
+        color: parse_color(r.color.as_deref())?,
+        position: r.position,
+    })
+}
+
+pub(crate) fn column_from_raw(
+    r: RawMeta,
+    choices: Vec<OptionMeta>,
+) -> rusqlite::Result<ColumnMeta> {
+    if r.kind != "column" {
+        return Err(internal("节点不是列"));
+    }
+    let type_str = r.col_type.clone().ok_or_else(|| internal("列缺少类型"))?;
+    let col_type = ColumnType::parse(&type_str).map_err(|e| internal(e.to_string()))?;
+    let sql_name = r.sql_name.clone();
+    let require_sql = || sql_name.clone().ok_or_else(|| internal("物理列缺少物理名"));
+    let data = match col_type {
+        ColumnType::Text => ColumnData::Text {
+            sql_name: require_sql()?,
+        },
+        ColumnType::Number => ColumnData::Number {
+            sql_name: require_sql()?,
+        },
+        ColumnType::Date => ColumnData::Date {
+            sql_name: require_sql()?,
+        },
+        ColumnType::Checkbox => ColumnData::Checkbox {
+            sql_name: require_sql()?,
+        },
+        ColumnType::Select => ColumnData::Select {
+            sql_name: require_sql()?,
+            choices,
+        },
+        ColumnType::MultiSelect => ColumnData::MultiSelect {
+            sql_name: require_sql()?,
+            choices,
+        },
+        ColumnType::Relation => ColumnData::Relation(RelationData {
+            target_table_id: r
+                .target_table_id
+                .ok_or_else(|| internal("关联列缺少目标表"))?,
+            single: r.single.unwrap_or(0) != 0,
+            origin_id: r.origin_id,
+        }),
+        ColumnType::Formula => {
+            let result_type = r
+                .formula_result_type
+                .as_deref()
+                .ok_or_else(|| internal("公式列缺少结果类型"))?;
+            let result_type =
+                FormulaResultType::parse(result_type).map_err(|e| internal(e.to_string()))?;
+            ColumnData::Formula(FormulaData {
+                sql_name: require_sql()?,
+                expr: r.formula_expr.ok_or_else(|| internal("公式列缺少表达式"))?,
+                result_type,
+            })
+        }
     };
-    let align_str: Option<String> = r.get("align")?;
-    let align = match align_str.as_deref() {
-        Some(token) => Some(ColumnAlign::parse(token).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        })?),
-        None => None,
-    };
-    let default_str: Option<String> = r.get("default_value")?;
-    let default_value = match default_str {
-        Some(raw) => Some(serde_json::from_str(&raw).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        })?),
+    let default_value = match r.default_value {
+        Some(raw) => Some(serde_json::from_str(&raw).map_err(|e| internal(e.to_string()))?),
         None => None,
     };
     Ok(ColumnMeta {
-        id: r.get("id")?,
-        table_id: r.get("table_id")?,
-        name: r.get("name")?,
-        sql_name: r.get("sql_name")?,
-        col_type,
-        opts,
-        position: r.get("position")?,
-        width: r.get("width")?,
-        visible: visible != 0,
-        is_reverse: is_reverse != 0,
-        reverse_of: r.get("reverse_of")?,
-        icon: r.get("icon")?,
-        color,
-        align,
+        id: r.id,
+        table_id: r.parent_id.ok_or_else(|| internal("列缺少所属表"))?,
+        name: r.name.ok_or_else(|| internal("列缺少名称"))?,
+        position: r.position,
+        width: r.width.unwrap_or(160),
+        icon: r.icon,
+        color: parse_color(r.color.as_deref())?,
+        align: parse_align(r.align.as_deref())?,
         default_value,
-        created_at: r.get("created_at")?,
+        created_at: r.created_at,
+        data,
     })
 }
 
-pub(crate) fn view_from_row(r: &Row<'_>) -> rusqlite::Result<ViewMeta> {
-    let kind_str: String = r.get("kind")?;
-    let config_str: String = r.get("config")?;
-    let kind = ViewKind::parse(&kind_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })?;
-    let config: ViewConfig = serde_json::from_str(&config_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })?;
+pub(crate) fn view_column_from_raw(r: RawMeta) -> rusqlite::Result<ViewColumnMeta> {
+    Ok(ViewColumnMeta {
+        id: r.id,
+        column_id: r.ref_id.ok_or_else(|| internal("视图列缺少基列"))?,
+        position: r.position,
+        width: r.width.unwrap_or(160),
+        hidden: r.hidden.unwrap_or(0) != 0,
+    })
+}
+
+pub(crate) fn view_from_raw(
+    r: RawMeta,
+    columns: Vec<ViewColumnMeta>,
+) -> rusqlite::Result<ViewMeta> {
+    if r.kind != "view" {
+        return Err(internal("节点不是视图"));
+    }
+    let kind_str = r
+        .view_kind
+        .clone()
+        .ok_or_else(|| internal("视图缺少类型"))?;
+    let kind = ViewKind::parse(&kind_str).map_err(|e| internal(e.to_string()))?;
+    let data = match kind {
+        ViewKind::Grid => {
+            let filters = match r.filters.as_deref() {
+                Some(raw) => serde_json::from_str(raw).map_err(|e| internal(e.to_string()))?,
+                None => None,
+            };
+            let sorts = match r.sorts.as_deref() {
+                Some(raw) => serde_json::from_str(raw).map_err(|e| internal(e.to_string()))?,
+                None => Vec::new(),
+            };
+            ViewData::Grid(GridConfig { filters, sorts })
+        }
+        ViewKind::Sql => ViewData::Sql(SqlConfig {
+            statement: r.statement.ok_or_else(|| internal("SQL 视图缺少语句"))?,
+        }),
+    };
     Ok(ViewMeta {
-        id: r.get("id")?,
-        table_id: r.get("table_id")?,
-        name: r.get("name")?,
+        id: r.id,
+        table_id: r.parent_id,
+        name: r.name.ok_or_else(|| internal("视图缺少名称"))?,
         kind,
-        config,
-        position: r.get("position")?,
-        created_at: r.get("created_at")?,
+        icon: r.icon,
+        color: parse_color(r.color.as_deref())?,
+        position: r.position,
+        created_at: r.created_at,
+        data,
+        columns,
     })
 }
 
-pub(crate) const TABLE_COLS: &str =
-    r#""id","name","sql_name","title_col_id","icon","position","created_at","updated_at""#;
-const COLUMN_COLS: &str = r#""id","table_id","name","sql_name","type","opts","position","width","visible","is_reverse","reverse_of","icon","color","align","default_value","created_at""#;
-pub(crate) const VIEW_COLS: &str =
-    r#""id","table_id","name","kind","config","position","created_at""#;
+// ---------------------------------------------------------------------------
+// Loaders
+// ---------------------------------------------------------------------------
 
 pub(crate) fn load_table(conn: &Connection, table_id: &str) -> Result<TableMeta> {
-    conn.query_row(
-        &format!(r#"SELECT {TABLE_COLS} FROM "_tables" WHERE "id" = ?1"#),
-        [table_id],
-        table_from_row,
-    )
-    .optional()?
-    .ok_or_else(|| AppError::NotFound(format!("表 {table_id}")))
+    let raw: RawMeta = conn
+        .query_row(
+            &format!(r#"SELECT {META_COLS} FROM "_meta" WHERE "id" = ?1 AND "kind" = 'table'"#),
+            [table_id],
+            raw_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("表 {table_id}")))?;
+    Ok(table_from_raw(raw)?)
 }
 
 pub(crate) fn load_table_by_name(conn: &Connection, name: &str) -> Result<TableMeta> {
-    conn.query_row(
-        &format!(r#"SELECT {TABLE_COLS} FROM "_tables" WHERE "name" = ?1"#),
-        [name],
-        table_from_row,
-    )
-    .optional()?
-    .ok_or_else(|| AppError::NotFound(format!("表 {name}")))
+    let raw: RawMeta = conn
+        .query_row(
+            &format!(r#"SELECT {META_COLS} FROM "_meta" WHERE "name" = ?1 AND "kind" = 'table'"#),
+            [name],
+            raw_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("表 {name}")))?;
+    Ok(table_from_raw(raw)?)
 }
 
-pub(crate) fn load_columns(conn: &Connection, table_id: &str) -> Result<Vec<ColumnMeta>> {
+fn load_options(conn: &Connection, column_id: &str) -> Result<Vec<OptionMeta>> {
     let mut stmt = conn.prepare(&format!(
-        r#"SELECT {COLUMN_COLS} FROM "_columns" WHERE "table_id" = ?1 ORDER BY "position", "created_at""#
+        r#"SELECT {META_COLS} FROM "_meta"
+           WHERE "parent_id" = ?1 AND "kind" = 'option'
+           ORDER BY "position", "created_at""#
     ))?;
-    let rows = stmt.query_map([table_id], column_from_row)?;
+    let rows = stmt.query_map([column_id], |r| raw_from_row(r).and_then(option_from_raw))?;
     let mut out = Vec::new();
     for r in rows {
         out.push(r?);
@@ -787,73 +1044,431 @@ pub(crate) fn load_columns(conn: &Connection, table_id: &str) -> Result<Vec<Colu
     Ok(out)
 }
 
+pub(crate) fn load_columns(conn: &Connection, table_id: &str) -> Result<Vec<ColumnMeta>> {
+    let mut stmt = conn.prepare(&format!(
+        r#"SELECT {META_COLS} FROM "_meta"
+           WHERE "parent_id" = ?1 AND "kind" = 'column'
+           ORDER BY "position", "created_at""#
+    ))?;
+    let raws = stmt
+        .query_map([table_id], raw_from_row)?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    // Load every choice for the table's columns in one query (防 N+1).
+    let mut choices: HashMap<String, Vec<OptionMeta>> = HashMap::new();
+    let mut stmt = conn.prepare(&format!(
+        r#"SELECT {META_COLS} FROM "_meta"
+           WHERE "kind" = 'option'
+             AND "parent_id" IN (SELECT "id" FROM "_meta"
+                                 WHERE "kind" = 'column' AND "parent_id" = ?1)
+           ORDER BY "parent_id", "position", "created_at""#
+    ))?;
+    let rows = stmt.query_map([table_id], raw_from_row)?;
+    for row in rows {
+        let raw = row?;
+        let parent = raw
+            .parent_id
+            .clone()
+            .ok_or_else(|| AppError::Internal("选项缺少所属列".into()))?;
+        choices
+            .entry(parent)
+            .or_default()
+            .push(option_from_raw(raw)?);
+    }
+    drop(stmt);
+
+    let mut out = Vec::with_capacity(raws.len());
+    for raw in raws {
+        let opts = choices.remove(&raw.id).unwrap_or_default();
+        out.push(column_from_raw(raw, opts)?);
+    }
+    Ok(out)
+}
+
 pub(crate) fn load_column(conn: &Connection, table_id: &str, col_id: &str) -> Result<ColumnMeta> {
-    conn.query_row(
-        &format!(r#"SELECT {COLUMN_COLS} FROM "_columns" WHERE "table_id" = ?1 AND "id" = ?2"#),
-        rusqlite::params![table_id, col_id],
-        column_from_row,
-    )
-    .optional()?
-    .ok_or_else(|| AppError::NotFound(format!("列 {col_id}")))
+    let raw: RawMeta = conn
+        .query_row(
+            &format!(
+                r#"SELECT {META_COLS} FROM "_meta"
+                   WHERE "id" = ?1 AND "kind" = 'column' AND "parent_id" = ?2"#
+            ),
+            rusqlite::params![col_id, table_id],
+            raw_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("列 {col_id}")))?;
+    let options = load_options(conn, col_id)?;
+    Ok(column_from_raw(raw, options)?)
+}
+
+pub(crate) fn load_view_columns(conn: &Connection, view_id: &str) -> Result<Vec<ViewColumnMeta>> {
+    let mut stmt = conn.prepare(&format!(
+        r#"SELECT {META_COLS} FROM "_meta"
+           WHERE "parent_id" = ?1 AND "kind" = 'view_column'
+           ORDER BY "position", "created_at""#
+    ))?;
+    let rows = stmt.query_map([view_id], |r| {
+        raw_from_row(r).and_then(view_column_from_raw)
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
 }
 
 pub(crate) fn load_view(conn: &Connection, view_id: &str) -> Result<ViewMeta> {
-    conn.query_row(
-        &format!(r#"SELECT {VIEW_COLS} FROM "_views" WHERE "id" = ?1"#),
-        [view_id],
-        view_from_row,
-    )
-    .optional()?
-    .ok_or_else(|| AppError::NotFound(format!("视图 {view_id}")))
+    let raw: RawMeta = conn
+        .query_row(
+            &format!(r#"SELECT {META_COLS} FROM "_meta" WHERE "id" = ?1 AND "kind" = 'view'"#),
+            [view_id],
+            raw_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("视图 {view_id}")))?;
+    let columns = load_view_columns(conn, view_id)?;
+    Ok(view_from_raw(raw, columns)?)
 }
 
-/// Insert a `_columns` row from a fully-populated [`ColumnMeta`].
-pub(crate) fn insert_column(conn: &Connection, c: &ColumnMeta) -> Result<()> {
+// ---------------------------------------------------------------------------
+// Insert helpers
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn insert_node(
+    conn: &Connection,
+    id: &str,
+    parent_id: Option<&str>,
+    kind: &str,
+    name: Option<&str>,
+    position: i64,
+    icon: Option<&str>,
+    color: Option<&str>,
+    width: Option<i64>,
+    sql_name: Option<&str>,
+    title_col_id: Option<&str>,
+    col_type: Option<&str>,
+    align: Option<&str>,
+    default_value: Option<&str>,
+    target_table_id: Option<&str>,
+    single: Option<bool>,
+    origin_id: Option<&str>,
+    formula_expr: Option<&str>,
+    formula_result_type: Option<&str>,
+    view_kind: Option<&str>,
+    filters: Option<&str>,
+    sorts: Option<&str>,
+    statement: Option<&str>,
+    ref_id: Option<&str>,
+    hidden: Option<bool>,
+) -> Result<()> {
+    let now = now_iso();
     conn.execute(
-        &format!(
-            r#"INSERT INTO "_columns" ({COLUMN_COLS})
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)"#
-        ),
+        r#"INSERT INTO "_meta" (
+             "id","parent_id","kind","name","position","icon","color","width",
+             "created_at","updated_at","sql_name","title_col_id","col_type",
+             "align","default_value","target_table_id","single","origin_id",
+             "formula_expr","formula_result_type","view_kind","filters","sorts",
+             "statement","ref_id","hidden")
+           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,?10,?11,?12,?13,?14,?15,
+                   ?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)"#,
         rusqlite::params![
-            c.id,
-            c.table_id,
-            c.name,
-            c.sql_name,
-            c.col_type.as_str(),
-            serde_json::to_string(&c.opts)?,
-            c.position,
-            c.width,
-            c.visible as i64,
-            c.is_reverse as i64,
-            c.reverse_of,
-            c.icon,
-            c.color.map(|c| c.as_str()),
-            c.align.map(|a| a.as_str()),
-            c.default_value
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?,
-            c.created_at,
+            id,
+            parent_id,
+            kind,
+            name,
+            position,
+            icon,
+            color,
+            width,
+            now,
+            sql_name,
+            title_col_id,
+            col_type,
+            align,
+            default_value,
+            target_table_id,
+            single.map(|b| b as i64),
+            origin_id,
+            formula_expr,
+            formula_result_type,
+            view_kind,
+            filters,
+            sorts,
+            statement,
+            ref_id,
+            hidden.map(|b| b as i64),
         ],
     )?;
     Ok(())
 }
 
-/// Next free position at the end of a table's column list.
-pub(crate) fn next_position(conn: &Connection, table_id: &str) -> Result<i64> {
-    Ok(conn.query_row(
-        r#"SELECT COALESCE(MAX("position"), -1) + 1 FROM "_columns" WHERE "table_id" = ?1"#,
-        [table_id],
-        |r| r.get(0),
-    )?)
+pub(crate) fn insert_table_node(conn: &Connection, t: &TableMeta) -> Result<()> {
+    insert_node(
+        conn,
+        &t.id,
+        None,
+        "table",
+        Some(&t.name),
+        t.position,
+        t.icon.as_deref(),
+        t.color.map(|c| c.as_str()),
+        None,
+        Some(&t.sql_name),
+        t.title_col_id.as_deref(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+}
+
+pub(crate) fn insert_column_node(conn: &Connection, c: &ColumnMeta) -> Result<()> {
+    let (col_type, target, single, origin, formula_expr, result_type) = match &c.data {
+        ColumnData::Relation(r) => (
+            "relation",
+            Some(r.target_table_id.as_str()),
+            Some(r.single),
+            r.origin_id.as_deref(),
+            None,
+            None,
+        ),
+        ColumnData::Formula(f) => (
+            "formula",
+            None,
+            None,
+            None,
+            Some(f.expr.as_str()),
+            Some(f.result_type.as_str()),
+        ),
+        other => (other.col_type().as_str(), None, None, None, None, None),
+    };
+    insert_node(
+        conn,
+        &c.id,
+        Some(&c.table_id),
+        "column",
+        Some(&c.name),
+        c.position,
+        c.icon.as_deref(),
+        c.color.map(|c| c.as_str()),
+        Some(c.width),
+        c.sql_name(),
+        None,
+        Some(col_type),
+        c.align.map(|a| a.as_str()),
+        c.default_value
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?
+            .as_deref(),
+        target,
+        single,
+        origin,
+        formula_expr,
+        result_type,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )?;
+    for o in c.choices() {
+        insert_node(
+            conn,
+            &o.id,
+            Some(&c.id),
+            "option",
+            Some(&o.name),
+            o.position,
+            None,
+            o.color.map(|c| c.as_str()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+    }
+    Ok(())
+}
+
+pub(crate) fn insert_view_node(conn: &Connection, v: &ViewMeta) -> Result<()> {
+    let (view_kind, filters, sorts, statement) = match &v.data {
+        ViewData::Grid(g) => (
+            "grid",
+            g.filters.as_ref().map(serde_json::to_string).transpose()?,
+            Some(serde_json::to_string(&g.sorts)?),
+            None,
+        ),
+        ViewData::Sql(s) => ("sql", None, None, Some(s.statement.clone())),
+    };
+    insert_node(
+        conn,
+        &v.id,
+        v.table_id.as_deref(),
+        "view",
+        Some(&v.name),
+        v.position,
+        v.icon.as_deref(),
+        v.color.map(|c| c.as_str()),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(view_kind),
+        filters.as_deref(),
+        sorts.as_deref(),
+        statement.as_deref(),
+        None,
+        None,
+    )?;
+    for wc in &v.columns {
+        insert_view_column(
+            conn,
+            &v.id,
+            &wc.id,
+            &wc.column_id,
+            wc.position,
+            wc.width,
+            wc.hidden,
+        )?;
+    }
+    Ok(())
+}
+
+/// Insert one view-column node under `view_id`.
+pub(crate) fn insert_view_column(
+    conn: &Connection,
+    view_id: &str,
+    id: &str,
+    column_id: &str,
+    position: i64,
+    width: i64,
+    hidden: bool,
+) -> Result<()> {
+    insert_node(
+        conn,
+        id,
+        Some(view_id),
+        "view_column",
+        None,
+        position,
+        None,
+        None,
+        Some(width),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(column_id),
+        Some(hidden),
+    )
+}
+
+/// Next free position among the children of `parent_id` with the given kind.
+pub(crate) fn next_position(conn: &Connection, parent_id: Option<&str>, kind: &str) -> Result<i64> {
+    let pos: i64 = match parent_id {
+        Some(p) => conn.query_row(
+            r#"SELECT COALESCE(MAX("position"), -1) + 1 FROM "_meta"
+               WHERE "parent_id" = ?1 AND "kind" = ?2"#,
+            rusqlite::params![p, kind],
+            |r| r.get(0),
+        )?,
+        None => conn.query_row(
+            r#"SELECT COALESCE(MAX("position"), -1) + 1 FROM "_meta"
+               WHERE "parent_id" IS NULL AND "kind" = ?1"#,
+            [kind],
+            |r| r.get(0),
+        )?,
+    };
+    Ok(pos)
 }
 
 pub(crate) fn touch_table(conn: &Connection, table_id: &str) -> Result<()> {
     conn.execute(
-        r#"UPDATE "_tables" SET "updated_at" = ?1 WHERE "id" = ?2"#,
+        r#"UPDATE "_meta" SET "updated_at" = ?1 WHERE "id" = ?2 AND "kind" = 'table'"#,
         rusqlite::params![now_iso(), table_id],
     )?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Builders / validation
+// ---------------------------------------------------------------------------
+
+fn validate_choices(choices: &[OptionMeta]) -> Result<()> {
+    if choices.len() > 500 {
+        return Err(AppError::InvalidInput("选项过多（最多 500）".into()));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for c in choices {
+        let name = ident::validate_user_name("选项名", &c.name)?;
+        if !seen.insert(name.clone()) {
+            return Err(AppError::AlreadyExists(format!("选项 {name}")));
+        }
+    }
+    Ok(())
+}
+
+fn build_choices(new: &[NewChoice], base_position: i64) -> Result<Vec<OptionMeta>> {
+    let mut out = Vec::with_capacity(new.len());
+    for (i, c) in new.iter().enumerate() {
+        let name = ident::validate_user_name("选项名", &c.name)?;
+        out.push(OptionMeta {
+            id: c
+                .id
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(new_id),
+            name,
+            color: normalize_color(c.color.as_deref())?,
+            position: base_position + i as i64,
+        });
+    }
+    validate_choices(&out)?;
+    Ok(out)
 }
 
 /// Build a [`ColumnMeta`] for a new column (id, physical name, timestamp).
@@ -863,32 +1478,85 @@ pub(crate) fn build_column_meta(
     position: i64,
 ) -> Result<ColumnMeta> {
     let name = ident::validate_user_name("列名", &new.name)?;
-    let opts = new
-        .opts
-        .clone()
-        .unwrap_or_else(|| ColumnOpts::default_for(new.col_type));
-    validate_opts(new.col_type, &opts)?;
     let icon = normalize_icon(new.icon.as_deref())?;
     let color = normalize_column_color(new.color.as_deref())?;
     let align = normalize_column_align(new.align.as_deref())?;
     let default_value = new.default_value.as_ref().filter(|v| !v.is_null()).cloned();
     let id = new_id();
+    let sql_name = ident::column_sql_name(&id);
+
+    let data = match new.col_type {
+        ColumnType::Text => ColumnData::Text { sql_name },
+        ColumnType::Number => ColumnData::Number { sql_name },
+        ColumnType::Date => ColumnData::Date { sql_name },
+        ColumnType::Checkbox => ColumnData::Checkbox { sql_name },
+        ColumnType::Select => ColumnData::Select {
+            sql_name,
+            choices: build_choices(&new.choices, 0)?,
+        },
+        ColumnType::MultiSelect => ColumnData::MultiSelect {
+            sql_name,
+            choices: build_choices(&new.choices, 0)?,
+        },
+        ColumnType::Relation => {
+            let target = new
+                .target_table_id
+                .clone()
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| AppError::InvalidInput("关联列必须指定目标表".into()))?;
+            ColumnData::Relation(RelationData {
+                target_table_id: target,
+                single: new.single,
+                origin_id: None,
+            })
+        }
+        ColumnType::Formula => {
+            let expr = new
+                .formula_expr
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| AppError::InvalidInput("公式不能为空".into()))?;
+            ColumnData::Formula(FormulaData {
+                sql_name,
+                expr,
+                result_type: new.formula_result_type.unwrap_or(FormulaResultType::Number),
+            })
+        }
+    };
+
     Ok(ColumnMeta {
-        id: id.clone(),
+        id,
         table_id: table_id.to_string(),
         name,
-        sql_name: ident::column_sql_name(&id),
-        col_type: new.col_type,
-        opts,
         position,
         width: 160,
-        visible: true,
-        is_reverse: false,
-        reverse_of: None,
         icon,
         color,
         align,
         default_value,
         created_at: now_iso(),
+        data,
     })
+}
+
+/// Validate a column default: literals go through the same type/choice checks
+/// as cell writes, and date literals are additionally checked with SQLite's
+/// `datetime()` so metadata can never hold a value the table CHECK rejects.
+pub(crate) fn validate_default_value(
+    conn: &Connection,
+    col: &ColumnMeta,
+    value: &serde_json::Value,
+) -> Result<()> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let resolved = default_cell_value(col, value)?;
+    if col.col_type() == ColumnType::Date {
+        let raw = resolved.as_str().unwrap_or_default();
+        let ok: bool = conn.query_row("SELECT datetime(?1) IS NOT NULL", [raw], |r| r.get(0))?;
+        if !ok {
+            return Err(AppError::InvalidInput("日期默认值格式无效".into()));
+        }
+    }
+    Ok(())
 }

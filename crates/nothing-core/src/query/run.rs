@@ -15,10 +15,11 @@ use super::{
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
 use crate::schema::fts::fts_table_name;
-use crate::schema::ident::{junction_sql_name, quote_ident, view_sql_name};
+use crate::schema::ident::{junction_sql_name, quote_ident};
 use crate::schema::view::validate_sql_statement;
 use crate::schema::{
-    load_columns, load_table, load_view, ColumnMeta, ColumnType, GridConfig, TableMeta, ViewKind,
+    load_columns, load_table, load_view, ColumnMeta, ColumnType, GridConfig, TableMeta,
+    ViewColumnMeta, ViewData,
 };
 
 /// Outcome of [`Workspace::run_view`]: grid views yield rows, SQL views yield
@@ -30,15 +31,46 @@ pub enum ViewResult {
     Sql(SqlResult),
 }
 
-/// Columns a grid view shows: display order, minus view-hidden and
-/// column-level invisible ones.
-fn visible_columns(cols: &[ColumnMeta], hidden: &HashSet<String>) -> Vec<ColumnMeta> {
-    let mut out: Vec<ColumnMeta> = cols
-        .iter()
-        .filter(|c| c.visible && !hidden.contains(&c.id))
-        .cloned()
-        .collect();
+/// Base columns in definition order (default layout for a raw table/search).
+fn sorted_columns(cols: &[ColumnMeta]) -> Vec<ColumnMeta> {
+    let mut out = cols.to_vec();
     out.sort_by_key(|c| c.position);
+    out
+}
+
+/// Apply a view's own column nodes: order, visibility and per-view width.
+/// Columns missing from a layout are appended defensively (materialization
+/// normally keeps every view complete).
+fn view_columns(
+    cols: &[ColumnMeta],
+    layout: &[ViewColumnMeta],
+    apply_hidden: bool,
+) -> Vec<ColumnMeta> {
+    let by_id: HashMap<&str, &ColumnMeta> = cols.iter().map(|c| (c.id.as_str(), c)).collect();
+    let layout_ids: HashSet<&str> = layout.iter().map(|v| v.column_id.as_str()).collect();
+    let mut ordered: Vec<&ViewColumnMeta> = layout
+        .iter()
+        .filter(|v| !apply_hidden || !v.hidden)
+        .collect();
+    ordered.sort_by_key(|v| v.position);
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(ordered.len());
+    for vc in ordered {
+        if !seen.insert(vc.column_id.as_str()) {
+            continue;
+        }
+        if let Some(base) = by_id.get(vc.column_id.as_str()) {
+            let mut c = (*base).clone();
+            c.width = vc.width;
+            out.push(c);
+        }
+    }
+    for c in cols {
+        if !layout_ids.contains(c.id.as_str()) {
+            out.push(c.clone());
+        }
+    }
     out
 }
 
@@ -68,7 +100,11 @@ fn fetch_page(
         quote_ident("_created"),
         quote_ident("_updated"),
     ];
-    select_cols.extend(physical.iter().map(|c| quote_ident(&c.sql_name)));
+    select_cols.extend(
+        physical
+            .iter()
+            .map(|c| quote_ident(c.sql_name().unwrap_or_default())),
+    );
     let sql = format!(
         "SELECT {} FROM {qtab} WHERE {where_sql} {order_sql} LIMIT ? OFFSET ?",
         select_cols.join(", ")
@@ -115,21 +151,22 @@ fn attach_relations(
     if rows.is_empty() {
         return Ok(title_requests);
     }
-    for col in cols.iter().filter(|c| c.col_type == ColumnType::Relation) {
-        let source_col_id = match (&col.is_reverse, &col.reverse_of) {
-            (true, Some(src)) => src.clone(),
-            (true, None) => {
-                return Err(AppError::Internal("反向列缺少 reverse_of".into()));
-            }
-            (false, _) => col.id.clone(),
+    for col in cols.iter().filter(|c| c.col_type() == ColumnType::Relation) {
+        let source_col_id = match col.origin_id() {
+            Some(src) => src.to_string(),
+            None => col.id.clone(),
         };
         let junction = quote_ident(&junction_sql_name(&source_col_id));
-        let (fixed_side, other_side) = if col.is_reverse {
+        let (fixed_side, other_side) = if col.is_reverse() {
             ("b", "a")
         } else {
             ("a", "b")
         };
-        let target_table_id = col.opts.relation()?.target_table_id.clone();
+        let target_table_id = col
+            .relation()
+            .ok_or_else(|| AppError::Internal("关联列缺少关联数据".into()))?
+            .target_table_id
+            .clone();
 
         let page_rids: Vec<&str> = rows.iter().map(|r| r.rid.as_str()).collect();
         let mut links: HashMap<String, Vec<String>> = HashMap::new();
@@ -180,8 +217,11 @@ fn resolve_titles(
         else {
             continue;
         };
+        let Some(title_sql) = title_col.sql_name() else {
+            continue;
+        };
         let qtab = quote_ident(&table.sql_name);
-        let qtitle = quote_ident(&title_col.sql_name);
+        let qtitle = quote_ident(title_sql);
         for chunk in rids
             .iter()
             .map(|s| s.as_str())
@@ -240,10 +280,11 @@ impl Workspace {
         self.with_read(|conn| {
             let table = load_table(conn, table_id)?;
             let cols = load_columns(conn, table_id)?;
+            let visible = sorted_columns(&cols);
             let (mut rows, _) = fetch_page(
                 conn,
                 &table,
-                &cols,
+                &visible,
                 &format!("{} = ?", quote_ident("_rid")),
                 &[Value::Text(rid.into())],
                 &format!("ORDER BY {}", quote_ident("_rid")),
@@ -253,7 +294,7 @@ impl Workspace {
             let mut row = rows
                 .pop()
                 .ok_or_else(|| AppError::NotFound(format!("行 {rid}")))?;
-            attach_relations(conn, &cols, std::slice::from_mut(&mut row))?;
+            attach_relations(conn, &visible, std::slice::from_mut(&mut row))?;
             Ok(row)
         })
     }
@@ -269,12 +310,21 @@ impl Workspace {
         self.with_read(|conn| {
             let table = load_table(conn, table_id)?;
             let cols = load_columns(conn, table_id)?;
-            self.page_rows(conn, &table, &cols, &GridConfig::default(), limit, offset)
+            let visible = sorted_columns(&cols);
+            self.page_rows(
+                conn,
+                &table,
+                &cols,
+                &visible,
+                &GridConfig::default(),
+                limit,
+                offset,
+            )
         })
     }
 
     /// Execute a view: grid views compile to parameterized SQL; SQL views run
-    /// on the read-only connection.
+    /// their stored statement on the read-only connection.
     pub fn run_view(
         &self,
         view_id: &str,
@@ -284,27 +334,27 @@ impl Workspace {
         let (limit, offset) = clamp_pagination(limit, offset);
         self.with_read(|conn| {
             let view = load_view(conn, view_id)?;
-            match (view.kind, &view.config) {
-                (ViewKind::Grid, crate::schema::ViewConfig::Grid(cfg)) => {
+            match &view.data {
+                ViewData::Grid(cfg) => {
                     let table_id = view
                         .table_id
                         .as_deref()
                         .ok_or_else(|| AppError::Internal("网格视图缺少 table_id".into()))?;
                     let table = load_table(conn, table_id)?;
                     let cols = load_columns(conn, table_id)?;
-                    let page = self.page_rows(conn, &table, &cols, cfg, limit, offset)?;
+                    let visible = view_columns(&cols, &view.columns, true);
+                    let page = self.page_rows(conn, &table, &cols, &visible, cfg, limit, offset)?;
                     Ok(ViewResult::Grid(page))
                 }
-                (ViewKind::Sql, crate::schema::ViewConfig::Sql(_)) => {
-                    let result = self.exec_sql_view(conn, view_id, limit, offset)?;
+                ViewData::Sql(cfg) => {
+                    let result = self.exec_sql_view(conn, &cfg.statement, limit, offset)?;
                     Ok(ViewResult::Sql(result))
                 }
-                _ => Err(AppError::Internal("视图类型与配置不匹配".into())),
             }
         })
     }
 
-    /// Execute a stored SQL view (`v_<id>`) read-only.
+    /// Execute a stored SQL view read-only.
     pub fn run_sql_view(
         &self,
         view_id: &str,
@@ -314,10 +364,10 @@ impl Workspace {
         let (limit, offset) = clamp_pagination(limit, offset);
         self.with_read(|conn| {
             let view = load_view(conn, view_id)?;
-            if view.kind != ViewKind::Sql {
+            let ViewData::Sql(cfg) = &view.data else {
                 return Err(AppError::InvalidInput("不是 SQL 视图".into()));
-            }
-            self.exec_sql_view(conn, view_id, limit, offset)
+            };
+            self.exec_sql_view(conn, &cfg.statement, limit, offset)
         })
     }
 
@@ -354,6 +404,7 @@ impl Workspace {
         self.with_read(|conn| {
             let table = load_table(conn, table_id)?;
             let cols = load_columns(conn, table_id)?;
+            let visible = sorted_columns(&cols);
             let fts = fts_table_name(&table.sql_name);
             let has_fts: bool = conn
                 .query_row(
@@ -374,11 +425,11 @@ impl Workspace {
             } else {
                 let searchable: Vec<&ColumnMeta> = cols
                     .iter()
-                    .filter(|c| c.is_physical() && c.col_type.is_searchable())
+                    .filter(|c| c.is_physical() && c.col_type().is_searchable())
                     .collect();
                 if searchable.is_empty() {
                     return Ok(RowPage {
-                        columns: visible_columns(&cols, &HashSet::new()),
+                        columns: visible,
                         rows: Vec::new(),
                         total: 0,
                         titles: HashMap::new(),
@@ -386,7 +437,12 @@ impl Workspace {
                 }
                 let clauses: Vec<String> = searchable
                     .iter()
-                    .map(|c| format!("{} LIKE ? ESCAPE '\\'", quote_ident(&c.sql_name)))
+                    .map(|c| {
+                        format!(
+                            "{} LIKE ? ESCAPE '\\'",
+                            quote_ident(c.sql_name().unwrap_or_default())
+                        )
+                    })
                     .collect();
                 let pattern = Value::Text(format!("%{}%", like_escape(&q)));
                 (
@@ -399,17 +455,17 @@ impl Workspace {
             let (mut rows, total) = fetch_page(
                 conn,
                 &table,
-                &cols,
+                &visible,
                 &where_sql,
                 &where_params,
                 &order_sql,
                 limit,
                 offset,
             )?;
-            let requests = attach_relations(conn, &cols, &mut rows)?;
+            let requests = attach_relations(conn, &visible, &mut rows)?;
             let titles = resolve_titles(conn, requests)?;
             Ok(RowPage {
-                columns: visible_columns(&cols, &HashSet::new()),
+                columns: visible,
                 rows,
                 total,
                 titles,
@@ -419,32 +475,32 @@ impl Workspace {
 
     // -- internal ---------------------------------------------------------
 
+    #[allow(clippy::too_many_arguments)]
     fn page_rows(
         &self,
         conn: &Connection,
         table: &TableMeta,
-        cols: &[ColumnMeta],
+        all_cols: &[ColumnMeta],
+        visible: &[ColumnMeta],
         cfg: &GridConfig,
         limit: i64,
         offset: i64,
     ) -> Result<RowPage> {
-        let compiled = compile(table, cols, cfg)?;
-        let hidden: HashSet<String> = cfg.hidden_columns.iter().cloned().collect();
-        let visible = visible_columns(cols, &hidden);
+        let compiled = compile(table, all_cols, cfg)?;
         let (mut rows, total) = fetch_page(
             conn,
             table,
-            &visible,
+            visible,
             &compiled.where_sql,
             &compiled.where_params,
             &compiled.order_sql,
             limit,
             offset,
         )?;
-        let requests = attach_relations(conn, &visible, &mut rows)?;
+        let requests = attach_relations(conn, visible, &mut rows)?;
         let titles = resolve_titles(conn, requests)?;
         Ok(RowPage {
-            columns: visible,
+            columns: visible.to_vec(),
             rows,
             total,
             titles,
@@ -454,14 +510,11 @@ impl Workspace {
     fn exec_sql_view(
         &self,
         conn: &Connection,
-        view_id: &str,
+        statement: &str,
         limit: i64,
         offset: i64,
     ) -> Result<SqlResult> {
-        let sql = format!(
-            "SELECT * FROM {} LIMIT ? OFFSET ?",
-            quote_ident(&view_sql_name(view_id))
-        );
+        let sql = format!("SELECT * FROM ({statement}) LIMIT ? OFFSET ?");
         execute_sql(conn, &sql, &[Value::Integer(limit), Value::Integer(offset)])
     }
 }

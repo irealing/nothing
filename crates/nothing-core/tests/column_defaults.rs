@@ -4,15 +4,19 @@
 mod common;
 
 use nothing_core::{
-    AppError, Cells, Choice, ColumnAlign, ColumnOpts, ColumnPatch, ColumnType, FormulaResultType,
-    NewColumn, SelectOpts,
+    AppError, Cells, ColumnAlign, ColumnPatch, ColumnType, FormulaResultType, NewChoice, NewColumn,
 };
 
 fn col(name: &str, t: ColumnType) -> NewColumn {
     NewColumn {
         name: name.into(),
         col_type: t,
-        opts: None,
+        choices: Vec::new(),
+        target_table_id: None,
+        single: false,
+        reverse_name: None,
+        formula_expr: None,
+        formula_result_type: None,
         icon: None,
         color: None,
         align: None,
@@ -31,7 +35,12 @@ fn align_round_trip_and_clear() {
                 NewColumn {
                     name: "工时".into(),
                     col_type: ColumnType::Number,
-                    opts: None,
+                    choices: Vec::new(),
+                    target_table_id: None,
+                    single: false,
+                    reverse_name: None,
+                    formula_expr: None,
+                    formula_result_type: None,
                     icon: None,
                     color: None,
                     align: Some("center".into()),
@@ -99,7 +108,12 @@ fn default_values_apply_to_new_rows_only() {
                 NewColumn {
                     name: "工时".into(),
                     col_type: ColumnType::Number,
-                    opts: None,
+                    choices: Vec::new(),
+                    target_table_id: None,
+                    single: false,
+                    reverse_name: None,
+                    formula_expr: None,
+                    formula_result_type: None,
                     icon: None,
                     color: None,
                     align: None,
@@ -170,7 +184,12 @@ fn date_now_default_is_resolved_on_insert() {
                 NewColumn {
                     name: "开始".into(),
                     col_type: ColumnType::Date,
-                    opts: None,
+                    choices: Vec::new(),
+                    target_table_id: None,
+                    single: false,
+                    reverse_name: None,
+                    formula_expr: None,
+                    formula_result_type: None,
                     icon: None,
                     color: None,
                     align: None,
@@ -225,7 +244,12 @@ fn default_value_validation_rejects_unsupported_columns_and_values() {
             vec![NewColumn {
                 name: "数字".into(),
                 col_type: ColumnType::Number,
-                opts: None,
+                choices: Vec::new(),
+                target_table_id: None,
+                single: false,
+                reverse_name: None,
+                formula_expr: None,
+                formula_result_type: None,
                 icon: None,
                 color: None,
                 align: None,
@@ -271,7 +295,7 @@ fn default_value_validation_rejects_unsupported_columns_and_values() {
             },
         )
         .unwrap();
-    assert_eq!(updated.col_type, ColumnType::Date);
+    assert_eq!(updated.col_type(), ColumnType::Date);
     let err = ws
         .update_column(
             &table.id,
@@ -298,7 +322,12 @@ fn type_change_clears_incompatible_default_and_choices_change_prunes_it() {
                 NewColumn {
                     name: "值".into(),
                     col_type: ColumnType::Text,
-                    opts: None,
+                    choices: Vec::new(),
+                    target_table_id: None,
+                    single: false,
+                    reverse_name: None,
+                    formula_expr: None,
+                    formula_result_type: None,
                     icon: None,
                     color: None,
                     align: None,
@@ -330,12 +359,11 @@ fn type_change_clears_incompatible_default_and_choices_change_prunes_it() {
             &table.id,
             &cols[2].id,
             ColumnPatch {
-                opts: Some(ColumnOpts::Select(SelectOpts {
-                    choices: vec![Choice {
-                        id: "1".into(),
-                        name: "待办".into(),
-                    }],
-                })),
+                choices: Some(vec![NewChoice {
+                    id: Some("1".into()),
+                    name: "待办".into(),
+                    color: None,
+                }]),
                 ..Default::default()
             },
         )

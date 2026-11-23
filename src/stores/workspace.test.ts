@@ -9,6 +9,7 @@ import * as ipc from "../ipc";
 import type {
   ColumnMeta,
   ImportCsvOptions,
+  NewColumn,
   Row,
   RowPage,
   TableMeta,
@@ -23,6 +24,7 @@ const T1: TableMeta = {
   sql_name: "t_x",
   title_col_id: "c1",
   icon: null,
+  color: null,
   position: 0,
   created_at: "",
   updated_at: "",
@@ -32,19 +34,14 @@ const COL: ColumnMeta = {
   id: "c1",
   table_id: "t1",
   name: "标题",
-  sql_name: "c_x",
-  type: "text",
-  opts: { kind: "plain" },
   position: 0,
   width: 160,
-  visible: true,
-  is_reverse: false,
-  reverse_of: null,
   icon: null,
   color: null,
   align: null,
   default_value: null,
   created_at: "",
+  data: { kind: "text", sql_name: "c_x" },
 };
 
 const GRID_V: ViewMeta = {
@@ -52,7 +49,10 @@ const GRID_V: ViewMeta = {
   table_id: "t1",
   name: "默认视图",
   kind: "grid",
-  config: { kind: "grid", filters: null, sorts: [], hidden_columns: [] },
+  icon: null,
+  color: null,
+  data: { kind: "grid", filters: null, sorts: [] },
+  columns: [],
   position: 0,
   created_at: "",
 };
@@ -64,7 +64,10 @@ const SQL_V: ViewMeta = {
   table_id: null,
   name: "统计",
   kind: "sql",
-  config: { kind: "sql", statement: "SELECT 1" },
+  icon: null,
+  color: null,
+  data: { kind: "sql", statement: "SELECT 1" },
+  columns: [],
   position: 0,
   created_at: "",
 };
@@ -296,15 +299,16 @@ describe("table icons", () => {
 
   it("createTable forwards the initial emoji to the backend", async () => {
     const created: TableMeta = { ...T1, id: "t2", icon: "🚀" };
+    const initial = { name: "标题", type: "text" } as NewColumn;
     vi.mocked(ipc.tableCreate).mockResolvedValue(created);
     vi.mocked(ipc.tableList).mockResolvedValue([created]);
     vi.mocked(ipc.columnList).mockResolvedValue([{ ...COL, table_id: "t2" }]);
     vi.mocked(ipc.viewList).mockResolvedValue([{ ...GRID_V, table_id: "t2" }]);
     vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
 
-    await useWorkspace.getState().createTable("项目", [COL], "🚀");
+    await useWorkspace.getState().createTable("项目", [initial], "🚀");
 
-    expect(ipc.tableCreate).toHaveBeenCalledWith("项目", [COL], "🚀");
+    expect(ipc.tableCreate).toHaveBeenCalledWith("项目", [initial], "🚀");
     const s = useWorkspace.getState();
     expect(s.activeTableId).toBe("t2");
     expect(s.tables[0].icon).toBe("🚀");
@@ -382,11 +386,10 @@ describe("updateCell", () => {
   it("revalidates after an edit in a filtered view", async () => {
     const filtered: ViewMeta = {
       ...GRID_V,
-      config: {
+      data: {
         kind: "grid",
         filters: { column_id: "c1", op: "contains", value: "b" },
         sorts: [],
-        hidden_columns: [],
       },
     };
     useWorkspace.setState({
@@ -413,8 +416,7 @@ describe("updateCell", () => {
       ...COL,
       id: "c9",
       name: "负责人",
-      type: "relation",
-      opts: { kind: "relation", target_table_id: "t2", single: false, reverse_name: null },
+      data: { kind: "relation", target_table_id: "t2", single: false, origin_id: null },
     };
     useWorkspace.setState({
       info: { path: "/a.nothing", format_version: 1 },
@@ -635,24 +637,19 @@ describe("duplicateRows", () => {
       ...COL,
       id: "cf",
       name: "合计",
-      type: "formula",
-      opts: { kind: "formula", expr: "[标题]", result_type: "text" },
+      data: { kind: "formula", sql_name: "c_cf", expr: "[标题]", result_type: "text" },
     };
     const reverse: ColumnMeta = {
       ...COL,
       id: "cr",
       name: "反向关联",
-      type: "relation",
-      opts: { kind: "relation", target_table_id: "t1", single: false },
-      is_reverse: true,
-      reverse_of: "cl",
+      data: { kind: "relation", target_table_id: "t1", single: false, origin_id: "cl" },
     };
     const relation: ColumnMeta = {
       ...COL,
       id: "cl",
       name: "关联",
-      type: "relation",
-      opts: { kind: "relation", target_table_id: "t1", single: false },
+      data: { kind: "relation", target_table_id: "t1", single: false, origin_id: null },
     };
     const source: Row = {
       rid: "r1",

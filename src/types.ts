@@ -28,22 +28,30 @@ export type ColumnColor =
 /** Explicit cell alignment; `null` on a column means "by type". */
 export type ColumnAlign = "left" | "center" | "right";
 
+/** A select / multi-select choice node. */
 export interface Choice {
   id: string;
   name: string;
+  color: ColumnColor | null;
+  position: number;
 }
 
-export type ColumnOpts =
-  | { kind: "plain" }
-  | { kind: "select"; choices: Choice[] }
-  | { kind: "multi_select"; choices: Choice[] }
-  | {
-      kind: "relation";
-      target_table_id: string;
-      single: boolean;
-      reverse_name?: string | null;
-    }
-  | { kind: "formula"; expr: string; result_type: FormulaResultType };
+export interface NewChoice {
+  id?: string | null;
+  name: string;
+  color?: string | null;
+}
+
+/** Polymorphic column payload: the variant tag *is* the column type. */
+export type ColumnData =
+  | { kind: "text"; sql_name: string }
+  | { kind: "number"; sql_name: string }
+  | { kind: "date"; sql_name: string }
+  | { kind: "checkbox"; sql_name: string }
+  | { kind: "select"; sql_name: string; choices: Choice[] }
+  | { kind: "multi_select"; sql_name: string; choices: Choice[] }
+  | { kind: "relation"; target_table_id: string; single: boolean; origin_id: string | null }
+  | { kind: "formula"; sql_name: string; expr: string; result_type: FormulaResultType };
 
 export interface TableMeta {
   id: string;
@@ -51,6 +59,7 @@ export interface TableMeta {
   sql_name: string;
   title_col_id: string | null;
   icon: string | null;
+  color: ColumnColor | null;
   position: number;
   created_at: string;
   updated_at: string;
@@ -60,14 +69,9 @@ export interface ColumnMeta {
   id: string;
   table_id: string;
   name: string;
-  sql_name: string;
-  type: ColumnType;
-  opts: ColumnOpts;
   position: number;
+  /** Default width; the effective width in a view is on that view's column. */
   width: number;
-  visible: boolean;
-  is_reverse: boolean;
-  reverse_of: string | null;
   /** Optional emoji shown before the column name. */
   icon: string | null;
   /** Optional palette token tinting the header and cells. */
@@ -80,12 +84,46 @@ export interface ColumnMeta {
    */
   default_value: Json | null;
   created_at: string;
+  data: ColumnData;
+}
+
+// ---- helpers over the polymorphic payload ----
+
+export function colType(col: ColumnMeta): ColumnType {
+  return col.data.kind;
+}
+
+export function sqlNameOf(col: ColumnMeta): string | null {
+  return "sql_name" in col.data ? col.data.sql_name : null;
+}
+
+export function choicesOf(col: ColumnMeta): Choice[] {
+  return col.data.kind === "select" || col.data.kind === "multi_select"
+    ? col.data.choices
+    : [];
+}
+
+export function formulaResultType(col: ColumnMeta): FormulaResultType | null {
+  return col.data.kind === "formula" ? col.data.result_type : null;
+}
+
+export function isReverse(col: ColumnMeta): boolean {
+  return col.data.kind === "relation" && col.data.origin_id !== null;
+}
+
+export function originIdOf(col: ColumnMeta): string | null {
+  return col.data.kind === "relation" ? col.data.origin_id : null;
 }
 
 export interface NewColumn {
   name: string;
   type: ColumnType;
-  opts?: ColumnOpts;
+  choices?: NewChoice[];
+  target_table_id?: string | null;
+  single?: boolean;
+  reverse_name?: string | null;
+  formula_expr?: string | null;
+  formula_result_type?: FormulaResultType | null;
   icon?: string | null;
   color?: ColumnColor | null;
   align?: ColumnAlign | null;
@@ -96,10 +134,12 @@ export interface NewColumn {
 export interface ColumnPatch {
   name?: string;
   type?: ColumnType;
-  opts?: ColumnOpts;
+  choices?: NewChoice[];
+  target_table_id?: string;
+  single?: boolean;
+  formula_expr?: string;
+  formula_result_type?: FormulaResultType;
   position?: number;
-  width?: number;
-  visible?: boolean;
   icon?: string;
   color?: string;
   align?: string;
@@ -158,34 +198,59 @@ export interface SortSpec {
 export interface GridConfig {
   filters: FilterNode | null;
   sorts: SortSpec[];
-  hidden_columns: string[];
 }
 
-export type ViewConfig =
+export interface SqlConfig {
+  statement: string;
+}
+
+export type ViewData =
   | ({ kind: "grid" } & GridConfig)
-  | { kind: "sql"; statement: string };
+  | ({ kind: "sql" } & SqlConfig);
+
+/** A grid view's own column node: width/order/hidden are per view. */
+export interface ViewColumnMeta {
+  id: string;
+  column_id: string;
+  position: number;
+  width: number;
+  hidden: boolean;
+}
+
+export interface ViewColumnPatch {
+  column_id: string;
+  position?: number;
+  width?: number;
+  hidden?: boolean;
+}
 
 export interface ViewMeta {
   id: string;
   table_id: string | null;
   name: string;
   kind: ViewKind;
-  config: ViewConfig;
+  icon: string | null;
+  color: ColumnColor | null;
   position: number;
   created_at: string;
+  data: ViewData;
+  columns: ViewColumnMeta[];
 }
 
 export interface NewView {
   table_id: string | null;
   name: string;
   kind: ViewKind;
-  config: ViewConfig;
+  data: ViewData;
 }
 
 export interface ViewPatch {
   name?: string;
-  config?: ViewConfig;
+  data?: ViewData;
+  icon?: string;
+  color?: string;
   position?: number;
+  columns?: ViewColumnPatch[];
 }
 
 // ---- rows & results ----

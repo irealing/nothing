@@ -4,7 +4,7 @@
 mod common;
 
 use common::{raw, raw_insert_row};
-use nothing_core::{AppError, ColumnOpts, ColumnPatch, ColumnType, FormulaOpts, FormulaResultType};
+use nothing_core::{AppError, ColumnPatch, ColumnType, FormulaResultType};
 
 fn dbp(dir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
     dir.path().join(name)
@@ -26,9 +26,9 @@ fn formula_column_is_maintained_by_database() {
         .unwrap();
     let cols = ws.list_columns(&table.id).unwrap();
     let (c_price, c_qty, c_total) = (
-        cols[1].sql_name.clone(),
-        cols[2].sql_name.clone(),
-        cols[3].sql_name.clone(),
+        cols[1].sql_name().unwrap(),
+        cols[2].sql_name().unwrap(),
+        cols[3].sql_name().unwrap(),
     );
 
     let conn = raw(&dbp(&dir, "fm.nothing"));
@@ -168,7 +168,7 @@ fn formula_expression_update_recomputes_all_rows() {
     conn.execute(
         &format!(
             r#"UPDATE "{sql}" SET "{}" = 5 WHERE _rid='r1'"#,
-            cols[1].sql_name
+            cols[1].sql_name().unwrap()
         ),
         [],
     )
@@ -179,10 +179,8 @@ fn formula_expression_update_recomputes_all_rows() {
         &table.id,
         &cols[2].id,
         ColumnPatch {
-            opts: Some(ColumnOpts::Formula(FormulaOpts {
-                expr: "[数量] * 3".into(),
-                result_type: FormulaResultType::Number,
-            })),
+            formula_expr: Some("[数量] * 3".into()),
+            formula_result_type: Some(FormulaResultType::Number),
             ..Default::default()
         },
     )
@@ -193,7 +191,7 @@ fn formula_expression_update_recomputes_all_rows() {
         .query_row(
             &format!(
                 r#"SELECT "{}" FROM "{sql}" WHERE _rid='r1'"#,
-                cols[2].sql_name
+                cols[2].sql_name().unwrap()
             ),
             [],
             |r| r.get(0),

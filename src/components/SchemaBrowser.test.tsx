@@ -11,7 +11,7 @@ import userEvent from "@testing-library/user-event";
 vi.mock("../ipc", () => ({ tableList: vi.fn(), columnList: vi.fn() }));
 
 import * as ipc from "../ipc";
-import type { ColumnMeta, TableMeta } from "../types";
+import type { ColumnData, ColumnMeta, ColumnType, TableMeta } from "../types";
 import { useWorkspace } from "../stores/workspace";
 import { groupSchema, SchemaBrowser, tableQuery } from "./SchemaBrowser";
 
@@ -21,6 +21,7 @@ const T1: TableMeta = {
   sql_name: "t_01h1",
   title_col_id: "c1",
   icon: "📋",
+  color: null,
   position: 0,
   created_at: "",
   updated_at: "",
@@ -32,16 +33,39 @@ const T2: TableMeta = {
   sql_name: "t_01h2",
   title_col_id: "c4",
   icon: null,
+  color: null,
   position: 1,
   created_at: "",
   updated_at: "",
 };
 
+function dataFor(id: string, type: ColumnType): ColumnData {
+  const sql_name = `c_${id}`;
+  switch (type) {
+    case "relation":
+      return { kind: "relation", target_table_id: "t2", single: false, origin_id: null };
+    case "formula":
+      return { kind: "formula", sql_name, expr: "1", result_type: "number" };
+    case "number":
+      return { kind: "number", sql_name };
+    case "date":
+      return { kind: "date", sql_name };
+    case "checkbox":
+      return { kind: "checkbox", sql_name };
+    case "select":
+      return { kind: "select", sql_name, choices: [] };
+    case "multi_select":
+      return { kind: "multi_select", sql_name, choices: [] };
+    default:
+      return { kind: "text", sql_name };
+  }
+}
+
 function col(
   id: string,
   table_id: string,
   name: string,
-  type: ColumnMeta["type"],
+  type: ColumnType,
   position: number,
   extra: Partial<ColumnMeta> = {},
 ): ColumnMeta {
@@ -49,32 +73,24 @@ function col(
     id,
     table_id,
     name,
-    sql_name: `c_${id}`,
-    type,
-    opts:
-      type === "relation"
-        ? { kind: "relation", target_table_id: "t2", single: false }
-        : { kind: "plain" },
     position,
     width: 160,
-    visible: true,
-    is_reverse: false,
-    reverse_of: null,
     icon: null,
     color: null,
     align: null,
     default_value: null,
     created_at: "",
+    data: dataFor(id, type),
     ...extra,
   };
 }
 
 const C_TITLE = col("c1", "t1", "标题", "text", 0);
 const C_REL = col("c2", "t1", "关联任务", "relation", 1);
-const C_REVERSE = col("c3", "t1", "反向", "relation", 2, {
-  is_reverse: true,
-  reverse_of: "c2",
-});
+const C_REVERSE: ColumnMeta = {
+  ...col("c3", "t1", "反向", "relation", 2),
+  data: { kind: "relation", target_table_id: "t2", single: false, origin_id: "c2" },
+};
 const C_FORMULA = col("c4", "t1", "得分", "formula", 3);
 const C_T2 = col("c5", "t2", "名称", "text", 0);
 

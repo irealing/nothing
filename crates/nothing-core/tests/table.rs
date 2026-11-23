@@ -5,7 +5,7 @@ mod common;
 
 use common::{emp_task_fixture, object_exists, raw};
 use nothing_core::schema::ident::junction_sql_name;
-use nothing_core::{AppError, ColumnType, GridConfig, NewView, SqlConfig, ViewConfig, ViewKind};
+use nothing_core::{AppError, ColumnType, GridConfig, NewView, SqlConfig, ViewData, ViewKind};
 
 #[test]
 fn create_table_builds_physical_schema() {
@@ -21,9 +21,9 @@ fn create_table_builds_physical_schema() {
     );
     assert_eq!(names.len(), 5); // base + 标题 + 工时
     let decls: std::collections::HashMap<_, _> = phys.iter().cloned().collect();
-    let title_sql = &f.task_cols[0].sql_name;
+    let title_sql = f.task_cols[0].sql_name().unwrap();
     assert_eq!(decls.get(title_sql).unwrap(), "TEXT");
-    let hours_sql = &f.task_cols[1].sql_name;
+    let hours_sql = f.task_cols[1].sql_name().unwrap();
     assert_eq!(decls.get(hours_sql).unwrap(), "REAL");
 
     // FTS index exists (text column present)
@@ -104,7 +104,7 @@ fn delete_table_cleans_everything() {
         table_id: Some(f.task_table.id.clone()),
         name: "全部任务".into(),
         kind: ViewKind::Grid,
-        config: ViewConfig::Grid(GridConfig::default()),
+        data: ViewData::Grid(GridConfig::default()),
     })
     .unwrap();
 
@@ -123,7 +123,7 @@ fn delete_table_cleans_everything() {
     assert!(leftovers.is_empty(), "junction leftovers: {leftovers:?}");
     // emp table still has the reverse column removed
     let emp_cols = ws.list_columns(&f.emp_table.id).unwrap();
-    assert!(emp_cols.iter().all(|c| !c.is_reverse));
+    assert!(emp_cols.iter().all(|c| !c.is_reverse()));
     // grid view gone
     assert!(ws.list_views(Some(&f.task_table.id)).unwrap().is_empty());
 }
@@ -137,7 +137,7 @@ fn delete_table_blocked_by_dependent_sql_view() {
             table_id: None,
             name: "任务统计".into(),
             kind: ViewKind::Sql,
-            config: ViewConfig::Sql(SqlConfig {
+            data: ViewData::Sql(SqlConfig {
                 statement: format!("SELECT count(*) AS n FROM {}", f.task_table.sql_name),
             }),
         })
@@ -168,5 +168,5 @@ fn delete_relation_column_drops_junction_and_reverse() {
     ws.delete_column(&f.task_table.id, &rel.id).unwrap();
     assert!(!object_exists(&conn, &jname));
     let emp_cols = ws.list_columns(&f.emp_table.id).unwrap();
-    assert!(emp_cols.iter().all(|c| !c.is_reverse));
+    assert!(emp_cols.iter().all(|c| !c.is_reverse()));
 }

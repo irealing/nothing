@@ -37,7 +37,7 @@ fn manifest_contents() {
         .unwrap();
     assert!(created_by.starts_with("nothing "));
     // Metadata tables exist and are STRICT.
-    for t in ["_nothing", "_tables", "_columns", "_views"] {
+    for t in ["_nothing", "_meta"] {
         let sql: String = conn
             .query_row(
                 "SELECT COALESCE(sql,'') FROM sqlite_master WHERE name=?1",

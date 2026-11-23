@@ -23,12 +23,13 @@ import type {
   RowPage,
   SqlResult,
   TableMeta,
-  ViewConfig,
+  ViewData,
   ViewMeta,
   ViewPatch,
   WorkspaceInfo,
   WorkspaceUiState,
 } from "../types";
+import { colType, isReverse } from "../types";
 
 export const PAGE_SIZE = 200;
 
@@ -40,7 +41,7 @@ export const PAGE_SIZE = 200;
 export function duplicateCells(row: Row, columns: ColumnMeta[]): Cells {
   const cells: Cells = {};
   for (const col of columns) {
-    if (col.type === "formula" || col.is_reverse) continue;
+    if (colType(col) === "formula" || isReverse(col)) continue;
     const value = row.cells[col.id];
     if (value !== undefined) cells[col.id] = value;
   }
@@ -63,7 +64,7 @@ export function samePath(a: string, b: string): boolean {
 }
 
 export function defaultGridConfig(): GridConfig {
-  return { filters: null, sorts: [], hidden_columns: [] };
+  return { filters: null, sorts: [] };
 }
 
 /** What the row window pipeline currently reads from. */
@@ -149,6 +150,11 @@ interface WorkspaceState {
   createGridView: (name: string) => Promise<void>;
   createSqlView: (name: string, statement: string) => Promise<void>;
   updateView: (viewId: string, patch: ViewPatch) => Promise<void>;
+  updateViewColumn: (
+    viewId: string,
+    columnId: string,
+    patch: { width?: number; position?: number; hidden?: boolean },
+  ) => Promise<void>;
   deleteView: (viewId: string) => Promise<void>;
 
   // rows
@@ -315,7 +321,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         table_id: tableId,
         name: t("view.defaultName"),
         kind: "grid",
-        config: { kind: "grid", ...defaultGridConfig() },
+        data: { kind: "grid", ...defaultGridConfig() },
       } satisfies NewView);
       views = await ipc.viewList(tableId);
       set({ views });
@@ -608,8 +614,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         // Type/options changes can alter stored values; position/visibility
         // change which columns the current source returns. Both need a fresh
         // page from the backend.
-        const affectsData = patch.type !== undefined || patch.opts !== undefined;
-        const affectsShape = patch.position !== undefined || patch.visible !== undefined;
+        const affectsData = patch.type !== undefined || patch.choices !== undefined;
+        const affectsShape = patch.position !== undefined;
         if (affectsData || affectsShape) {
           await afterWrite();
         } else {
@@ -645,7 +651,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           table_id: activeTableId,
           name,
           kind: "grid",
-          config: { kind: "grid", ...defaultGridConfig() },
+          data: { kind: "grid", ...defaultGridConfig() },
         });
         await loadTableData(activeTableId, v.id);
         await persistUi();
@@ -658,7 +664,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           table_id: null,
           name,
           kind: "sql",
-          config: { kind: "sql", statement },
+          data: { kind: "sql", statement },
         });
         const { activeTableId } = get();
         if (activeTableId) {
@@ -682,6 +688,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         } else {
           set({ views: await ipc.viewList(activeTableId) });
         }
+      });
+    },
+
+    updateViewColumn: async (viewId, columnId, patch) => {
+      await guard(set, get, async () => {
+        await ipc.viewColumnUpdate(viewId, columnId, patch);
+        const { activeTableId, activeViewId } = get();
+        if (!activeTableId) return;
+        set({ views: await ipc.viewList(activeTableId) });
+        // Width/hidden/order all change what the grid returns.
+        if (activeViewId === viewId) await afterWrite();
       });
     },
 
@@ -742,10 +759,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         // so typing in a cell no longer refetches the page and flickers.
         const col = get().columns.find((c) => c.id === colId);
         const view = get().views.find((v) => v.id === activeViewId);
-        const cfg = view?.config.kind === "grid" ? view.config : null;
+        const cfg = view?.data.kind === "grid" ? view.data : null;
         const stable =
           !searchQuery && (cfg === null || (cfg.filters === null && cfg.sorts.length === 0));
-        if (!stable || col?.type === "relation") {
+        if (!stable || (col && colType(col) === "relation")) {
           await afterWrite();
         }
       });
@@ -776,4 +793,4 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   };
 });
 
-export type { GridConfig, ViewConfig };
+export type { GridConfig, ViewData };

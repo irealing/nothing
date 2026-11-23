@@ -23,7 +23,7 @@ Cargo.toml               workspace 根
 crates/nothing-core/     存储内核（纯 Rust）
   src/
     db/                  Workspace：加密连接管理（单写者 Mutex）、密码、迁移入口
-      migrate.rs         _nothing 清单表、V1 元数据 schema、format_version 迁移
+      migrate.rs         _nothing 清单表、format v4 单表 _meta schema、版本校验
     schema/
       ident.rs           ULID、t_/c_/r_/v_ 物理命名、quote_ident/quote_literal（唯二转义原语）
       mod.rs             元数据类型（TableMeta/ColumnMeta/ViewMeta、ColumnOpts、视图配置）
@@ -56,32 +56,33 @@ src-tauri/               Tauri 薄壳：commands/ 只做参数校验与转发；
 | 对象 | 命名 | 说明 |
 |---|---|---|
 | 清单表 | `_nothing` | key-value：`magic`（固定 `nothing-db`）、`format_version`、`created_at`、`created_by`。文件身份识别与迁移入口 |
-| 元数据表 | `_tables` `_columns` `_views` | `_` 前缀，全部 `STRICT` 模式 |
+| 元数据表 | `_meta` | **单张**自关联节点表（`kind` = `table`/`column`/`option`/`view`/`view_column`），`STRICT`；Rust 侧 `MetaObject`/`ColumnData`/`ViewData` 是对象模型与不变量来源 |
 | 用户表 | `t_<table_id>` | `table_id` 为 ULID |
 | 用户表列 | `_rid` `_created` `_updated` + `c_<column_id>` | `_rid` 为 TEXT PRIMARY KEY（ULID），行身份永久稳定 |
 | FTS 表 | `t_<table_id>_fts` | FTS5，`content=` 外部内容表 + 触发器同步 |
 | 关联表 | `r_<column_id>` | 每个关联列一张：`a`(源行) `b`(目标行) `ord`，双外键 `ON DELETE CASCADE`，`PRIMARY KEY(a,b)`，反向索引 `r_<column_id>_rev(b)` |
-| SQL 视图 | `v_<view_id>` | 真实 `CREATE VIEW` |
+| SQL 视图 | 无物理对象 | 语句存于 `_meta`，在只读连接上直接执行 |
 
-关键元数据字段：
+关键元数据字段（全部在 `_meta` 中）：
 
-- `_tables.title_col_id`：每表的标题列（一个文本列），关联选择器与关联单元格显示都依赖它
-- `_columns.sql_name`：物理列名 `c_xxxx`，与 UI 列名（`_columns.name`）解耦
-- `_columns.opts`：JSON，按类型存选项（单选选项、公式表达式、关联目标表、是否单选等）
-- `_columns.icon` / `_columns.color`：列外观（format v2 起）。`icon` 为 emoji，`color` 为调色板 token；仅影响展示，不参与 SQL
-- `_columns.align` / `_columns.default_value`：列对齐（`left`/`center`/`right`，NULL = 按类型）与新行默认值（JSON；日期列额外接受 `{"kind":"now"}`，插入时才求值）。二者都只是元数据，绝不参与物理 DDL（format v3 起）
-- `_columns` 反向关联列：`is_reverse: true` + `reverse_of: <column_id>`，与源列共享同一张 `r_xxxx` 表
-- `_views.kind`：`grid`（config 存筛选树/排序/隐藏列 JSON）或 `sql`（config 存语句）
+- `kind` + `parent_id`：逻辑树（表 → 列 → 选项；表 → 网格视图 → 视图列）。`parent_id` 同时是生命周期所有者，`ON DELETE CASCADE`
+- `table` 节点：`sql_name`（`t_xxxx`）、`title_col_id`（自引用 FK，标题列）、`icon`/`color`
+- `column` 节点：`col_type`、`sql_name`（**仅物理列**，关联/反向列为 NULL）、`align`、`default_value`、`formula_expr`/`formula_result_type`；`target_table_id`/`single`/`origin_id` 仅关联列使用
+- `option` 节点：选项的 `name`/`color`/`position`，不再是 `opts` JSON 数组
+- `view` 节点：`view_kind`，`filters`/`sorts` 只存筛选树与排序；`sql` 视图只存 `statement`
+- `view_column` 节点：`ref_id`（基列）、`width`、`position`、`hidden`。**宽度/顺序/隐藏按视图隔离**，同一列在不同视图互不影响
+- 反向关联列：`origin_id` 指向源关联列（FK `ON DELETE CASCADE`），与源列共享同一张 `r_xxxx` 表
+- 其余 JSON 仅三处：`default_value`（单元格值）、`filters`、`sorts`
 
 ## 铁律（数据安全，不可违反）
 
 1. **所有 DDL 必须在显式事务内执行**，失败必须整体回滚。禁止在事务外做多步 DDL。
 2. **改列类型 = 加新列 → 回填转换 → 删旧列 → 改名**，全程一个事务。禁止任何就地破坏性类型转换。
-3. **永远不要 `ALTER TABLE ... RENAME COLUMN` 物理列**。UI 重命名只改 `_columns.name`。物理列名 `c_xxxx` 一经创建不再变化，SQL 视图和公式列可能引用它们。
+3. **永远不要 `ALTER TABLE ... RENAME COLUMN` 物理列**。UI 重命名只改 `_meta` 中列节点的 `name`。物理列名 `c_xxxx` 一经创建不再变化，SQL 视图和公式列可能引用它们。
 4. **生成 SQL 只能通过视图编译器 / 白名单模板，一律参数绑定**。禁止把用户输入（筛选值、搜索词、单元格内容）字符串拼接进 SQL。SQL 视图语句必须校验（SELECT/WITH 开头 + EXPLAIN 试跑）且只在 `PRAGMA query_only = ON` 的独立只读连接上执行。
 5. **每个数据库连接必须设置**：`PRAGMA foreign_keys = ON`、`PRAGMA busy_timeout`；写连接必须 WAL 模式。
-6. **删除关联列 = 同事务内 `DROP TABLE r_xxxx` + 删除 `_columns` 中源列及所有 `reverse_of` 指向它的反向列**。
-7. **`_nothing.format_version` 的任何变更必须附带对应的迁移脚本**，且迁移必须幂等、事务化、可从任意旧版本逐级升级。
+6. **删除关联列 = 同事务内 `DROP TABLE r_xxxx`**；反向列由 `origin_id` 上的 `ON DELETE CASCADE` 清理，源列与反向列共享同一张 `r_xxxx` 表。
+7. **`_nothing.format_version` 的任何变更必须附带对应的迁移脚本**，且迁移必须幂等、事务化、可从任意旧版本逐级升级。（预发布例外：format v4 的 `_meta` 单表重构明确拒绝 v1–v3 旧库，不提供数据迁移。）
 8. **公式列编译只放行白名单**：列引用、字面量、四则运算、白名单 SQL 函数。禁止用户公式注入子查询或任意 SQL。
 9. 写操作走**单一写连接 + 队列**（Rust 侧 `Mutex<Connection>`），读可用连接池。禁止多个连接并发写。
 
@@ -100,7 +101,7 @@ src-tauri/               Tauri 薄壳：commands/ 只做参数校验与转发；
 - **浮层只走 `src/ui/`**：`Dialog` / `PanelDialog` / `Menu` / `Popover` / `Tooltip` 由 Radix 提供行为（portal、焦点陷阱与归还、Esc、外点关闭、键盘导航），样式仍写在本项目 CSS。禁止在组件里手写 `modal-backdrop`、`dropdown-menu` + backdrop、`window.confirm`。canvas 网格没有 DOM 锚点，浮层用 `.virtual-anchor`（坐标处的 1×1 fixed 元素）挂到 Radix。
 - **表单只走 `src/ui/Field.tsx`**：`Field` 管 label / hint / error，控件统一 `--control-h` 高度与 hover / focus / invalid / disabled 四态。不要在组件里写裸 `<input>`（网格内的 `.cell-editor` 与搜索框除外，它们有特殊焦点语义）。
 - **颜色只能引用 token**：组件与 CSS 禁止写 hex/rgba，一律用 `--bg / --text / --accent / --tag-*` 等变量；主题切换只改 `[data-theme]`。Glide 的 `Theme` 由 `src/theme/grid.ts` 从 CSS 变量推导，切主题后必须重算（`useMemo` 依赖 `resolved`）。
-- **列外观**：`_columns.icon` 是 emoji 字符串，`_columns.color` 是 9 色调色板 token（gray/blue/green/yellow/orange/red/purple/pink/brown），**不是 hex**；暗色主题靠 token 的另一套值。列颜色作用于列头与单元格底色，不改文字颜色。
+- **列外观**：列节点的 `icon` 是 emoji 字符串，`color` 是 9 色调色板 token（gray/blue/green/yellow/orange/red/purple/pink/brown），**不是 hex**；暗色主题靠 token 的另一套值。列颜色作用于列头与单元格底色，不改文字颜色。
 - **文案只走 `src/i18n/`**：组件禁止新增中文字面量，用 `t("ns.key")`（键由 `zh.ts` 推导，拼错 = 编译失败）。新增语言只需加 `en.ts` 并在 `i18n/index.ts` 注册。用户数据（表名/列名/选项/视图名）不翻译。日期与数字展示走 `src/i18n/format.ts`，存储格式不变。
 - **外观偏好存 `localStorage`**（`nothing.theme`），不进加密库——它不是工作区数据，不应触发 `format_version` 迁移。
 
@@ -125,7 +126,7 @@ pnpm tauri build          # 打包
 
 ## 测试要求
 
-- **存储内核（schema/ 与 query/）的任何改动必须有 Rust 集成测试**，测试直接操作临时加密库文件，覆盖：DDL 事务回滚、列类型迁移、外键级联删除、视图编译器输出正确性、`_nothing` 校验与迁移。
+- **存储内核（schema/ 与 query/）的任何改动必须有 Rust 集成测试**，测试直接操作临时加密库文件，覆盖：DDL 事务回滚、列类型迁移、外键级联删除（含 `origin_id` 反向列）、视图编译器输出正确性、`_meta` 单表节点约束与 v4 格式校验。
 - 视图编译器测试需包含恶意输入用例（引号、`--`、`;`、SQL 关键字），验证参数绑定不被绕过。
 - 前端对 stores 和 ipc 层做单测；UI 组件测试非强制。
 

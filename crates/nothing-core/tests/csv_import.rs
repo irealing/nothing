@@ -85,7 +85,7 @@ fn import_creates_table_and_converts_values() {
     assert_eq!(report.table.name, "水果");
 
     let cols = ws.list_columns(&report.table.id).unwrap();
-    let types: Vec<ColumnType> = cols.iter().map(|c| c.col_type).collect();
+    let types: Vec<ColumnType> = cols.iter().map(|c| c.col_type()).collect();
     assert_eq!(
         types,
         [
@@ -285,8 +285,8 @@ fn first_column_is_always_text() {
         ))
         .unwrap();
     let cols = ws.list_columns(&report.table.id).unwrap();
-    assert_eq!(cols[0].col_type, ColumnType::Text);
-    assert_eq!(cols[1].col_type, ColumnType::Number);
+    assert_eq!(cols[0].col_type(), ColumnType::Text);
+    assert_eq!(cols[1].col_type(), ColumnType::Number);
 
     let ids = col_ids(&ws, &report.table.id);
     let page = ws.list_rows(&report.table.id, None, None).unwrap();

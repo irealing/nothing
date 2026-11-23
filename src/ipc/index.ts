@@ -20,6 +20,8 @@ import type {
   SettingsView,
   SqlResult,
   TableMeta,
+  ViewColumnMeta,
+  ViewColumnPatch,
   ViewMeta,
   ViewPatch,
   ViewResult,
@@ -99,6 +101,9 @@ export const tableSetTitle = (tableId: string, colId: string) =>
 export const tableSetIcon = (tableId: string, icon: string | null) =>
   call<TableMeta>("table_set_icon", { tableId, icon });
 
+export const tableSetColor = (tableId: string, color: string | null) =>
+  call<TableMeta>("table_set_color", { tableId, color });
+
 export const columnList = (tableId: string) =>
   call<ColumnMeta[]>("column_list", { tableId });
 
@@ -142,6 +147,12 @@ export const viewUpdate = (viewId: string, patch: ViewPatch) =>
   call<ViewMeta>("view_update", { viewId, patch });
 
 export const viewDelete = (viewId: string) => call<void>("view_delete", { viewId });
+
+export const viewColumnUpdate = (
+  viewId: string,
+  columnId: string,
+  patch: Omit<ViewColumnPatch, "column_id"> & { column_id?: string },
+) => call<ViewColumnMeta>("view_column_update", { viewId, columnId, patch });
 
 export const viewRun = (viewId: string, limit?: number, offset?: number) =>
   call<ViewResult>("view_run", { viewId, limit, offset });

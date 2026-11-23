@@ -12,6 +12,7 @@ import * as ipc from "../ipc";
 import { useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import type { ColumnMeta, Json, Row } from "../types";
+import { choicesOf } from "../types";
 import { Dialog } from "../ui/Dialog";
 import { IconCheck, IconLink, IconSearch, IconX } from "./icons";
 
@@ -39,11 +40,8 @@ export function SelectPopover({
   onCommit: (v: Json) => void;
   onClose: () => void;
 }) {
-  const multi = col.type === "multi_select";
-  const choices =
-    col.opts.kind === "select" || col.opts.kind === "multi_select"
-      ? col.opts.choices.map((c) => c.name)
-      : [];
+  const multi = col.data.kind === "multi_select";
+  const choices = choicesOf(col).map((c) => c.name);
   const selected: string[] = multi
     ? Array.isArray(value)
       ? (value as Json[]).map(String)
@@ -142,7 +140,7 @@ export function RelationModal({
   onClose: () => void;
 }) {
   const tables = useWorkspace((s) => s.tables);
-  const opts = col.opts.kind === "relation" ? col.opts : null;
+  const opts = col.data.kind === "relation" ? col.data : null;
   const targetTable = tables.find((x) => x.id === opts?.target_table_id) ?? null;
 
   const [query, setQuery] = useState("");

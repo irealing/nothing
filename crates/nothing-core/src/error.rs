@@ -19,6 +19,10 @@ pub enum AppError {
     #[error("数据库格式版本过新（{0}），请升级 nothing")]
     FormatTooNew(u32),
 
+    /// The workspace uses an obsolete format version (pre-release v1–v3).
+    #[error("数据库格式过旧（v{0}），请新建工作区")]
+    FormatTooOld(u32),
+
     /// A referenced object (table/column/view/row) does not exist.
     #[error("对象不存在: {0}")]
     NotFound(String),

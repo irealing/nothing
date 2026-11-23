@@ -14,6 +14,7 @@ import type {
   ViewMeta,
 } from "../types";
 import { isFilterGroup } from "../types";
+import { choicesOf, colType, formulaResultType } from "../types";
 import { IconPlus, IconSliders, IconSortAsc, IconSortDesc, IconX } from "./icons";
 import { PanelDialog } from "../ui/Dialog";
 import { t } from "../i18n";
@@ -54,28 +55,26 @@ const NO_VALUE_OPS: FilterOp[] = ["is_empty", "is_not_empty"];
 
 function effectiveKind(col: ColumnMeta | undefined): Kind {
   if (!col) return "text";
-  if (col.type === "formula") {
-    const rt = col.opts.kind === "formula" ? col.opts.result_type : "text";
+  const t = colType(col);
+  if (t === "formula") {
+    const rt = formulaResultType(col) ?? "text";
     if (rt === "number") return "number";
     if (rt === "date") return "date";
     if (rt === "checkbox") return "checkbox";
     return "text";
   }
-  if (col.type === "relation") return "relation";
-  if (col.type === "multi_select") return "multi_select";
-  if (col.type === "select") return "select";
-  if (col.type === "number") return "number";
-  if (col.type === "date") return "date";
-  if (col.type === "checkbox") return "checkbox";
+  if (t === "relation") return "relation";
+  if (t === "multi_select") return "multi_select";
+  if (t === "select") return "select";
+  if (t === "number") return "number";
+  if (t === "date") return "date";
+  if (t === "checkbox") return "checkbox";
   return "text";
 }
 
-function choicesOf(col: ColumnMeta | undefined): string[] {
+function choicesOfColumn(col: ColumnMeta | undefined): string[] {
   if (!col) return [];
-  if (col.opts.kind === "select" || col.opts.kind === "multi_select") {
-    return col.opts.choices.map((c) => c.name);
-  }
-  return [];
+  return choicesOf(col).map((c) => c.name);
 }
 
 
@@ -188,7 +187,7 @@ function ValueInput({
       );
     case "select":
     case "multi_select": {
-      const choices = choicesOf(col);
+      const choices = choicesOfColumn(col);
       if (choices.length > 0 && op !== "not_contains") {
         return (
           <select
@@ -234,17 +233,22 @@ function ValueInput({
 export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onClose: () => void }) {
   const columns = useWorkspace((s) => s.columns);
   const updateView = useWorkspace((s) => s.updateView);
+  const updateViewColumn = useWorkspace((s) => s.updateViewColumn);
 
   const initial = useMemo(
     () =>
       normalize(
-        view.config.kind === "grid"
-          ? view.config
-          : { filters: null, sorts: [], hidden_columns: [] },
+        view.data.kind === "grid"
+          ? view.data
+          : { filters: null, sorts: [] },
       ),
     [view],
   );
   const [draft, setDraft] = useState<GridConfig>(initial);
+  const hiddenIds = useMemo(
+    () => new Set(view.columns.filter((c) => c.hidden).map((c) => c.column_id)),
+    [view.columns],
+  );
 
   const colById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
   const filterable = columns; // relations included (emptiness ops only)
@@ -285,7 +289,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
   const save = async () => {
     const filters = draft.filters ? prune(clone(draft.filters)) : null;
     await updateView(view.id, {
-      config: { kind: "grid", filters, sorts: draft.sorts, hidden_columns: draft.hidden_columns },
+      data: { kind: "grid", filters, sorts: draft.sorts },
     });
     onClose();
   };
@@ -445,7 +449,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
         <>
           <button
             className="btn"
-            onClick={() => setDraft({ filters: null, sorts: [], hidden_columns: [] })}
+            onClick={() => setDraft({ filters: null, sorts: [] })}
           >
             {t("filter.reset")}
           </button>
@@ -489,7 +493,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
                   }}
                 >
                   {columns
-                    .filter((c) => c.type !== "relation")
+                    .filter((c) => colType(c) !== "relation")
                     .map((c) => (
                       <option key={c.id} value={c.id}>
                         {colLabel(c)}
@@ -522,7 +526,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
             <button
               className="btn dashed"
               onClick={() => {
-                const first = columns.find((c) => c.type !== "relation");
+                const first = columns.find((c) => colType(c) !== "relation");
                 if (first) {
                   setDraft((d) => ({
                     ...d,
@@ -542,12 +546,9 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
                 <label className="hidden-col" key={c.id}>
                   <input
                     type="checkbox"
-                    checked={draft.hidden_columns.includes(c.id)}
+                    checked={hiddenIds.has(c.id)}
                     onChange={(e) => {
-                      const hidden = e.target.checked
-                        ? [...draft.hidden_columns, c.id]
-                        : draft.hidden_columns.filter((id) => id !== c.id);
-                      setDraft((d) => ({ ...d, hidden_columns: hidden }));
+                      void updateViewColumn(view.id, c.id, { hidden: e.target.checked });
                     }}
                   />
                   {colLabel(c)}

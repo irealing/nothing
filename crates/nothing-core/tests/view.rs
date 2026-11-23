@@ -1,12 +1,12 @@
-//! Views: grid view metadata CRUD + validation; SQL views stored as real
-//! `CREATE VIEW` objects with whitelist validation (铁律 4).
+//! Views: grid view metadata CRUD + validation; SQL views are stored
+//! statements executed read-only (no physical `CREATE VIEW` object).
 
 mod common;
 
-use common::{emp_task_fixture, object_exists, raw, raw_insert_row};
+use common::{emp_task_fixture, raw, raw_insert_row};
 use nothing_core::{
     AppError, FilterNode, FilterOp, FilterRule, GridConfig, LogicOp, NewView, SortSpec, SqlConfig,
-    ViewConfig, ViewKind, ViewPatch,
+    ViewColumnPatch, ViewData, ViewKind, ViewPatch,
 };
 
 fn dbp(dir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
@@ -18,7 +18,7 @@ fn grid_view(name: &str, table_id: Option<String>, cfg: GridConfig) -> NewView {
         table_id,
         name: name.into(),
         kind: ViewKind::Grid,
-        config: ViewConfig::Grid(cfg),
+        data: ViewData::Grid(cfg),
     }
 }
 
@@ -27,7 +27,7 @@ fn sql_view(name: &str, statement: String) -> NewView {
         table_id: None,
         name: name.into(),
         kind: ViewKind::Sql,
-        config: ViewConfig::Sql(SqlConfig { statement }),
+        data: ViewData::Sql(SqlConfig { statement }),
     }
 }
 
@@ -55,12 +55,13 @@ fn grid_view_crud_and_validation() {
                     column_id: title_col.clone(),
                     desc: false,
                 }],
-                hidden_columns: vec![hours_col.clone()],
             },
         ))
         .unwrap();
     assert_eq!(view.kind, ViewKind::Grid);
     assert_eq!(view.table_id.as_deref(), Some(f.task_table.id.as_str()));
+    // The view materializes its own column nodes for every table column.
+    assert_eq!(view.columns.len(), 2);
 
     // duplicate name in same scope
     let err = ws
@@ -98,25 +99,37 @@ fn grid_view_crud_and_validation() {
     let views = ws.list_views(Some(&f.task_table.id)).unwrap();
     assert_eq!(views.len(), 1);
 
-    // update name + config
+    // update name + config + per-view column layout
     let updated = ws
         .update_view(
             &view.id,
             ViewPatch {
                 name: Some("高工时".into()),
-                config: Some(ViewConfig::Grid(GridConfig {
+                data: Some(ViewData::Grid(GridConfig {
                     filters: None,
                     sorts: vec![SortSpec {
-                        column_id: hours_col,
+                        column_id: hours_col.clone(),
                         desc: true,
                     }],
-                    hidden_columns: vec![],
                 })),
+                columns: Some(vec![ViewColumnPatch {
+                    column_id: hours_col.clone(),
+                    width: Some(240),
+                    hidden: Some(true),
+                    ..Default::default()
+                }]),
                 ..Default::default()
             },
         )
         .unwrap();
     assert_eq!(updated.name, "高工时");
+    let layout = updated
+        .columns
+        .iter()
+        .find(|c| c.column_id == hours_col)
+        .unwrap();
+    assert_eq!(layout.width, 240);
+    assert!(layout.hidden);
 
     ws.delete_view(&view.id).unwrap();
     assert!(matches!(
@@ -127,7 +140,57 @@ fn grid_view_crud_and_validation() {
 }
 
 #[test]
-fn sql_view_creates_real_view_object() {
+fn view_columns_are_independent_per_view() {
+    let (_dir, ws) = common::create_ws("vcol.nothing");
+    let f = emp_task_fixture(&ws);
+    let hours_col = f.task_cols[1].id.clone();
+    let a = ws
+        .create_view(grid_view(
+            "A",
+            Some(f.task_table.id.clone()),
+            GridConfig::default(),
+        ))
+        .unwrap();
+    let b = ws
+        .create_view(grid_view(
+            "B",
+            Some(f.task_table.id.clone()),
+            GridConfig::default(),
+        ))
+        .unwrap();
+
+    ws.update_view_column(
+        &a.id,
+        &hours_col,
+        ViewColumnPatch {
+            width: Some(320),
+            hidden: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let a2 = ws.get_view(&a.id).unwrap();
+    let b2 = ws.get_view(&b.id).unwrap();
+    let a_hours = a2
+        .columns
+        .iter()
+        .find(|c| c.column_id == hours_col)
+        .unwrap();
+    let b_hours = b2
+        .columns
+        .iter()
+        .find(|c| c.column_id == hours_col)
+        .unwrap();
+    assert_eq!(a_hours.width, 320);
+    assert!(a_hours.hidden);
+    // The other view is untouched.
+    assert_eq!(b_hours.width, 160);
+    assert!(!b_hours.hidden);
+}
+
+#[test]
+fn sql_view_is_metadata_only_and_runs_read_only() {
     let (dir, ws) = common::create_ws("sv.nothing");
     let f = emp_task_fixture(&ws);
     let conn = raw(&dbp(&dir, "sv.nothing"));
@@ -136,24 +199,19 @@ fn sql_view_creates_real_view_object() {
     drop(conn);
 
     let statement = format!(
-        "SELECT _rid, {} AS title FROM {} ORDER BY _rid",
-        f.task_cols[0].sql_name, f.task_table.sql_name
+        "SELECT _rid AS id, {} AS title FROM {} ORDER BY _rid",
+        f.task_cols[0].sql_name().unwrap(),
+        f.task_table.sql_name
     );
     let view = ws.create_view(sql_view("全部任务", statement)).unwrap();
 
-    let vobj = nothing_core::schema::ident::view_sql_name(&view.id);
-    let conn = raw(&dbp(&dir, "sv.nothing"));
-    assert!(object_exists(&conn, &vobj));
-    let ids: Vec<String> = conn
-        .prepare(&format!(r#"SELECT _rid FROM "{vobj}""#))
-        .unwrap()
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .map(|r| r.unwrap())
-        .collect();
-    assert_eq!(ids, vec!["t1".to_string(), "t2".to_string()]);
+    // No physical CREATE VIEW object exists any more.
+    assert!(ws.schema_objects("v_%").unwrap().is_empty());
+    let result = ws.run_sql_view(&view.id, None, None).unwrap();
+    assert_eq!(result.rows.len(), 2);
+    assert_eq!(result.rows[0][0], serde_json::json!("t1"));
 
-    // multi-table SQL view (the killer feature vs grid views)
+    // Multi-table SQL view still works (the killer feature vs grid views).
     let rel = ws
         .add_column(
             &f.task_table.id,
@@ -170,14 +228,11 @@ fn sql_view_creates_real_view_object() {
             ),
         ))
         .unwrap();
-    assert!(object_exists(
-        &conn,
-        &nothing_core::schema::ident::view_sql_name(&join_view.id)
-    ));
+    let joined = ws.run_sql_view(&join_view.id, None, None).unwrap();
+    assert_eq!(joined.rows.len(), 0);
 
-    // delete drops the physical view
     ws.delete_view(&view.id).unwrap();
-    assert!(!object_exists(&conn, &vobj));
+    assert!(ws.schema_objects("v_%").unwrap().is_empty());
 }
 
 #[test]
@@ -188,10 +243,10 @@ fn sql_view_validation_rejects_non_select() {
         format!("DELETE FROM {}", f.task_table.sql_name),
         format!("UPDATE {} SET _rid = 'x'", f.task_table.sql_name),
         format!("DROP TABLE {}", f.task_table.sql_name),
-        "INSERT INTO _tables VALUES (1,2,3,4,5,6,7,8)".to_string(),
+        "INSERT INTO _meta VALUES (1,2,3,4,5,6,7,8)".to_string(),
         format!("SELECT 1; DROP TABLE {}", f.task_table.sql_name),
         "PRAGMA key = 'hack'".to_string(),
-        "/* SELECT */ DROP TABLE _tables".to_string(),
+        "/* SELECT */ DROP TABLE _meta".to_string(),
         "-- x\nSELECT 1".to_string(),
         format!("SELECT * FROM does_not_exist_{}", "x"),
         "".to_string(),
@@ -203,7 +258,6 @@ fn sql_view_validation_rejects_non_select() {
             "stmt {stmt:?} → {err:?}"
         );
     }
-    // no view object leaked into the schema
     assert!(ws.schema_objects("v_%").unwrap().is_empty());
 }
 
@@ -224,7 +278,7 @@ fn sql_view_with_cte_and_trailing_semicolon_ok() {
 }
 
 #[test]
-fn sql_view_update_recreates_object() {
+fn sql_view_update_changes_stored_statement() {
     let (dir, ws) = common::create_ws("svu.nothing");
     let f = emp_task_fixture(&ws);
     let view = ws
@@ -235,48 +289,29 @@ fn sql_view_update_recreates_object() {
         .unwrap();
     let conn = raw(&dbp(&dir, "svu.nothing"));
     raw_insert_row(&conn, &f.task_table.sql_name, "t1");
-    let n: i64 = conn
-        .query_row(
-            &format!(
-                "SELECT n FROM {}",
-                nothing_core::schema::ident::view_sql_name(&view.id)
-            ),
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(n, 1);
     drop(conn);
+    let r = ws.run_sql_view(&view.id, None, None).unwrap();
+    assert_eq!(r.rows[0][0], serde_json::json!(1));
 
     ws.update_view(
         &view.id,
         ViewPatch {
-            config: Some(ViewConfig::Sql(SqlConfig {
+            data: Some(ViewData::Sql(SqlConfig {
                 statement: format!("SELECT count(*) * 10 AS n FROM {}", f.task_table.sql_name),
             })),
             ..Default::default()
         },
     )
     .unwrap();
-    let conn = raw(&dbp(&dir, "svu.nothing"));
-    let n: i64 = conn
-        .query_row(
-            &format!(
-                "SELECT n FROM {}",
-                nothing_core::schema::ident::view_sql_name(&view.id)
-            ),
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(n, 10);
+    let r = ws.run_sql_view(&view.id, None, None).unwrap();
+    assert_eq!(r.rows[0][0], serde_json::json!(10));
 
-    // invalid update leaves the old view intact
+    // invalid update leaves the old statement intact
     let err = ws
         .update_view(
             &view.id,
             ViewPatch {
-                config: Some(ViewConfig::Sql(SqlConfig {
+                data: Some(ViewData::Sql(SqlConfig {
                     statement: "DROP TABLE x".into(),
                 })),
                 ..Default::default()
@@ -285,5 +320,9 @@ fn sql_view_update_recreates_object() {
         .unwrap_err();
     assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
     let v = ws.get_view(&view.id).unwrap();
-    assert!(matches!(v.config, ViewConfig::Sql(_)));
+    assert!(matches!(v.data, ViewData::Sql(_)));
+    assert_eq!(
+        ws.run_sql_view(&view.id, None, None).unwrap().rows[0][0],
+        serde_json::json!(10)
+    );
 }

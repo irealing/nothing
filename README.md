@@ -136,9 +136,7 @@ cargo test --release --test query perf_100k -- --ignored --nocapture   # 10 万�
 
 ```
 _nothing        清单表（magic 身份标识 + format_version 格式版本）
-_tables         元数据：表定义（含标题列）
-_columns        元数据：列定义（UI 名称与物理列名解耦）
-_views          元数据：视图定义（网格配置 JSON / SQL 语句）
+_meta           元数据：单张自关联节点表（表/列/选项/视图/视图列）
 t_xxxx          用户表（每张表一个真实 SQLite 表）
 t_xxxx_fts      全文搜索虚拟表
 r_xxxx          关联表（每个关联列一张，含级联外键）

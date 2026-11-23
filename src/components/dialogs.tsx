@@ -89,7 +89,7 @@ export function CreateTableDialog({ onClose }: { onClose: () => void }) {
               .map((s) => s.trim())
               .filter(Boolean)
               .map((n) => ({ id: crypto.randomUUID(), name: n }));
-            return { name: e.name.trim(), type: e.type, opts: { kind: e.type, choices } };
+            return { name: e.name.trim(), type: e.type, choices };
           }
           return { name: e.name.trim(), type: e.type };
         }),

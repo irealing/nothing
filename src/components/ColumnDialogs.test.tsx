@@ -30,28 +30,25 @@ const SELECT_COL: ColumnMeta = {
   id: "c1",
   table_id: "t1",
   name: "状态",
-  sql_name: "c_status",
-  type: "select",
-  opts: { kind: "select", choices: [{ id: "a", name: "待办" }] },
   position: 0,
   width: 160,
-  visible: true,
-  is_reverse: false,
-  reverse_of: null,
   icon: null,
   color: null,
   align: null,
   default_value: null,
   created_at: "",
+  data: {
+    kind: "select",
+    sql_name: "c_status",
+    choices: [{ id: "a", name: "待办", color: null, position: 0 }],
+  },
 };
 
 const TEXT_COL: ColumnMeta = {
   ...SELECT_COL,
   id: "c2",
   name: "备注",
-  sql_name: "c_note",
-  type: "text",
-  opts: { kind: "plain" },
+  data: { kind: "text", sql_name: "c_note" },
 };
 
 beforeAll(() => {
@@ -93,7 +90,11 @@ describe("ColumnDialog", () => {
     const user = userEvent.setup();
     const blank: ColumnMeta = {
       ...SELECT_COL,
-      opts: { kind: "select", choices: [{ id: "a", name: "  " }] },
+      data: {
+        kind: "select",
+        sql_name: "c_status",
+        choices: [{ id: "a", name: "  ", color: null, position: 0 }],
+      },
     };
     render(<ColumnDialog existing={blank} onClose={() => {}} />);
 
@@ -107,11 +108,12 @@ describe("ColumnDialog", () => {
     const user = userEvent.setup();
     const dup: ColumnMeta = {
       ...SELECT_COL,
-      opts: {
+      data: {
         kind: "select",
+        sql_name: "c_status",
         choices: [
-          { id: "a", name: "待办" },
-          { id: "b", name: "待办" },
+          { id: "a", name: "待办", color: null, position: 0 },
+          { id: "b", name: "待办", color: null, position: 1 },
         ],
       },
     };

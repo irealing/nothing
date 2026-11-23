@@ -1,5 +1,5 @@
 //! Column presentation metadata (emoji icon, palette color, alignment,
-//! default values) and the format migrations that introduced it (铁律 7).
+//! default values) and the pre-release format reset.
 
 mod common;
 
@@ -10,7 +10,12 @@ fn col(name: &str, t: ColumnType) -> NewColumn {
     NewColumn {
         name: name.into(),
         col_type: t,
-        opts: None,
+        choices: Vec::new(),
+        target_table_id: None,
+        single: false,
+        reverse_name: None,
+        formula_expr: None,
+        formula_result_type: None,
         icon: None,
         color: None,
         align: None,
@@ -29,98 +34,46 @@ fn table_info(conn: &rusqlite::Connection, table: &str) -> Vec<String> {
 }
 
 #[test]
-fn fresh_workspace_is_current_version_and_has_presentation_columns() {
+fn fresh_workspace_is_current_version_and_has_one_node_table() {
     let (dir, ws) = common::create_ws("m.nothing");
     assert_eq!(
         ws.format_version().unwrap(),
         nothing_core::CURRENT_FORMAT_VERSION
     );
     let conn = raw(&db_path(&dir, "m.nothing"));
-    let cols = table_info(&conn, "_columns");
-    for name in ["icon", "color", "align", "default_value"] {
+    let cols = table_info(&conn, "_meta");
+    for name in [
+        "parent_id",
+        "kind",
+        "icon",
+        "color",
+        "width",
+        "col_type",
+        "ref_id",
+        "hidden",
+    ] {
         assert!(cols.iter().any(|c| c == name), "missing {name}: {cols:?}");
     }
+    // The old typed metadata tables are gone.
+    assert!(table_info(&conn, "_columns").is_empty());
+    assert!(table_info(&conn, "_tables").is_empty());
 }
 
 #[test]
-fn v2_workspace_upgrades_to_v3() {
-    let (dir, ws) = common::create_ws("old-v2.nothing");
-    let table = ws
-        .create_table("任务", vec![col("标题", ColumnType::Text)])
-        .unwrap();
-    let path = db_path(&dir, "old-v2.nothing");
+fn obsolete_format_is_rejected() {
+    let (dir, ws) = common::create_ws("old.nothing");
+    let path = db_path(&dir, "old.nothing");
     drop(ws);
-
-    // Rewind a current file to the v2 shape (alignment/defaults absent).
     {
         let conn = raw(&path);
-        conn.execute_batch(
-            r#"
-            ALTER TABLE "_columns" DROP COLUMN "align";
-            ALTER TABLE "_columns" DROP COLUMN "default_value";
-            UPDATE "_nothing" SET "value" = '2' WHERE "key" = 'format_version';
-            "#,
-        )
-        .unwrap();
-        assert!(!table_info(&conn, "_columns").iter().any(|c| c == "align"));
-    }
-
-    let ws = Workspace::open(&path, PASSWORD).unwrap();
-    assert_eq!(
-        ws.format_version().unwrap(),
-        nothing_core::CURRENT_FORMAT_VERSION
-    );
-    // Upgraded file still knows its table and columns.
-    let cols = ws.list_columns(&table.id).unwrap();
-    assert_eq!(cols.len(), 1);
-    assert_eq!(cols[0].name, "标题");
-    assert!(cols[0].align.is_none());
-    assert!(cols[0].default_value.is_none());
-    drop(ws);
-
-    // Re-opening an already-migrated file is a no-op (idempotent step).
-    let ws = Workspace::open(&path, PASSWORD).unwrap();
-    assert_eq!(
-        ws.format_version().unwrap(),
-        nothing_core::CURRENT_FORMAT_VERSION
-    );
-}
-
-#[test]
-fn v1_workspace_upgrades_through_to_v3() {
-    let (dir, ws) = common::create_ws("old-v1.nothing");
-    let table = ws
-        .create_table("任务", vec![col("标题", ColumnType::Text)])
-        .unwrap();
-    let path = db_path(&dir, "old-v1.nothing");
-    drop(ws);
-
-    // Rewind all the way to the v1 shape.
-    {
-        let conn = raw(&path);
-        conn.execute_batch(
-            r#"
-            ALTER TABLE "_columns" DROP COLUMN "icon";
-            ALTER TABLE "_columns" DROP COLUMN "color";
-            ALTER TABLE "_columns" DROP COLUMN "align";
-            ALTER TABLE "_columns" DROP COLUMN "default_value";
-            UPDATE "_nothing" SET "value" = '1' WHERE "key" = 'format_version';
-            "#,
+        conn.execute(
+            r#"UPDATE "_nothing" SET "value" = '3' WHERE "key" = 'format_version'"#,
+            [],
         )
         .unwrap();
     }
-
-    let ws = Workspace::open(&path, PASSWORD).unwrap();
-    assert_eq!(
-        ws.format_version().unwrap(),
-        nothing_core::CURRENT_FORMAT_VERSION
-    );
-    let cols = ws.list_columns(&table.id).unwrap();
-    assert_eq!(cols.len(), 1);
-    assert!(cols[0].icon.is_none());
-    assert!(cols[0].color.is_none());
-    assert!(cols[0].align.is_none());
-    assert!(cols[0].default_value.is_none());
+    let err = Workspace::open(&path, PASSWORD).unwrap_err();
+    assert!(matches!(err, AppError::FormatTooOld(3)), "{err:?}");
 }
 
 #[test]
@@ -134,7 +87,12 @@ fn icon_and_color_round_trip_and_clear() {
                 NewColumn {
                     name: "状态".into(),
                     col_type: ColumnType::Select,
-                    opts: None,
+                    choices: Vec::new(),
+                    target_table_id: None,
+                    single: false,
+                    reverse_name: None,
+                    formula_expr: None,
+                    formula_result_type: None,
                     icon: Some("🔥".into()),
                     color: Some("orange".into()),
                     align: None,
@@ -187,7 +145,12 @@ fn presentation_survives_a_type_change_rebuild() {
                 NewColumn {
                     name: "数量".into(),
                     col_type: ColumnType::Text,
-                    opts: None,
+                    choices: Vec::new(),
+                    target_table_id: None,
+                    single: false,
+                    reverse_name: None,
+                    formula_expr: None,
+                    formula_result_type: None,
                     icon: Some("🔢".into()),
                     color: Some("blue".into()),
                     align: None,

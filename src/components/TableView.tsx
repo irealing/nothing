@@ -22,11 +22,11 @@ import { t } from "../i18n";
 import { confirm } from "../ui/ConfirmDialog";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import type { ColumnMeta, Json, Row } from "../types";
+import { colType, formulaResultType, isReverse, sqlNameOf } from "../types";
 import FilterSortPanel from "./FilterSortPanel";
 import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
 import { InlineCellEditor } from "./GridEditors";
-import { movedColumnPosition } from "./columnOrder";
 import { EmojiMenu } from "../ui/ColumnPickers";
 import {
   IconCopy,
@@ -49,15 +49,15 @@ function asString(v: Json | undefined): string {
 
 /** Inline-editable through our own floating editor (IME safe). */
 function isInlineEditable(col: ColumnMeta): boolean {
-  if (col.is_reverse) return false;
-  return ["text", "number", "date"].includes(col.type);
+  if (isReverse(col)) return false;
+  return ["text", "number", "date"].includes(colType(col));
 }
 
 /** Opens a custom popup editor on click. */
 function hasPopupEditor(col: ColumnMeta): boolean {
-  if (col.type === "relation") return true; // both source and reverse
-  if (col.is_reverse) return false;
-  return col.type === "select" || col.type === "multi_select";
+  if (colType(col) === "relation") return true; // both source and reverse
+  if (isReverse(col)) return false;
+  return colType(col) === "select" || colType(col) === "multi_select";
 }
 
 /** Synthetic trailing header cell that opens the "add column" dialog. */
@@ -69,8 +69,8 @@ type CellAlign = "left" | "center" | "right";
  * read right-aligned and everything else stays left-aligned. */
 function cellAlign(col: ColumnMeta): CellAlign {
   if (col.align) return col.align;
-  if (col.type === "number") return "right";
-  if (col.type === "formula" && col.opts.kind === "formula" && col.opts.result_type === "number") {
+  if (colType(col) === "number") return "right";
+  if (colType(col) === "formula" && formulaResultType(col) === "number") {
     return "right";
   }
   return "left";
@@ -79,7 +79,7 @@ function cellAlign(col: ColumnMeta): CellAlign {
 function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string, string>): GridCell {
   const copyData = asString(value);
   const contentAlign = cellAlign(col);
-  switch (col.type) {
+  switch (colType(col)) {
     case "number":
       return {
         kind: GridCellKind.Number,
@@ -97,7 +97,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         copyData: value ? "true" : "false",
         contentAlign,
         allowOverlay: false,
-        readonly: col.is_reverse,
+        readonly: isReverse(col),
       };
     case "date": {
       const shown = formatDate(value);
@@ -107,12 +107,12 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         displayData: shown,
         copyData,
         contentAlign,
-        readonly: col.is_reverse,
+        readonly: isReverse(col),
         allowOverlay: false,
       };
     }
     case "formula": {
-      const rt = col.opts.kind === "formula" ? col.opts.result_type : "text";
+      const rt = formulaResultType(col) ?? "text";
       if (rt === "number") {
         return {
           kind: GridCellKind.Number,
@@ -184,7 +184,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
 }
 
 function headerIcon(col: ColumnMeta): GridColumnIcon | undefined {
-  switch (col.type) {
+  switch (colType(col)) {
     case "text":
       return GridColumnIcon.HeaderString;
     case "number":
@@ -241,6 +241,7 @@ export default function TableView() {
   const deleteRows = useWorkspace((s) => s.deleteRows);
   const deleteColumn = useWorkspace((s) => s.deleteColumn);
   const updateColumn = useWorkspace((s) => s.updateColumn);
+  const updateViewColumn = useWorkspace((s) => s.updateViewColumn);
   const setTitleColumn = useWorkspace((s) => s.setTitleColumn);
   const setTableIcon = useWorkspace((s) => s.setTableIcon);
   const searchRows = useWorkspace((s) => s.searchRows);
@@ -277,14 +278,14 @@ export default function TableView() {
   }, [activeTableId, activeViewId]);
 
   const columns = visibleColumns;
-  const allColumns = useWorkspace((s) => s.columns);
   const duplicateRows = useWorkspace((s) => s.duplicateRows);
+  const layout = activeView?.columns ?? [];
   const resolvedTheme = useTheme((s) => s.resolved);
   const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme]);
   const gridColumns: GridColumn[] = useMemo(
     () => [
       ...columns.map((c) => ({
-        title: `${c.icon ? `${c.icon} ` : ""}${c.name}${c.is_reverse ? t("column.reverseSuffix") : ""}`,
+        title: `${c.icon ? `${c.icon} ` : ""}${c.name}${isReverse(c) ? t("column.reverseSuffix") : ""}`,
         id: c.id,
         width: c.width || 160,
         // A custom emoji replaces the default type icon in the header.
@@ -512,24 +513,28 @@ export default function TableView() {
   /** Move a column one visible slot left/right (header-menu fallback). */
   const moveColumn = useCallback(
     (colId: string, dir: -1 | 1) => {
+      if (!activeViewId) return;
       const idx = columns.findIndex((c) => c.id === colId);
       if (idx < 0) return;
       const neighbor = columns[idx + dir];
       if (!neighbor) return;
-      const target = allColumns.findIndex((c) => c.id === neighbor.id);
-      if (target >= 0) void updateColumn(colId, { position: target });
+      const target = layout.findIndex((v) => v.column_id === neighbor.id);
+      if (target >= 0) void updateViewColumn(activeViewId, colId, { position: target });
     },
-    [columns, allColumns, updateColumn],
+    [columns, layout, activeViewId, updateViewColumn],
   );
 
-  /** Drag-to-reorder: map the visible drop index back onto the full column
-   * list (view-hidden columns included). */
+  /** Drag-to-reorder: map the visible drop index onto the view's own layout. */
   const onColumnMoved = useCallback(
     (startIndex: number, endIndex: number) => {
-      const move = movedColumnPosition(columns, allColumns, startIndex, endIndex);
-      if (move) void updateColumn(move.id, { position: move.position });
+      if (!activeViewId) return;
+      const moved = columns[startIndex];
+      const anchor = columns[Math.min(endIndex, columns.length - 1)];
+      if (!moved || !anchor) return;
+      const target = layout.findIndex((v) => v.column_id === anchor.id);
+      if (target >= 0) void updateViewColumn(activeViewId, moved.id, { position: target });
     },
-    [columns, allColumns, updateColumn],
+    [columns, layout, activeViewId, updateViewColumn],
   );
 
   const selectedRids = useMemo(() => {
@@ -688,7 +693,9 @@ export default function TableView() {
           }}
           onColumnResize={(column, newSize) => {
             if (column.id === ADD_COLUMN_ID) return;
-            if (column.id) void updateColumn(column.id, { width: newSize });
+            if (column.id && activeViewId) {
+              void updateViewColumn(activeViewId, column.id, { width: newSize });
+            }
           }}
           onColumnMoved={onColumnMoved}
           smoothScrollX={true}
@@ -717,7 +724,7 @@ export default function TableView() {
       )}
 
       {/* ---- popups ---- */}
-      {picker && pickerRow && picker.col.type !== "relation" && (
+      {picker && pickerRow && colType(picker.col) !== "relation" && (
         <SelectPopover
           col={picker.col}
           value={pickerRow.cells[picker.col.id] ?? null}
@@ -726,7 +733,7 @@ export default function TableView() {
           onClose={() => setPicker(null)}
         />
       )}
-      {picker && pickerRow && picker.col.type === "relation" && (
+      {picker && pickerRow && colType(picker.col) === "relation" && (
         <RelationModal
           col={picker.col}
           value={Array.isArray(pickerRow.cells[picker.col.id])
@@ -795,8 +802,8 @@ export default function TableView() {
           >
             {t("table.moveColumnRight")}
           </MenuItem>
-          {colMenu.col.type === "text" &&
-            !colMenu.col.is_reverse &&
+          {colType(colMenu.col) === "text" &&
+            !isReverse(colMenu.col) &&
             table.title_col_id !== colMenu.col.id && (
               <MenuItem
                 onSelect={() => {
@@ -809,13 +816,13 @@ export default function TableView() {
             )}
           <MenuItem
             onSelect={() => {
-              void navigator.clipboard.writeText(`${table.sql_name}.${colMenu.col.sql_name}`);
+              void navigator.clipboard.writeText(`${table.sql_name}.${sqlNameOf(colMenu.col)}`);
               setColMenu(null);
             }}
           >
             <IconCopy size={14} /> {t("table.copySqlRef")}
           </MenuItem>
-          {!colMenu.col.is_reverse && table.title_col_id !== colMenu.col.id && (
+          {!isReverse(colMenu.col) && table.title_col_id !== colMenu.col.id && (
             <>
               <MenuSeparator />
               <MenuItem
