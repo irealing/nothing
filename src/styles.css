@@ -369,6 +369,108 @@
   --ring: 0 0 0 2px rgba(74, 158, 234, 0.35);
 }
 
+/* ---- Fluent scheme -------------------------------------------------------
+ *
+ * A Fluent 2 (Windows 11) inspired skin applied on top of either mode. Only
+ * chrome tokens change: the 18-colour palette chips/tags stay on Radix so
+ * user-picked colours never drift between schemes. Slightly squared corners,
+ * neutral layered surfaces and crisp 2px focus rings carry the look.
+ */
+[data-scheme="fluent"] {
+  --radius-sm: 2px;
+  --radius: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}
+
+[data-scheme="fluent"][data-theme="light"] {
+  --bg: #fafafa;
+  --bg-side: #f3f2f1;
+  --bg-hover: #f0f0f0;
+  --bg-active: #e5e5e5;
+  --surface: #ffffff;
+  --surface-sunken: #f5f5f5;
+
+  --border: #e0e0e0;
+  --border-strong: #d1d1d1;
+
+  --accent-fg: #ffffff;
+  --accent-border: rgba(15, 108, 189, 0.4);
+  --danger-border: rgba(209, 52, 56, 0.35);
+  --text: #242424;
+  --text-mid: #616161;
+  --text-weak: #8a8a8a;
+
+  --accent: #0f6cbd;
+  --accent-strong: #115ea3;
+  --accent-weak: rgba(15, 108, 189, 0.12);
+  --danger: #d13438;
+  --danger-weak: rgba(209, 52, 56, 0.1);
+  --success: #107c10;
+  --success-weak: rgba(16, 124, 16, 0.12);
+
+  --selection: rgba(15, 108, 189, 0.2);
+  --scroll-thumb: rgba(0, 0, 0, 0.18);
+  --scroll-thumb-hover: rgba(0, 0, 0, 0.3);
+  --overlay: rgba(0, 0, 0, 0.4);
+  --toast-bg: #292929;
+  --toast-fg: #ffffff;
+
+  --welcome-bg:
+    radial-gradient(900px 500px at 15% -10%, rgba(15, 108, 189, 0.1), transparent 60%),
+    radial-gradient(800px 500px at 110% 110%, rgba(16, 124, 16, 0.07), transparent 55%),
+    linear-gradient(160deg, #fbfbfb 0%, #f0f3f7 100%);
+
+  --shadow-1: 0 0.3px 0.9px rgba(0, 0, 0, 0.07), 0 1.6px 3.6px rgba(0, 0, 0, 0.09);
+  --shadow-2: 0 1.6px 3.6px rgba(0, 0, 0, 0.11), 0 6.4px 14.4px rgba(0, 0, 0, 0.09);
+  --shadow-3: 0 6.4px 14.4px rgba(0, 0, 0, 0.16), 0 0.8px 1.8px rgba(0, 0, 0, 0.1);
+  --ring: 0 0 0 2px rgba(15, 108, 189, 0.45);
+}
+
+[data-scheme="fluent"][data-theme="dark"] {
+  --bg: #1f1f1f;
+  --bg-side: #252525;
+  --bg-hover: #2e2e2e;
+  --bg-active: #383838;
+  --surface: #292929;
+  --surface-sunken: #1a1a1a;
+
+  --border: #3a3a3a;
+  --border-strong: #4a4a4a;
+
+  --accent-fg: #0b1c2c;
+  --accent-border: rgba(71, 158, 245, 0.5);
+  --danger-border: rgba(255, 107, 107, 0.4);
+  --text: #f2f2f2;
+  --text-mid: #c8c8c8;
+  --text-weak: #9a9a9a;
+
+  --accent: #479ef5;
+  --accent-strong: #62abf5;
+  --accent-weak: rgba(71, 158, 245, 0.18);
+  --danger: #ff6b6b;
+  --danger-weak: rgba(255, 107, 107, 0.14);
+  --success: #54b054;
+  --success-weak: rgba(84, 176, 84, 0.16);
+
+  --selection: rgba(71, 158, 245, 0.3);
+  --scroll-thumb: rgba(255, 255, 255, 0.18);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.3);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --toast-bg: #323232;
+  --toast-fg: #f5f5f5;
+
+  --welcome-bg:
+    radial-gradient(900px 500px at 15% -10%, rgba(71, 158, 245, 0.12), transparent 60%),
+    radial-gradient(800px 500px at 110% 110%, rgba(84, 176, 84, 0.08), transparent 55%),
+    linear-gradient(160deg, #1f1f1f 0%, #22262b 100%);
+
+  --shadow-1: 0 0.3px 0.9px rgba(0, 0, 0, 0.3), 0 1.6px 3.6px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 1.6px 3.6px rgba(0, 0, 0, 0.4), 0 6.4px 14.4px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 6.4px 14.4px rgba(0, 0, 0, 0.55), 0 0.8px 1.8px rgba(0, 0, 0, 0.4);
+  --ring: 0 0 0 2px rgba(71, 158, 245, 0.5);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -650,8 +752,11 @@ body,
 .nav-icon {
   color: var(--text-weak);
   width: 16px;
+  height: 16px;
+  border-radius: 4px;
   display: inline-flex;
   justify-content: center;
+  align-items: center;
   flex-shrink: 0;
 }
 
@@ -739,6 +844,24 @@ body,
 
 .nav-empty .btn {
   margin-top: 2px;
+}
+
+/* Start actions (new table / import CSV) appear in the sidebar empty state in
+ * a column, and inside the main empty card in a row. */
+.start-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.start-actions.stacked,
+.nav-empty .start-actions {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 6px;
 }
 
 .nav-rename {
@@ -1990,13 +2113,61 @@ input[type="checkbox"] {
   font-size: 12px;
 }
 
+/* ---------- top progress ---------- */
+
+.top-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 900;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity 0.18s ease;
+}
+
+.top-progress.active {
+  opacity: 1;
+}
+
+.top-progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: top-progress-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes top-progress-slide {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
 /* ---------- toast ---------- */
 
-.toast {
+.toast-stack {
   position: fixed;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 500;
+  pointer-events: none;
+}
+
+.toast {
   background: var(--toast-bg);
   color: var(--toast-fg);
   border-radius: var(--radius-lg);
@@ -2007,7 +2178,7 @@ input[type="checkbox"] {
   font-size: 13px;
   box-shadow: var(--shadow-3);
   cursor: pointer;
-  z-index: 500;
+  pointer-events: auto;
   max-width: 640px;
   animation: toast-in 0.2s ease;
 }
@@ -2021,6 +2192,14 @@ input[type="checkbox"] {
   background: var(--danger);
   flex-shrink: 0;
   margin-top: 0.5px;
+}
+
+.toast.success .toast-icon {
+  background: var(--success);
+}
+
+.toast.info .toast-icon {
+  background: var(--accent);
 }
 
 .toast-text {
@@ -2138,6 +2317,38 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-1);
 }
 
+.empty-card .start-actions {
+  margin-top: 4px;
+}
+
+/* ---- zero-column table: nudge the first column into existence ---- */
+
+.grid-hint-bar {
+  padding: 7px 16px;
+  font-size: 12px;
+  color: var(--text-mid);
+  background: var(--accent-weak);
+  border-bottom: 1px solid var(--border);
+}
+
+.grid-empty-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--bg);
+  color: var(--text-weak);
+  font-size: 13px;
+}
+
+.grid-empty-overlay p {
+  margin: 0;
+}
+
 /* ---------- view tabs ---------- */
 
 .view-tabs {
@@ -2195,6 +2406,20 @@ input[type="checkbox"] {
 .tab-menu-btn {
   width: 18px;
   height: 18px;
+}
+
+/* Inline rename: matches the tab label's metrics so the strip does not jump. */
+.view-tab-rename {
+  width: 110px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
 }
 
 .view-tabs-sep {
@@ -2806,6 +3031,26 @@ input[type="checkbox"] {
   border-radius: var(--radius);
   box-shadow: 0 0 0 3px var(--accent-weak), var(--shadow-2);
   outline: none;
+}
+
+/* Rejected value (e.g. "12abc" in a number column): stay open, look wrong. */
+.cell-editor.invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-weak), var(--shadow-2);
+  animation: cell-editor-shake 0.16s ease;
+}
+
+@keyframes cell-editor-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(-3px);
+  }
+  65% {
+    transform: translateX(3px);
+  }
 }
 
 /* ---------- column dialog extras ---------- */
@@ -3697,6 +3942,14 @@ input[type="checkbox"] {
   background: var(--bg);
   color: var(--text);
   box-shadow: var(--shadow-1);
+}
+
+/* Scheme buttons carry labels instead of icons. */
+.theme-switch-btn.scheme {
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }/* ---------- virtual anchors (canvas-anchored overlays) ---------- */
 
 .virtual-anchor {

@@ -12,6 +12,9 @@ import { colType } from "../types";
 import type { Anchor } from "./CellEditors";
 import { t } from "../i18n";
 
+/** Tab moves sideways and keeps editing; Enter closes and moves the selection. */
+export type EditorMove = -1 | 1 | "down" | "up";
+
 export interface InlineEditorRequest {
   col: ColumnMeta;
   rowIdx: number;
@@ -30,13 +33,14 @@ export function textForEditor(col: ColumnMeta, value: Json): string {
 }
 
 /** Translate the input text back into a JSON cell value. Invalid numbers are
- * rejected (`undefined`) so the edit is simply discarded. Exported for tests. */
+ * rejected (`undefined`) so the editor can flag the input instead of writing
+ * garbage. Exported for tests. */
 export function valueFromEditor(col: ColumnMeta, text: string): Json | undefined {
   if (colType(col) === "number") {
     const t = text.trim();
     if (t === "") return null;
     const n = Number(t);
-    return Number.isNaN(n) ? undefined : n;
+    return Number.isFinite(n) ? n : undefined;
   }
   if (colType(col) === "date") {
     const t = text.trim();
@@ -44,6 +48,9 @@ export function valueFromEditor(col: ColumnMeta, text: string): Json | undefined
   }
   return text === "" ? null : text;
 }
+
+/** Scroll only counts once the editor has settled (opening it may auto-scroll). */
+const SCROLL_GRACE_MS = 150;
 
 export function InlineCellEditor({
   request,
@@ -54,15 +61,16 @@ export function InlineCellEditor({
   request: InlineEditorRequest;
   onCommit: (value: Json) => void;
   onClose: () => void;
-  onMove: (dir: -1 | 1) => void;
+  onMove: (dir: EditorMove) => void;
 }) {
   const { col, anchor, value } = request;
   const original = textForEditor(col, value);
   const [text, setText] = useState(original);
+  const [invalid, setInvalid] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   // Guards against double commits (Enter → close → outside mousedown).
   const done = useRef(false);
-  const commitRef = useRef<() => void>(() => {});
+  const commitRef = useRef<(move?: EditorMove) => void>(() => {});
 
   useEffect(() => {
     const el = inputRef.current;
@@ -86,11 +94,34 @@ export function InlineCellEditor({
     const onDown = (e: MouseEvent) => {
       const el = inputRef.current;
       if (el && e.target instanceof Node && !el.contains(e.target)) {
+        // An invalid value must not trap the user: discard it on outside click.
+        if (!done.current && valueFromEditor(col, text) === undefined && text !== original) {
+          done.current = true;
+          onClose();
+          return;
+        }
         commitRef.current();
       }
     };
     document.addEventListener("mousedown", onDown, true);
     return () => document.removeEventListener("mousedown", onDown, true);
+  }, [col, text, original, onClose]);
+
+  // Scrolling the grid would leave the fixed-position editor floating over a
+  // different cell, so a scroll commits the edit and closes.
+  useEffect(() => {
+    let armed = false;
+    const arm = window.setTimeout(() => {
+      armed = true;
+    }, SCROLL_GRACE_MS);
+    const onScroll = () => {
+      if (armed) commitRef.current();
+    };
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      clearTimeout(arm);
+      window.removeEventListener("scroll", onScroll, true);
+    };
   }, []);
 
   const finish = (fn: () => void) => {
@@ -99,16 +130,27 @@ export function InlineCellEditor({
     fn();
   };
 
-  const commit = (move?: -1 | 1) => {
-    finish(() => {
-      const unchanged = text === original;
-      if (!unchanged) {
-        const next = valueFromEditor(col, text);
-        if (next !== undefined) onCommit(next);
+  const commit = (move?: EditorMove) => {
+    if (done.current) return;
+    const unchanged = text === original;
+    if (!unchanged) {
+      const next = valueFromEditor(col, text);
+      if (next === undefined) {
+        // Keep the editor open and flag it: silently dropping an edit is how
+        // "my number vanished" bugs feel.
+        setInvalid(true);
+        inputRef.current?.select();
+        return;
       }
+      done.current = true;
+      onCommit(next);
       if (move) onMove(move);
       else onClose();
-    });
+      return;
+    }
+    done.current = true;
+    if (move) onMove(move);
+    else onClose();
   };
   commitRef.current = commit;
 
@@ -122,12 +164,13 @@ export function InlineCellEditor({
   return (
     <input
       ref={inputRef}
-      className="cell-editor"
+      className={invalid ? "cell-editor invalid" : "cell-editor"}
       style={style}
       type={colType(col) === "number" ? "number" : colType(col) === "date" ? "date" : "text"}
       step={colType(col) === "number" ? "any" : undefined}
       inputMode={colType(col) === "number" ? "decimal" : undefined}
       value={text}
+      aria-invalid={invalid || undefined}
       placeholder={
         colType(col) === "number"
           ? t("cell.numberPlaceholder")
@@ -135,7 +178,10 @@ export function InlineCellEditor({
             ? t("cell.datePlaceholder")
             : t("cell.inputPlaceholder")
       }
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => {
+        setText(e.target.value);
+        if (invalid) setInvalid(false);
+      }}
       // Keep glide's window-level mousedown away from clicks inside the editor.
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
@@ -143,7 +189,7 @@ export function InlineCellEditor({
         if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         if (e.key === "Enter") {
           e.preventDefault();
-          commit();
+          commit(e.shiftKey ? "up" : "down");
         } else if (e.key === "Escape") {
           e.preventDefault();
           cancel();

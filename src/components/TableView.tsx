@@ -21,14 +21,16 @@ import { formatDate } from "../i18n/format";
 import { t } from "../i18n";
 import { confirm } from "../ui/ConfirmDialog";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
-import type { ColumnMeta, Json, Row } from "../types";
-import { colType, formulaResultType, isReverse, sqlNameOf } from "../types";
+import { toast } from "../stores/toast";
+import type { Cells, ColumnMeta, Json, Row } from "../types";
+import { choicesOf, colType, formulaResultType, isReverse, sqlNameOf } from "../types";
 import { createOptionCellRenderer, optionCellFor } from "./OptionCell";
 import FilterSortPanel from "./FilterSortPanel";
 import ViewConfigBar from "./ViewConfigBar";
 import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
-import { InlineCellEditor } from "./GridEditors";
+import { InlineCellEditor, type EditorMove } from "./GridEditors";
+import StartActions from "./StartActions";
 import { EmojiMenu } from "../ui/ColumnPickers";
 import {
   IconCopy,
@@ -196,6 +198,88 @@ function headerIcon(col: ColumnMeta): GridColumnIcon | undefined {
   }
 }
 
+/** `YYYY-MM-DD` from the shapes spreadsheets actually produce. */
+function normalizePasteDate(raw: string): string | undefined {
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(raw);
+  if (iso) {
+    const [, y, m, d] = iso;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  const ymd = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(raw);
+  if (ymd) {
+    const [, y, m, d] = ymd;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  const mdy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+  if (mdy) {
+    const [, m, d, y] = mdy;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  return undefined;
+}
+
+/** Pick a choice by exact name first, then case-insensitively. */
+function matchChoice(col: ColumnMeta, name: string) {
+  const choices = choicesOf(col);
+  return (
+    choices.find((c) => c.name === name) ??
+    choices.find((c) => c.name.toLowerCase() === name.toLowerCase())
+  );
+}
+
+/**
+ * Parse one pasted string into a cell value for `col`.
+ * `undefined` means "cannot represent this as the column type" — the caller
+ * skips the cell and counts it, instead of writing a wrong value.
+ */
+export function parsePasteValue(col: ColumnMeta, raw: string): Json | undefined {
+  const text = raw.replace(/\r/g, "");
+  switch (colType(col)) {
+    case "number": {
+      const s = text.trim();
+      if (s === "") return null;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    case "checkbox": {
+      const s = text.trim().toLowerCase();
+      if (s === "" || ["false", "0", "no", "n", "否", "☐"].includes(s)) return false;
+      if (["true", "1", "yes", "y", "是", "✓", "✔", "☑"].includes(s)) return true;
+      return undefined;
+    }
+    case "date": {
+      const s = text.trim();
+      if (s === "") return null;
+      return normalizePasteDate(s);
+    }
+    case "select": {
+      const s = text.trim();
+      if (s === "") return null;
+      // With no options configured the backend accepts any name.
+      if (choicesOf(col).length === 0) return s;
+      return matchChoice(col, s)?.name;
+    }
+    case "multi_select": {
+      const s = text.trim();
+      if (s === "") return null;
+      const parts = s
+        .split(/[,，;；、]/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (parts.length === 0) return null;
+      if (choicesOf(col).length === 0) return parts;
+      const names = parts.map((part) => matchChoice(col, part)?.name);
+      // A partial match would silently drop labels — reject the whole cell.
+      return names.every((n): n is string => !!n) ? names : undefined;
+    }
+    case "formula":
+    case "relation":
+      return undefined;
+    default:
+      return text === "" ? null : text;
+  }
+}
+
 interface PickerState {
   col: ColumnMeta;
   rowIdx: number;
@@ -213,6 +297,9 @@ interface EditorState {
 /** Rows fetched around the visible region (in row counts). */
 const OVERSCAN = PAGE_SIZE * 2;
 
+/** Upper bound on cells a single Delete press will clear (safety valve). */
+const MAX_CLEAR_CELLS = 2000;
+
 export default function TableView() {
   const activeTableId = useWorkspace((s) => s.activeTableId);
   const tables = useWorkspace((s) => s.tables);
@@ -229,6 +316,8 @@ export default function TableView() {
   const fetchWindow = useWorkspace((s) => s.fetchWindow);
   const insertRow = useWorkspace((s) => s.insertRow);
   const updateCell = useWorkspace((s) => s.updateCell);
+  const updateCells = useWorkspace((s) => s.updateCells);
+  const insertRows = useWorkspace((s) => s.insertRows);
   const deleteRows = useWorkspace((s) => s.deleteRows);
   const deleteColumn = useWorkspace((s) => s.deleteColumn);
   const updateColumn = useWorkspace((s) => s.updateColumn);
@@ -242,6 +331,12 @@ export default function TableView() {
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [colMenu, setColMenu] = useState<{ col: ColumnMeta; x: number; y: number } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{
+    rowIdx: number;
+    colIdx: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const [headerEmoji, setHeaderEmoji] = useState<{ col: ColumnMeta; x: number; y: number } | null>(null);
   const [colDialog, setColDialog] = useState<{ existing: ColumnMeta | null } | null>(null);
   const [gridSelection, setGridSelection] = useState<GridSelection>({
@@ -272,8 +367,9 @@ export default function TableView() {
   const duplicateRows = useWorkspace((s) => s.duplicateRows);
   const layout = activeView?.columns ?? [];
   const resolvedTheme = useTheme((s) => s.resolved);
-  const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme]);
-  const optionPalette = useMemo(() => readOptionPalette(), [resolvedTheme]);
+  const scheme = useTheme((s) => s.scheme);
+  const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme, scheme]);
+  const optionPalette = useMemo(() => readOptionPalette(), [resolvedTheme, scheme]);
   const customRenderers = useMemo(
     () => [createOptionCellRenderer(optionPalette)],
     [optionPalette],
@@ -361,6 +457,162 @@ export default function TableView() {
     [columns, getRow, activeTableId, updateCell],
   );
 
+  /** Value that means "empty" for a column (checkbox columns are NOT NULL). */
+  const emptyValue = useCallback((meta: ColumnMeta): Json => {
+    return colType(meta) === "checkbox" ? false : null;
+  }, []);
+
+  /**
+   * Delete/Backspace on a cell or range. We handle it ourselves instead of
+   * letting Glide clear `Text` cells only: select/relation cells need an
+   * explicit null, checkbox cells need `false`, and formula/reverse columns
+   * must not be touched at all. One batched write per row, one refetch overall.
+   *
+   * Row-marker selections are intentionally ignored: there is no undo, so a
+   * stray Delete must not wipe whole rows (deleting rows stays explicit and
+   * confirmed).
+   */
+  const onDelete = useCallback(
+    (selection: GridSelection) => {
+      if (!activeTableId) return true;
+      const range = selection.current?.range;
+      if (!range) return true;
+
+      const rowIdxs: number[] = [];
+      for (let y = range.y; y < range.y + range.height; y++) rowIdxs.push(y);
+      const colStart = range.x;
+      const colEnd = range.x + range.width;
+
+      const updates: { rid: string; cells: Cells }[] = [];
+      let cleared = 0;
+      for (const rowIdx of rowIdxs) {
+        if (cleared >= MAX_CLEAR_CELLS) break;
+        const r = getRow(rowIdx);
+        if (!r) continue;
+        const cells: Cells = {};
+        for (let c = Math.max(0, colStart); c < Math.min(columns.length, colEnd); c++) {
+          const meta = columns[c];
+          if (!meta || colType(meta) === "formula" || isReverse(meta)) continue;
+          if (cleared >= MAX_CLEAR_CELLS) break;
+          cells[meta.id] = emptyValue(meta);
+          cleared += 1;
+        }
+        if (Object.keys(cells).length > 0) updates.push({ rid: r.rid, cells });
+      }
+      if (updates.length > 0) void updateCells(updates);
+      return true;
+    },
+    [activeTableId, columns, getRow, updateCells, emptyValue],
+  );
+
+  const onCellContextMenu = useCallback(
+    (cell: Item, event: CellClickedEventArgs) => {
+      event.preventDefault();
+      const rowIdx = cell[1];
+      if (rowIdx < 0 || rowIdx >= total) return;
+      const colIdx = cell[0] >= 0 && cell[0] < columns.length ? cell[0] : 0;
+      setEditor(null);
+      setPicker(null);
+      // Right-click also parks the selection on the clicked cell.
+      if (columns.length > 0) {
+        setGridSelection({
+          columns: CompactSelection.empty(),
+          rows: CompactSelection.empty(),
+          current: {
+            cell: [colIdx, rowIdx],
+            range: { x: colIdx, y: rowIdx, width: 1, height: 1 },
+            rangeStack: [],
+          },
+        });
+      }
+      setCellMenu({
+        rowIdx,
+        colIdx,
+        x: event.bounds.x + 12,
+        y: event.bounds.y + event.bounds.height,
+      });
+    },
+    [columns.length, total],
+  );
+
+  /** Duplicate rows and scroll the first copy into view (visible feedback). */
+  const duplicateAndReveal = useCallback(
+    (rids: string[]) => {
+      if (rids.length === 0) return;
+      void duplicateRows(rids).then(() => {
+        const { total: nextTotal } = useWorkspace.getState();
+        if (nextTotal > 0) gridRef.current?.scrollTo(0, nextTotal - 1, "vertical");
+      });
+    },
+    [duplicateRows],
+  );
+
+  /**
+   * TSV paste from a spreadsheet. Text lands in the grid as typed, the rest is
+   * coerced per column; cells that cannot be represented are skipped and
+   * counted rather than written as garbage. Rows past the end are appended.
+   */
+  const onPaste = useCallback(
+    (target: Item, values: readonly (readonly string[])[]) => {
+      if (!activeTableId || values.length === 0) return false;
+      const [startCol, startRow] = target;
+      if (startCol < 0 || startRow < 0) return false;
+
+      const updates: { rid: string; cells: Cells }[] = [];
+      const appended: Cells[] = [];
+      let pasted = 0;
+      let skipped = 0;
+
+      values.forEach((rowValues, r) => {
+        const rowIdx = startRow + r;
+        const row = rowIdx < total ? getRow(rowIdx) : undefined;
+        const cells: Cells = {};
+        rowValues.forEach((raw, c) => {
+          const meta = columns[startCol + c];
+          if (
+            !meta ||
+            colType(meta) === "formula" ||
+            colType(meta) === "relation" ||
+            isReverse(meta)
+          ) {
+            skipped += 1;
+            return;
+          }
+          const value = parsePasteValue(meta, raw);
+          if (value === undefined) {
+            skipped += 1;
+            return;
+          }
+          cells[meta.id] = value;
+        });
+        const count = Object.keys(cells).length;
+        if (count === 0) return;
+        if (rowIdx >= total) {
+          appended.push(cells);
+          pasted += count;
+        } else if (row) {
+          updates.push({ rid: row.rid, cells });
+          pasted += count;
+        } else {
+          // Outside the cached window: we cannot address the row by rid.
+          skipped += count;
+        }
+      });
+
+      if (pasted === 0 && skipped === 0) return false;
+      if (updates.length > 0 || appended.length > 0) {
+        void (async () => {
+          if (updates.length > 0) await updateCells(updates);
+          if (appended.length > 0) await insertRows(appended);
+        })();
+      }
+      if (pasted > 0) toast.success(t("toasts.pastedCells", { count: pasted }));
+      if (skipped > 0) toast.info(t("toasts.pastedSkipped", { count: skipped }));
+      return true;
+    },
+    [activeTableId, columns, getRow, total, updateCells, insertRows],
+  );
+
   const anchorFor = useCallback((col: number, row: number): Anchor | null => {
     // glide's bounds are already client (viewport) coordinates.
     const bounds = gridRef.current?.getBounds(col, row);
@@ -441,9 +693,45 @@ export default function TableView() {
     gridRef.current?.focus();
   }, []);
 
+  /** Put the single-cell selection on a cell (spreadsheet-style navigation). */
+  const selectCell = useCallback(
+    (colIdx: number, rowIdx: number) => {
+      if (colIdx < 0 || colIdx >= columns.length || rowIdx < 0 || rowIdx >= total) {
+        gridRef.current?.focus();
+        return;
+      }
+      const cell: Item = [colIdx, rowIdx];
+      setGridSelection({
+        columns: CompactSelection.empty(),
+        rows: CompactSelection.empty(),
+        current: {
+          cell,
+          range: { x: colIdx, y: rowIdx, width: 1, height: 1 },
+          rangeStack: [],
+        },
+      });
+      gridRef.current?.scrollTo(colIdx, rowIdx, "vertical");
+      gridRef.current?.focus();
+    },
+    [columns.length, total],
+  );
+
   const moveEditor = useCallback(
-    (dir: -1 | 1) => {
+    (dir: EditorMove) => {
       if (!editor) return;
+      // Enter/Shift+Enter end editing and move the selection vertically.
+      if (dir === "down" || dir === "up") {
+        const target = editor.rowIdx + (dir === "down" ? 1 : -1);
+        const col = editor.colIdx;
+        setEditor(null);
+        // At the top/bottom edge the edit still ends, the selection stays put.
+        if (target < 0 || target >= total) {
+          gridRef.current?.focus();
+          return;
+        }
+        selectCell(col, target);
+        return;
+      }
       let idx = editor.colIdx + dir;
       while (idx >= 0 && idx < columns.length && !isInlineEditable(columns[idx])) idx += dir;
       if (idx < 0 || idx >= columns.length) {
@@ -465,7 +753,7 @@ export default function TableView() {
         anchor,
       });
     },
-    [columns, editor, getRow, anchorFor, closeEditor],
+    [columns, editor, getRow, anchorFor, closeEditor, selectCell, total],
   );
 
   const onHeaderContextMenu = useCallback(
@@ -565,6 +853,7 @@ export default function TableView() {
             <IconTable size={26} />
           </span>
           <p>{t("table.empty")}</p>
+          <StartActions className="start-actions row" />
         </div>
       </div>
     );
@@ -572,6 +861,10 @@ export default function TableView() {
 
   const pickerRow = picker ? getRow(picker.rowIdx) : undefined;
   const editorCol = editor ? columns[editor.colIdx] : undefined;
+  const cellMenuRow = cellMenu ? getRow(cellMenu.rowIdx) : undefined;
+  const cellMenuCol = cellMenu ? columns[cellMenu.colIdx] : undefined;
+  const canClearCell =
+    !!cellMenuCol && colType(cellMenuCol) !== "formula" && !isReverse(cellMenuCol);
 
   return (
     <div className="table-view">
@@ -644,14 +937,7 @@ export default function TableView() {
           className="btn"
           disabled={selectedRids.length === 0}
           title={t("table.duplicateRowsHint")}
-          onClick={() =>
-            void duplicateRows(selectedRids).then(() => {
-              // Copies land at the end (rows are ULID-ordered); bring the last
-              // one into view so the action has visible feedback.
-              const { total } = useWorkspace.getState();
-              if (total > 0) gridRef.current?.scrollTo(0, total - 1, "vertical");
-            })
-          }
+          onClick={() => duplicateAndReveal(selectedRids)}
         >
           <IconCopy size={14} />{" "}
           {selectedRids.length > 0
@@ -688,6 +974,12 @@ export default function TableView() {
           onOpenPanel={() => setPanelOpen(true)}
         />
       )}
+      {total === 0 &&
+        columns.length > 0 &&
+        !searchQuery &&
+        !(activeView?.data.kind === "grid" && activeView.data.filters !== null) && (
+          <div className="grid-hint-bar">{t("table.emptyRowsHint")}</div>
+        )}
       <div className="grid-wrap">
         <DataEditor
           ref={gridRef}
@@ -699,6 +991,9 @@ export default function TableView() {
           onCellEdited={onCellEdited}
           onCellClicked={onCellClicked}
           onCellActivated={onCellActivated}
+          onCellContextMenu={onCellContextMenu}
+          onDelete={onDelete}
+          onPaste={onPaste}
           onHeaderClicked={onHeaderClicked}
           onHeaderContextMenu={onHeaderContextMenu}
           onHeaderMenuClick={onHeaderMenuClick}
@@ -723,6 +1018,14 @@ export default function TableView() {
           rangeSelect="rect"
           columnSelect="none"
         />
+        {columns.length === 0 && (
+          <div className="grid-empty-overlay">
+            <p>{t("table.noColumns")}</p>
+            <button className="btn primary" onClick={() => setColDialog({ existing: null })}>
+              <IconPlus size={14} /> {t("table.addFirstColumn")}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ---- floating cell editor (text / number / date) ---- */}
@@ -783,6 +1086,59 @@ export default function TableView() {
             />
           }
         />
+      )}
+
+      {cellMenu && cellMenuRow && (
+        <Menu
+          open
+          onOpenChange={(open) => {
+            if (!open) setCellMenu(null);
+          }}
+          ariaLabel={t("table.cellMenu")}
+          trigger={
+            <span
+              className="virtual-anchor"
+              style={{ left: cellMenu.x, top: cellMenu.y }}
+              aria-hidden
+            />
+          }
+        >
+          <MenuItem
+            disabled={!canClearCell}
+            onSelect={() => {
+              if (cellMenuCol) void updateCell(cellMenuRow.rid, cellMenuCol.id, emptyValue(cellMenuCol));
+              setCellMenu(null);
+            }}
+          >
+            <IconX size={14} /> {t("table.clearCell")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            onSelect={() => {
+              duplicateAndReveal([cellMenuRow.rid]);
+              setCellMenu(null);
+            }}
+          >
+            <IconCopy size={14} /> {t("table.copyRow")}
+          </MenuItem>
+          <MenuItem
+            danger
+            onSelect={() => {
+              const rid = cellMenuRow.rid;
+              setCellMenu(null);
+              void confirm({
+                title: t("table.deleteRow"),
+                description: t("table.deleteRowsConfirm", { count: 1 }),
+                confirmLabel: t("common.delete"),
+                danger: true,
+              }).then((ok) => {
+                if (ok) void deleteRows([rid]);
+              });
+            }}
+          >
+            <IconTrash size={14} /> {t("table.deleteRow")}
+          </MenuItem>
+        </Menu>
       )}
 
       {colMenu && (

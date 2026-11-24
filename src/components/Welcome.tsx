@@ -3,7 +3,7 @@ import { pickNewWorkspacePath, pickWorkspaceFile } from "../ipc";
 import { baseName, useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import { Field, Input } from "../ui/Field";
-import { ThemeSwitch } from "../ui/ThemeSwitch";
+import { ThemeSwitch, SchemeSwitch } from "../ui/ThemeSwitch";
 import { IconDatabase, IconFolder, IconLock, IconPlus } from "./icons";
 import { VersionChip } from "./AboutDialog";
 
@@ -273,6 +273,7 @@ export default function Welcome() {
           </span>
           <VersionChip />
           <ThemeSwitch compact />
+          <SchemeSwitch compact />
         </div>
       </div>
     </div>

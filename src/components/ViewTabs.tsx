@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useWorkspace } from "../stores/workspace";
 import { Dialog } from "../ui/Dialog";
 import { Field, Input } from "../ui/Field";
@@ -29,8 +29,10 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
 
   const [gridDialog, setGridDialog] = useState(false);
   const [sqlDialog, setSqlDialog] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<ViewMeta | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [nameInput, setNameInput] = useState("");
+  const skipRenameBlur = useRef(false);
 
   const gridViews = views.filter((v) => v.kind === "grid");
   const sqlViews = views.filter((v) => v.kind === "sql");
@@ -48,6 +50,52 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
     await createGridView(name);
   };
 
+  const startRename = (v: ViewMeta) => {
+    skipRenameBlur.current = false;
+    setRenameValue(v.name);
+    setRenamingId(v.id);
+  };
+
+  const commitRename = (v: ViewMeta) => {
+    if (renamingId !== v.id) return;
+    const name = renameValue.trim();
+    setRenamingId(null);
+    if (name && name !== v.name) void updateView(v.id, { name });
+  };
+
+  /** Tab label: swaps to an inline input while renaming (same as the sidebar). */
+  const tabLabel = (v: ViewMeta) =>
+    renamingId === v.id ? (
+      <input
+        className="view-tab-rename"
+        value={renameValue}
+        autoFocus
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setRenameValue(e.target.value)}
+        onBlur={() => {
+          if (skipRenameBlur.current) {
+            skipRenameBlur.current = false;
+            return;
+          }
+          commitRename(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+          if (e.key === "Escape") {
+            skipRenameBlur.current = true;
+            // Consume the flag synchronously; blur may not fire on unmount.
+            e.currentTarget.blur();
+            setRenamingId(null);
+          }
+        }}
+      />
+    ) : (
+      <span>{v.name}</span>
+    );
+
   return (
     <div className="view-tabs">
       {gridViews.map((v) => (
@@ -59,7 +107,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
           <span className="view-tab-icon">
             <IconGridView size={13} />
           </span>
-          <span>{v.name}</span>
+          {tabLabel(v)}
           {v.id === activeViewId && (
             <Menu
               align="end"
@@ -74,12 +122,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
                 </button>
               }
             >
-              <MenuItem
-                onSelect={() => {
-                  setNameInput(v.name);
-                  setRenameTarget(v);
-                }}
-              >
+              <MenuItem onSelect={() => startRename(v)}>
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>
               {canDeleteGrid && (
@@ -117,7 +160,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
           <span className="view-tab-icon">
             <IconCode size={13} />
           </span>
-          <span>{v.name}</span>
+          {tabLabel(v)}
           {v.id === activeViewId && (
             <Menu
               align="end"
@@ -131,12 +174,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
                 </button>
               }
             >
-              <MenuItem
-                onSelect={() => {
-                  setNameInput(v.name);
-                  setRenameTarget(v);
-                }}
-              >
+              <MenuItem onSelect={() => startRename(v)}>
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>
               <MenuSeparator />
@@ -230,34 +268,6 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
             await createSqlView(name, statement);
           }}
         />
-      )}
-
-      {renameTarget && (
-        <Dialog title={t("view.renameTitle")} onClose={() => setRenameTarget(null)}>
-          <form
-            className="form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const name = nameInput.trim();
-              const target = renameTarget;
-              setRenameTarget(null);
-              if (name) void updateView(target.id, { name });
-            }}
-          >
-            <Field label={t("view.name")}>
-              <Input value={nameInput} autoFocus onChange={(e) => setNameInput(e.target.value)} />
-            </Field>
-            <div className="modal-actions">
-              <div className="toolbar-spacer" />
-              <button type="button" className="btn" onClick={() => setRenameTarget(null)}>
-                {t("common.cancel")}
-              </button>
-              <button type="submit" className="btn primary">
-                {t("common.save")}
-              </button>
-            </div>
-          </form>
-        </Dialog>
       )}
     </div>
   );

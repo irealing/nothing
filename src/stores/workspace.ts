@@ -1,5 +1,6 @@
 // Global workspace state. All backend calls go through src/ipc (AGENTS.md);
-// errors are caught here and surfaced via `error` for the toast component.
+// failures are caught here, mirrored into `error` (inline forms) and pushed to
+// the toast stack (transient feedback).
 //
 // Rows are loaded lazily in windows (PAGE_SIZE pages) so 100k-row tables
 // scroll smoothly: `rowsCache` maps absolute row index → Row, `total` is the
@@ -8,8 +9,10 @@
 import { errorText, t } from "../i18n";
 import { create } from "zustand";
 import * as ipc from "../ipc";
+import { toast } from "./toast";
 import type {
   Cells,
+  ColumnColor,
   ColumnMeta,
   ColumnPatch,
   GridConfig,
@@ -140,6 +143,7 @@ interface WorkspaceState {
   deleteTable: (id: string) => Promise<void>;
   renameTable: (id: string, name: string) => Promise<void>;
   setTableIcon: (id: string, icon: string | null) => Promise<void>;
+  setTableColor: (id: string, color: ColumnColor | null) => Promise<void>;
   setTitleColumn: (colId: string) => Promise<void>;
   /** Resolves false when the backend rejected the change; the reason is in `error`. */
   addColumn: (col: NewColumn) => Promise<boolean>;
@@ -159,8 +163,12 @@ interface WorkspaceState {
 
   // rows
   insertRow: (cells?: Cells) => Promise<void>;
+  /** Append several rows in one write cycle (paste / import paths). */
+  insertRows: (rows: Cells[]) => Promise<void>;
   duplicateRows: (rids: string[]) => Promise<void>;
   updateCell: (rid: string, colId: string, value: Json) => Promise<void>;
+  /** Batched cell writes (Delete range, paste) with a single refetch. */
+  updateCells: (updates: { rid: string; cells: Cells }[]) => Promise<void>;
   deleteRows: (rids: string[]) => Promise<void>;
   searchRows: (query: string) => Promise<void>;
 }
@@ -174,7 +182,9 @@ async function guard<R>(
   try {
     return await fn();
   } catch (e) {
-    set({ error: errorText(e) });
+    const message = errorText(e);
+    set({ error: message });
+    toast.error(message);
     return undefined;
   } finally {
     set({ loading: false });
@@ -388,11 +398,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     fetchWindow: async (start, end) => {
       // High-frequency (scroll) path: no global loading flag, errors only
-      // surface via toast-less console to avoid flicker; prime paths report.
+      // surface via toast; identical consecutive messages collapse.
       try {
         await fetchWindowInternal(start, end);
       } catch (e) {
-        set({ error: errorText(e) });
+        const message = errorText(e);
+        set({ error: message });
+        toast.error(message);
       }
     },
 
@@ -492,7 +504,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     changePassword: async (pw) => {
-      await guard(set, get, () => ipc.workspaceChangePassword(pw));
+      await guard(set, get, async () => {
+        await ipc.workspaceChangePassword(pw);
+        toast.success(t("toasts.passwordChanged"));
+      });
     },
 
     selectTable: async (id) => {
@@ -538,7 +553,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         await activateTable(report.table.id);
         return report;
       } catch (e) {
-        set({ error: errorText(e) });
+        const message = errorText(e);
+        set({ error: message });
+        toast.error(message);
         return null;
       } finally {
         set({ loading: false });
@@ -547,6 +564,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     deleteTable: async (id) => {
       await guard(set, get, async () => {
+        const name = get().tables.find((x) => x.id === id)?.name ?? "";
         await ipc.tableDelete(id);
         const tables = await ipc.tableList();
         set({ tables });
@@ -565,6 +583,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           });
           if (next) await activateTable(next);
         }
+        if (name) toast.success(t("toasts.tableDeleted", { name }));
       });
     },
 
@@ -579,6 +598,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       await guard(set, get, async () => {
         await ipc.tableSetIcon(id, icon);
         // Presentation-only: refresh the table list, don't refetch rows.
+        set({ tables: await ipc.tableList() });
+      });
+    },
+
+    setTableColor: async (id, color) => {
+      await guard(set, get, async () => {
+        await ipc.tableSetColor(id, color);
         set({ tables: await ipc.tableList() });
       });
     },
@@ -638,9 +664,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       await guard(set, get, async () => {
         const { activeTableId } = get();
         if (!activeTableId) return;
+        const name = get().columns.find((c) => c.id === colId)?.name ?? "";
         await ipc.columnDelete(activeTableId, colId);
         set({ columns: await ipc.columnList(activeTableId) });
         await afterWrite();
+        if (name) toast.success(t("toasts.columnDeleted", { name }));
       });
     },
 
@@ -704,6 +732,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     deleteView: async (viewId) => {
       await guard(set, get, async () => {
+        const name = get().views.find((v) => v.id === viewId)?.name ?? "";
         await ipc.viewDelete(viewId);
         const { activeTableId, activeViewId } = get();
         if (!activeTableId) return;
@@ -712,6 +741,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         } else {
           set({ views: await ipc.viewList(activeTableId) });
         }
+        if (name) toast.success(t("toasts.viewDeleted", { name }));
       });
     },
 
@@ -720,6 +750,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId } = get();
         if (!activeTableId) return;
         await ipc.rowInsert(activeTableId, cells);
+        await afterWrite();
+      });
+    },
+
+    insertRows: async (rows) => {
+      await guard(set, get, async () => {
+        const { activeTableId } = get();
+        if (!activeTableId || rows.length === 0) return;
+        for (const cells of rows) await ipc.rowInsert(activeTableId, cells);
         await afterWrite();
       });
     },
@@ -773,6 +812,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId } = get();
         if (!activeTableId) return;
         await ipc.rowDelete(activeTableId, rids);
+        await afterWrite();
+      });
+    },
+
+    updateCells: async (updates) => {
+      await guard(set, get, async () => {
+        const { activeTableId } = get();
+        if (!activeTableId || updates.length === 0) return;
+        const batch: [string, Cells][] = updates.map((u) => [u.rid, u.cells]);
+        await ipc.rowBatchUpdate(activeTableId, batch);
         await afterWrite();
       });
     },

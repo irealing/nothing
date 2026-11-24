@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as ipc from "../ipc";
 import { baseName, useWorkspace } from "../stores/workspace";
 import { useLayout } from "../stores/layout";
 import { ChangePasswordDialog, CreateTableDialog } from "./dialogs";
+import StartActions from "./StartActions";
 import ImportCsvDialog from "./ImportCsvDialog";
 import { confirm } from "../ui/ConfirmDialog";
 import { t } from "../i18n";
@@ -11,17 +12,23 @@ import {
   IconDatabase,
   IconKey,
   IconLogout,
+  IconPencil,
   IconPlus,
   IconSidebarCollapse,
   IconSidebarExpand,
   IconTable,
+  IconTags,
   IconTrash,
   IconUpload,
 } from "./icons";
-import { ThemeSwitch } from "../ui/ThemeSwitch";
+import { ThemeSwitch, SchemeSwitch } from "../ui/ThemeSwitch";
 import { Tooltip } from "../ui/Tooltip";
-import { EmojiMenu } from "../ui/ColumnPickers";
+import { EmojiMenu, ColorSwatches } from "../ui/ColumnPickers";
+import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
+import { Popover } from "../ui/Popover";
+import { cellStyle, isPresetColor } from "../theme/grid";
 import { VersionChip } from "./AboutDialog";
+import type { ColumnColor, TableMeta } from "../types";
 
 export default function Sidebar() {
   const info = useWorkspace((s) => s.info);
@@ -30,6 +37,7 @@ export default function Sidebar() {
   const selectTable = useWorkspace((s) => s.selectTable);
   const renameTable = useWorkspace((s) => s.renameTable);
   const setTableIcon = useWorkspace((s) => s.setTableIcon);
+  const setTableColor = useWorkspace((s) => s.setTableColor);
   const deleteTable = useWorkspace((s) => s.deleteTable);
   const openScratch = useWorkspace((s) => s.openScratch);
   const closeWorkspace = useWorkspace((s) => s.closeWorkspace);
@@ -41,6 +49,56 @@ export default function Sidebar() {
   const [importPath, setImportPath] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [menu, setMenu] = useState<{ table: TableMeta; x: number; y: number } | null>(null);
+  const [colorTarget, setColorTarget] = useState<{ tableId: string; x: number; y: number } | null>(
+    null,
+  );
+  // Custom (hex) colours are previewed locally and only written on "完成";
+  // preset picks write immediately.
+  const [colorDraft, setColorDraft] = useState<ColumnColor | null>(null);
+  // Escape (or a programmatic blur) must not re-submit a rename.
+  const skipRenameBlur = useRef(false);
+
+  const colorTable = colorTarget ? (tables.find((t) => t.id === colorTarget.tableId) ?? null) : null;
+
+  const startRename = (table: TableMeta) => {
+    skipRenameBlur.current = false;
+    setRenaming(table.id);
+    setRenameValue(table.name);
+  };
+
+  const commitRename = (table: TableMeta) => {
+    const value = renameValue.trim();
+    setRenaming(null);
+    if (value && value !== table.name) void renameTable(table.id, value);
+  };
+
+  const removeTable = (table: TableMeta) => {
+    void confirm({
+      title: t("sidebar.deleteTable"),
+      description: t("sidebar.deleteTableConfirm", { name: table.name }),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    }).then((ok) => {
+      if (ok) void deleteTable(table.id);
+    });
+  };
+
+  const pickColor = (color: ColumnColor | null) => {
+    if (!colorTable) return;
+    if (color === null || isPresetColor(color)) {
+      void setTableColor(colorTable.id, color);
+      setColorTarget(null);
+    } else {
+      setColorDraft(color);
+    }
+  };
+
+  const commitColorDraft = () => {
+    if (!colorTable) return;
+    if (colorDraft !== colorTable.color) void setTableColor(colorTable.id, colorDraft);
+    setColorTarget(null);
+  };
 
   const startImport = async () => {
     try {
@@ -109,102 +167,111 @@ export default function Sidebar() {
           </span>
         </div>
         <ul className="nav-list">
-          {tables.map((table) => (
-            <li
-              key={table.id}
-              className={table.id === activeTableId ? "nav-item active" : "nav-item"}
-              title={collapsed ? table.name : undefined}
-              aria-current={table.id === activeTableId ? "page" : undefined}
-              onClick={() => void selectTable(table.id)}
-              onDoubleClick={() => {
-                if (collapsed) return;
-                setRenaming(table.id);
-                setRenameValue(table.name);
-              }}
-            >
-              {collapsed ? (
-                <span className="nav-icon nav-icon-static">
-                  {table.icon ? (
-                    <span className="nav-emoji">{table.icon}</span>
-                  ) : (
-                    <IconTable size={14} />
-                  )}
-                </span>
-              ) : (
-                <EmojiMenu
-                  value={table.icon}
-                  onChange={(icon) => void setTableIcon(table.id, icon)}
-                  trigger={
-                    <button
-                      type="button"
-                      className="nav-icon nav-icon-btn"
-                      aria-label={t("table.icon")}
-                      title={t("table.icon")}
-                      onClick={(e) => e.stopPropagation()}
-                      onDoubleClick={(e) => e.stopPropagation()}
-                    >
-                      {table.icon ? (
-                        <span className="nav-emoji">{table.icon}</span>
-                      ) : (
-                        <IconTable size={14} />
-                      )}
-                    </button>
-                  }
-                />
-              )}
-              {renaming === table.id ? (
-                <input
-                  className="nav-rename"
-                  value={renameValue}
-                  autoFocus
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => setRenaming(null)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const v = renameValue.trim();
-                      setRenaming(null);
-                      if (v && v !== table.name) void renameTable(table.id, v);
+          {tables.map((table) => {
+            const tint = table.color ? cellStyle(table.color).background : undefined;
+            return (
+              <li
+                key={table.id}
+                className={table.id === activeTableId ? "nav-item active" : "nav-item"}
+                title={collapsed ? table.name : undefined}
+                aria-current={table.id === activeTableId ? "page" : undefined}
+                onClick={() => void selectTable(table.id)}
+                onDoubleClick={() => {
+                  if (collapsed) return;
+                  startRename(table);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({ table, x: e.clientX, y: e.clientY });
+                }}
+              >
+                {collapsed ? (
+                  <span
+                    className="nav-icon nav-icon-static"
+                    style={tint ? { background: tint } : undefined}
+                  >
+                    {table.icon ? (
+                      <span className="nav-emoji">{table.icon}</span>
+                    ) : (
+                      <IconTable size={14} />
+                    )}
+                  </span>
+                ) : (
+                  <EmojiMenu
+                    value={table.icon}
+                    onChange={(icon) => void setTableIcon(table.id, icon)}
+                    trigger={
+                      <button
+                        type="button"
+                        className="nav-icon nav-icon-btn"
+                        style={tint ? { background: tint } : undefined}
+                        aria-label={t("table.icon")}
+                        title={t("table.icon")}
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
+                        {table.icon ? (
+                          <span className="nav-emoji">{table.icon}</span>
+                        ) : (
+                          <IconTable size={14} />
+                        )}
+                      </button>
                     }
-                    if (e.key === "Escape") setRenaming(null);
-                  }}
-                />
-              ) : (
-                <span className="nav-label">{table.name}</span>
-              )}
-              {table.id === activeTableId && renaming !== table.id && (
-                <button
-                  className="nav-action danger"
-                  title={t("sidebar.deleteTable")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void confirm({
-                      title: t("sidebar.deleteTable"),
-                      description: t("sidebar.deleteTableConfirm", { name: table.name }),
-                      confirmLabel: t("common.delete"),
-                      danger: true,
-                    }).then((ok) => {
-                      if (ok) void deleteTable(table.id);
-                    });
-                  }}
-                >
-                  <IconTrash size={13} />
-                </button>
-              )}
-            </li>
-          ))}
+                  />
+                )}
+                {renaming === table.id ? (
+                  <input
+                    className="nav-rename"
+                    value={renameValue}
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={() => {
+                      if (skipRenameBlur.current) {
+                        skipRenameBlur.current = false;
+                        return;
+                      }
+                      commitRename(table);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        // Let blur do the single commit below.
+                        e.currentTarget.blur();
+                      }
+                      if (e.key === "Escape") {
+                        skipRenameBlur.current = true;
+                        // Consume the flag synchronously; blur may not fire on unmount.
+                        e.currentTarget.blur();
+                        setRenaming(null);
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="nav-label">{table.name}</span>
+                )}
+                {table.id === activeTableId && renaming !== table.id && (
+                  <button
+                    className="nav-action danger"
+                    title={t("sidebar.deleteTable")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeTable(table);
+                    }}
+                  >
+                    <IconTrash size={13} />
+                  </button>
+                )}
+              </li>
+            );
+          })}
           {tables.length === 0 && (
             <li className="nav-empty">
               <span className="nav-empty-icon">
                 <IconTable size={20} />
               </span>
               <p>{t("sidebar.noTables")}</p>
-              <button className="btn ghost" onClick={() => setShowCreateTable(true)}>
-                <IconPlus size={14} /> {t("sidebar.newTableAction")}
-              </button>
-              <button className="btn ghost" onClick={() => void startImport()}>
-                <IconUpload size={14} /> {t("importCsv.action")}
-              </button>
+              <StartActions className="start-actions stacked" />
             </li>
           )}
         </ul>
@@ -223,11 +290,78 @@ export default function Sidebar() {
             </button>
           </Tooltip>
         </div>
+        <SchemeSwitch />
         <p className="nav-hint">{t("sidebar.renameHint")}</p>
         <div className="sidebar-foot-meta">
           <VersionChip />
         </div>
       </div>
+
+      {menu && (
+        <Menu
+          open
+          onOpenChange={(open) => {
+            if (!open) setMenu(null);
+          }}
+          trigger={
+            <span
+              className="virtual-anchor"
+              style={{ left: menu.x, top: menu.y }}
+              aria-hidden
+            />
+          }
+        >
+          <MenuItem
+            onSelect={() => {
+              startRename(menu.table);
+              setMenu(null);
+            }}
+          >
+            <IconPencil size={14} /> {t("sidebar.renameTable")}
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              setColorDraft(menu.table.color);
+              setColorTarget({ tableId: menu.table.id, x: menu.x, y: menu.y });
+              setMenu(null);
+            }}
+          >
+            <IconTags size={14} /> {t("column.color")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            danger
+            onSelect={() => {
+              removeTable(menu.table);
+              setMenu(null);
+            }}
+          >
+            <IconTrash size={14} /> {t("sidebar.deleteTable")}
+          </MenuItem>
+        </Menu>
+      )}
+
+      {colorTarget && colorTable && (
+        <Popover
+          open
+          onOpenChange={(open) => {
+            if (!open) setColorTarget(null);
+          }}
+          trigger={
+            <span
+              className="virtual-anchor"
+              style={{ left: colorTarget.x, top: colorTarget.y }}
+              aria-hidden
+            />
+          }
+        >
+          <ColorSwatches
+            value={colorDraft}
+            onChange={pickColor}
+            onDone={commitColorDraft}
+          />
+        </Popover>
+      )}
 
       {showCreateTable && <CreateTableDialog onClose={() => setShowCreateTable(false)} />}
       {showChangePw && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}

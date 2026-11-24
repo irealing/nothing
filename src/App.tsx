@@ -10,7 +10,8 @@ import TableView from "./components/TableView";
 import SqlViewPanel from "./components/SqlViewPanel";
 import ScratchQueryPanel from "./components/ScratchQueryPanel";
 import ViewTabs from "./components/ViewTabs";
-import ErrorToast from "./components/ErrorToast";
+import Toasts from "./components/Toasts";
+import TopProgress from "./components/TopProgress";
 import { ConfirmHost } from "./ui/ConfirmDialog";
 import { TooltipProvider } from "./ui/Tooltip";
 
@@ -23,8 +24,8 @@ export default function App() {
   const scratchOpen = useWorkspace((s) => s.scratch.open);
   const activeView = views.find((v) => v.id === activeViewId) ?? null;
 
-  // Subscribing here keeps the document theme in sync with the preference.
-  useTheme((s) => s.resolved);
+  // Subscribing here keeps the document theme/scheme in sync with the preference.
+  useTheme((s) => `${s.resolved}:${s.scheme}`);
 
   useEffect(() => {
     void useWorkspace.getState().boot();
@@ -65,8 +66,9 @@ export default function App() {
   if (!info) {
     return (
       <TooltipProvider delayDuration={400}>
+        <TopProgress />
         <Welcome />
-        <ErrorToast />
+        <Toasts />
         <ConfirmHost />
       </TooltipProvider>
     );
@@ -74,6 +76,7 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={400}>
+      <TopProgress />
       <div className="layout">
         <Sidebar />
         <main className="content">
@@ -88,7 +91,7 @@ export default function App() {
             <TableView />
           )}
         </main>
-        <ErrorToast />
+        <Toasts />
       </div>
       <ConfirmHost />
     </TooltipProvider>
