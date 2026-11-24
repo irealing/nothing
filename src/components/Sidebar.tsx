@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as ipc from "../ipc";
 import { baseName, useWorkspace } from "../stores/workspace";
 import { useLayout } from "../stores/layout";
@@ -8,8 +8,10 @@ import ImportCsvDialog from "./ImportCsvDialog";
 import { confirm } from "../ui/ConfirmDialog";
 import { t } from "../i18n";
 import {
+  IconChevronRight,
   IconCode,
   IconDatabase,
+  IconGridView,
   IconKey,
   IconLogout,
   IconPencil,
@@ -28,16 +30,20 @@ import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { Popover } from "../ui/Popover";
 import { chipStyle, isPresetColor } from "../theme/grid";
 import { VersionChip } from "./AboutDialog";
-import type { ColumnColor, TableMeta } from "../types";
+import type { ColumnColor, TableMeta, ViewMeta } from "../types";
 
 export default function Sidebar() {
   const info = useWorkspace((s) => s.info);
   const tables = useWorkspace((s) => s.tables);
+  const allViews = useWorkspace((s) => s.allViews);
   const activeTableId = useWorkspace((s) => s.activeTableId);
+  const activeViewId = useWorkspace((s) => s.activeViewId);
   const selectTable = useWorkspace((s) => s.selectTable);
+  const selectView = useWorkspace((s) => s.selectView);
   const renameTable = useWorkspace((s) => s.renameTable);
   const setTableIcon = useWorkspace((s) => s.setTableIcon);
   const setTableColor = useWorkspace((s) => s.setTableColor);
+  const updateView = useWorkspace((s) => s.updateView);
   const deleteTable = useWorkspace((s) => s.deleteTable);
   const openScratch = useWorkspace((s) => s.openScratch);
   const closeWorkspace = useWorkspace((s) => s.closeWorkspace);
@@ -53,13 +59,52 @@ export default function Sidebar() {
   const [colorTarget, setColorTarget] = useState<{ tableId: string; x: number; y: number } | null>(
     null,
   );
+  // View lists are collapsed by default and reset with the workspace; several
+  // tables may be open at once, like a file tree.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   // Custom (hex) colours are previewed locally and only written on "完成";
   // preset picks write immediately.
   const [colorDraft, setColorDraft] = useState<ColumnColor | null>(null);
   // Escape (or a programmatic blur) must not re-submit a rename.
   const skipRenameBlur = useRef(false);
 
+  const infoPath = info?.path;
+  useEffect(() => {
+    setExpanded(new Set());
+  }, [infoPath]);
+
   const colorTable = colorTarget ? (tables.find((t) => t.id === colorTarget.tableId) ?? null) : null;
+
+  const gridViewsOf = (tableId: string) =>
+    allViews
+      .filter((v) => v.kind === "grid" && v.table_id === tableId)
+      .sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
+
+  const sqlViews = allViews
+    .filter((v) => v.kind === "sql")
+    .sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
+
+  const expandTable = (tableId: string) =>
+    setExpanded((prev) => (prev.has(tableId) ? prev : new Set(prev).add(tableId)));
+
+  const toggleExpanded = (tableId: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(tableId)) next.delete(tableId);
+      else next.add(tableId);
+      return next;
+    });
+
+  const openTable = (table: TableMeta) => {
+    if (collapsed) {
+      void selectTable(table.id);
+      return;
+    }
+    expandTable(table.id);
+    // Re-clicking the current table only re-opens its list; it does not need
+    // another full view/row fetch.
+    if (table.id !== activeTableId) void selectTable(table.id);
+  };
 
   const startRename = (table: TableMeta) => {
     skipRenameBlur.current = false;
@@ -107,6 +152,55 @@ export default function Sidebar() {
     } catch {
       // The native dialog failing is non-fatal; keep the UI as-is.
     }
+  };
+
+  /** Grid and SQL view rows share the icon / label / click behaviour. */
+  const viewRow = (view: ViewMeta, nested: boolean) => {
+    const active =
+      view.id === activeViewId &&
+      (view.kind === "sql" || (activeTableId !== null && view.table_id === activeTableId));
+    return (
+      <li
+        key={view.id}
+        className={[
+          "nav-item",
+          nested ? "nav-sub-item" : "",
+          active ? "active" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        title={collapsed ? view.name : undefined}
+        aria-current={active ? "page" : undefined}
+        onClick={() => {
+          if (view.kind === "sql") void selectView(view.id);
+          else if (view.table_id) void selectTable(view.table_id, view.id);
+        }}
+      >
+        <EmojiMenu
+          value={view.icon}
+          onChange={(icon) => void updateView(view.id, { icon: icon ?? "" })}
+          trigger={
+            <button
+              type="button"
+              className="nav-icon nav-icon-btn"
+              aria-label={t("view.icon")}
+              title={t("view.icon")}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              {view.icon ? (
+                <span className="nav-emoji">{view.icon}</span>
+              ) : view.kind === "sql" ? (
+                <IconCode size={13} />
+              ) : (
+                <IconGridView size={13} />
+              )}
+            </button>
+          }
+        />
+        <span className="nav-label">{view.name}</span>
+      </li>
+    );
   };
 
   return (
@@ -169,98 +263,120 @@ export default function Sidebar() {
         <ul className="nav-list">
           {tables.map((table) => {
             const tint = table.color ? chipStyle(table.color).background : undefined;
+            const isExpanded = expanded.has(table.id);
+            const views = gridViewsOf(table.id);
             return (
-              <li
-                key={table.id}
-                className={table.id === activeTableId ? "nav-item active" : "nav-item"}
-                title={collapsed ? table.name : undefined}
-                aria-current={table.id === activeTableId ? "page" : undefined}
-                onClick={() => void selectTable(table.id)}
-                onDoubleClick={() => {
-                  if (collapsed) return;
-                  startRename(table);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu({ table, x: e.clientX, y: e.clientY });
-                }}
-              >
-                {collapsed ? (
-                  <span
-                    className="nav-icon nav-icon-static"
-                    style={tint ? { background: tint } : undefined}
-                  >
-                    {table.icon ? (
-                      <span className="nav-emoji">{table.icon}</span>
-                    ) : (
-                      <IconTable size={14} />
-                    )}
-                  </span>
-                ) : (
-                  <EmojiMenu
-                    value={table.icon}
-                    onChange={(icon) => void setTableIcon(table.id, icon)}
-                    trigger={
-                      <button
-                        type="button"
-                        className="nav-icon nav-icon-btn"
-                        style={tint ? { background: tint } : undefined}
-                        aria-label={t("table.icon")}
-                        title={t("table.icon")}
-                        onClick={(e) => e.stopPropagation()}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                      >
-                        {table.icon ? (
-                          <span className="nav-emoji">{table.icon}</span>
-                        ) : (
-                          <IconTable size={14} />
-                        )}
-                      </button>
-                    }
-                  />
-                )}
-                {renaming === table.id ? (
-                  <input
-                    className="nav-rename"
-                    value={renameValue}
-                    autoFocus
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={() => {
-                      if (skipRenameBlur.current) {
-                        skipRenameBlur.current = false;
-                        return;
+              <li key={table.id} className="nav-group">
+                <div
+                  className={table.id === activeTableId ? "nav-item active" : "nav-item"}
+                  title={collapsed ? table.name : undefined}
+                  aria-current={table.id === activeTableId ? "page" : undefined}
+                  onClick={() => openTable(table)}
+                  onDoubleClick={() => {
+                    if (collapsed) return;
+                    startRename(table);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenu({ table, x: e.clientX, y: e.clientY });
+                  }}
+                >
+                  {!collapsed && (
+                    <button
+                      type="button"
+                      className="nav-chevron"
+                      aria-label={t("sidebar.toggleViews")}
+                      aria-expanded={isExpanded}
+                      title={t("sidebar.toggleViews")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpanded(table.id);
+                      }}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
+                      <IconChevronRight size={13} />
+                    </button>
+                  )}
+                  {collapsed ? (
+                    <span
+                      className="nav-icon nav-icon-static"
+                      style={tint ? { background: tint } : undefined}
+                    >
+                      {table.icon ? (
+                        <span className="nav-emoji">{table.icon}</span>
+                      ) : (
+                        <IconTable size={14} />
+                      )}
+                    </span>
+                  ) : (
+                    <EmojiMenu
+                      value={table.icon}
+                      onChange={(icon) => void setTableIcon(table.id, icon)}
+                      trigger={
+                        <button
+                          type="button"
+                          className="nav-icon nav-icon-btn"
+                          style={tint ? { background: tint } : undefined}
+                          aria-label={t("table.icon")}
+                          title={t("table.icon")}
+                          onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                          {table.icon ? (
+                            <span className="nav-emoji">{table.icon}</span>
+                          ) : (
+                            <IconTable size={14} />
+                          )}
+                        </button>
                       }
-                      commitRename(table);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        // Let blur do the single commit below.
-                        e.currentTarget.blur();
-                      }
-                      if (e.key === "Escape") {
-                        skipRenameBlur.current = true;
-                        // Consume the flag synchronously; blur may not fire on unmount.
-                        e.currentTarget.blur();
-                        setRenaming(null);
-                      }
-                    }}
-                  />
-                ) : (
-                  <span className="nav-label">{table.name}</span>
-                )}
-                {table.id === activeTableId && renaming !== table.id && (
-                  <button
-                    className="nav-action danger"
-                    title={t("sidebar.deleteTable")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeTable(table);
-                    }}
-                  >
-                    <IconTrash size={13} />
-                  </button>
+                    />
+                  )}
+                  {renaming === table.id ? (
+                    <input
+                      className="nav-rename"
+                      value={renameValue}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => {
+                        if (skipRenameBlur.current) {
+                          skipRenameBlur.current = false;
+                          return;
+                        }
+                        commitRename(table);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          // Let blur do the single commit below.
+                          e.currentTarget.blur();
+                        }
+                        if (e.key === "Escape") {
+                          skipRenameBlur.current = true;
+                          // Consume the flag synchronously; blur may not fire on unmount.
+                          e.currentTarget.blur();
+                          setRenaming(null);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="nav-label">{table.name}</span>
+                  )}
+                  {table.id === activeTableId && renaming !== table.id && (
+                    <button
+                      className="nav-action danger"
+                      title={t("sidebar.deleteTable")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeTable(table);
+                      }}
+                    >
+                      <IconTrash size={13} />
+                    </button>
+                  )}
+                </div>
+                {!collapsed && isExpanded && views.length > 0 && (
+                  <ul className="nav-sub-list">{views.map((view) => viewRow(view, true))}</ul>
                 )}
               </li>
             );
@@ -276,6 +392,18 @@ export default function Sidebar() {
           )}
         </ul>
       </div>
+
+      {!collapsed && sqlViews.length > 0 && (
+        <div className="sidebar-section">
+          <div className="sidebar-section-head">
+            <span className="section-title">
+              {t("sidebar.sqlViews")}
+              <span className="section-count">{sqlViews.length}</span>
+            </span>
+          </div>
+          <ul className="nav-list">{sqlViews.map((view) => viewRow(view, false))}</ul>
+        </div>
+      )}
 
       <div className="sidebar-foot">
         <div className="sidebar-foot-row">

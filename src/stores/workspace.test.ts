@@ -110,6 +110,7 @@ const dataState = {
   columns: [],
   visibleColumns: [],
   views: [],
+  allViews: [],
   activeViewId: null,
   lastWorkspace: null,
   recent: [],
@@ -151,6 +152,20 @@ describe("openWorkspace", () => {
     expect(s.total).toBe(1);
     expect(s.rowsCache.get(0)?.rid).toBe("r1");
     expect(ipc.viewRun).toHaveBeenCalledWith("v1", PAGE_SIZE, 0);
+  });
+
+  it("loads every view for the sidebar tree", async () => {
+    const T2: TableMeta = { ...T1, id: "t2", name: "项目" };
+    const V2: ViewMeta = { ...GRID_V, id: "v2", table_id: "t2", name: "项目视图" };
+    vi.mocked(ipc.workspaceOpen).mockResolvedValue({ path: "/a.nothing", format_version: 1 });
+    vi.mocked(ipc.tableList).mockResolvedValue([T1, T2]);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V, V2, SQL_V]);
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().openWorkspace("/a.nothing", "pw");
+
+    expect(useWorkspace.getState().allViews.map((v) => v.id)).toEqual(["v1", "v2", "vs"]);
   });
 
   it("restores the last table and view recorded for the file", async () => {
@@ -562,6 +577,63 @@ describe("view actions", () => {
 
     expect(useWorkspace.getState().activeViewId).toBe("v2");
     expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "v2");
+  });
+
+  it("selectTable can activate a specific view in one step", async () => {
+    useWorkspace.setState({ ...dataState, rowsCache: new Map(), tables: [T1] });
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([GRID_V, GRID_V2]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().selectTable("t1", "v2");
+
+    expect(useWorkspace.getState().activeViewId).toBe("v2");
+    expect(ipc.viewRun).toHaveBeenCalledWith("v2", PAGE_SIZE, 0);
+  });
+
+  it("selectView can run a SQL view without an active table", async () => {
+    useWorkspace.setState({
+      ...dataState,
+      info: { path: "/a.nothing", format_version: 1 },
+      allViews: [SQL_V],
+      views: [SQL_V],
+    });
+    vi.mocked(ipc.viewRun).mockResolvedValue({
+      kind: "sql",
+      columns: [{ name: "n", decl_type: "INTEGER" }],
+      rows: [[1]],
+    });
+
+    await useWorkspace.getState().selectView("vs");
+
+    const s = useWorkspace.getState();
+    expect(s.activeViewId).toBe("vs");
+    expect(s.sqlResult?.rows).toEqual([[1]]);
+    expect(ipc.columnList).not.toHaveBeenCalled();
+  });
+
+  it("updates a view icon without refetching rows", async () => {
+    useWorkspace.setState({
+      ...dataState,
+      rowsCache: new Map([[0, row("r1")]]),
+      activeTableId: "t1",
+      activeViewId: "v1",
+      views: [GRID_V],
+      allViews: [GRID_V],
+      source: { kind: "view", viewId: "v1" },
+      total: 1,
+    });
+    const updated: ViewMeta = { ...GRID_V, icon: "🔥" };
+    vi.mocked(ipc.viewUpdate).mockResolvedValue(updated);
+
+    await useWorkspace.getState().updateView("v1", { icon: "🔥" });
+
+    const s = useWorkspace.getState();
+    expect(ipc.viewUpdate).toHaveBeenCalledWith("v1", { icon: "🔥" });
+    expect(s.views[0].icon).toBe("🔥");
+    expect(s.allViews[0].icon).toBe("🔥");
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+    expect(ipc.columnList).not.toHaveBeenCalled();
   });
 });
 

@@ -2,11 +2,22 @@ import { useRef, useState } from "react";
 import { useWorkspace } from "../stores/workspace";
 import { Dialog } from "../ui/Dialog";
 import { Field, Input } from "../ui/Field";
-import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
+import { Menu, MenuItem, MenuSeparator, MenuSub } from "../ui/Menu";
+import { EMOJI_CHOICES } from "../ui/ColumnPickers";
 import { confirm } from "../ui/ConfirmDialog";
 import { t } from "../i18n";
 import { SqlEditor } from "./SqlEditor";
-import { IconChevronDown, IconCode, IconGridView, IconPencil, IconPlus, IconPlay, IconTrash } from "./icons";
+import {
+  IconChevronDown,
+  IconCode,
+  IconEmoji,
+  IconGridView,
+  IconPencil,
+  IconPlus,
+  IconPlay,
+  IconTrash,
+  IconX,
+} from "./icons";
 import type { ViewMeta } from "../types";
 
 /**
@@ -33,6 +44,18 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
   const [renameValue, setRenameValue] = useState("");
   const [nameInput, setNameInput] = useState("");
   const skipRenameBlur = useRef(false);
+
+  const pickViewIcon = (view: ViewMeta, icon: string | null) =>
+    void updateView(view.id, { icon: icon ?? "" });
+
+  const tabIcon = (view: ViewMeta) =>
+    view.icon ? (
+      <span className="view-tab-emoji">{view.icon}</span>
+    ) : view.kind === "sql" ? (
+      <IconCode size={13} />
+    ) : (
+      <IconGridView size={13} />
+    );
 
   const gridViews = views.filter((v) => v.kind === "grid");
   const sqlViews = views.filter((v) => v.kind === "sql");
@@ -96,6 +119,31 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
       <span>{v.name}</span>
     );
 
+  /** Nested emoji palette: staying inside the menu avoids a second floating
+   * layer that Radix would immediately dismiss as an outside click. */
+  const iconMenu = (v: ViewMeta) => (
+    <MenuSub
+      label={
+        <>
+          <IconEmoji size={14} /> {t("view.icon")}
+        </>
+      }
+      ariaLabel={t("view.icon")}
+      contentClassName="ui-menu-emoji"
+    >
+      {v.icon && (
+        <MenuItem className="clear" onSelect={() => pickViewIcon(v, null)}>
+          <IconX size={14} /> {t("column.clearIcon")}
+        </MenuItem>
+      )}
+      {EMOJI_CHOICES.map((icon) => (
+        <MenuItem key={icon} onSelect={() => pickViewIcon(v, icon)}>
+          {icon}
+        </MenuItem>
+      ))}
+    </MenuSub>
+  );
+
   return (
     <div className="view-tabs">
       {gridViews.map((v) => (
@@ -104,9 +152,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
           className={v.id === activeViewId ? "view-tab active" : "view-tab"}
           onClick={() => void selectView(v.id)}
         >
-          <span className="view-tab-icon">
-            <IconGridView size={13} />
-          </span>
+          <span className="view-tab-icon">{tabIcon(v)}</span>
           {tabLabel(v)}
           {v.id === activeViewId && (
             <Menu
@@ -122,6 +168,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
                 </button>
               }
             >
+              {iconMenu(v)}
               <MenuItem onSelect={() => startRename(v)}>
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>
@@ -157,9 +204,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
           onClick={() => void selectView(v.id)}
           title={t("view.sqlBadge")}
         >
-          <span className="view-tab-icon">
-            <IconCode size={13} />
-          </span>
+          <span className="view-tab-icon">{tabIcon(v)}</span>
           {tabLabel(v)}
           {v.id === activeViewId && (
             <Menu
@@ -174,6 +219,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
                 </button>
               }
             >
+              {iconMenu(v)}
               <MenuItem onSelect={() => startRename(v)}>
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>

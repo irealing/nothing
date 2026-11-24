@@ -70,6 +70,33 @@ export function defaultGridConfig(): GridConfig {
   return { filters: null, sorts: [] };
 }
 
+/** Insert or replace one view in a list without touching the others. */
+function upsertView(views: ViewMeta[], next: ViewMeta): ViewMeta[] {
+  const idx = views.findIndex((v) => v.id === next.id);
+  if (idx < 0) return [...views, next];
+  const out = views.slice();
+  out[idx] = next;
+  return out;
+}
+
+/**
+ * Merge a table-scoped `view_list(table_id)` result into the workspace-wide
+ * cache. That call returns the table's grid views plus every SQL view, so the
+ * same merge also keeps the SQL section fresh.
+ */
+function mergeFetchedViews(
+  existing: ViewMeta[],
+  tableId: string,
+  fetched: ViewMeta[],
+): ViewMeta[] {
+  const ids = new Set(fetched.map((v) => v.id));
+  const out = existing.filter(
+    (v) => !ids.has(v.id) && !(v.kind === "grid" && v.table_id === tableId),
+  );
+  out.push(...fetched);
+  return out;
+}
+
 /** What the row window pipeline currently reads from. */
 type Source =
   | { kind: "none" }
@@ -87,6 +114,8 @@ interface WorkspaceState {
   visibleColumns: ColumnMeta[];
   /** Grid views of the active table + workspace-level SQL views. */
   views: ViewMeta[];
+  /** Every view in the workspace (grid + SQL), grouped by `table_id` in the sidebar. */
+  allViews: ViewMeta[];
   activeViewId: string | null;
 
   // recent files (from the plain-text settings file, not the encrypted db)
@@ -128,7 +157,7 @@ interface WorkspaceState {
   clearError: () => void;
 
   // navigation
-  selectTable: (id: string) => Promise<void>;
+  selectTable: (id: string, viewId?: string | null) => Promise<void>;
   selectView: (viewId: string | null) => Promise<void>;
   refresh: () => Promise<void>;
 
@@ -282,7 +311,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   /** Remember the active table/view for the open workspace. */
   async function persistUi() {
     const { info, activeTableId, activeViewId } = get();
-    if (!info || !activeTableId) return;
+    if (!info) return;
     try {
       await ipc.settingsSetUi(info.path, activeTableId, activeViewId);
     } catch {
@@ -297,7 +326,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       ipc.columnList(tableId),
       ipc.viewList(tableId),
     ]);
-    set({ columns, views, activeViewId: viewId, sqlResult: null, searchQuery: "" });
+    set((s) => ({
+      columns,
+      views,
+      allViews: mergeFetchedViews(s.allViews, tableId, views),
+      activeViewId: viewId,
+      sqlResult: null,
+      searchQuery: "",
+    }));
     // Record the choice before running the view: if the query itself fails the
     // selection is still the one the user made, and reopening retries it.
     await persistUi();
@@ -321,13 +357,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   async function activateTable(tableId: string, preferredViewId: string | null = null) {
     const columns = await ipc.columnList(tableId);
     let views = await ipc.viewList(tableId);
-    set({
+    set((s) => ({
       activeTableId: tableId,
       columns,
       views,
+      allViews: mergeFetchedViews(s.allViews, tableId, views),
       searchQuery: "",
-      scratch: { ...get().scratch, open: false },
-    });
+      scratch: { ...s.scratch, open: false },
+    }));
     let gridViews = views.filter((v) => v.kind === "grid");
     if (gridViews.length === 0) {
       await ipc.viewCreate({
@@ -337,7 +374,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         data: { kind: "grid", ...defaultGridConfig() },
       } satisfies NewView);
       views = await ipc.viewList(tableId);
-      set({ views });
+      set((s) => ({ views, allViews: mergeFetchedViews(s.allViews, tableId, views) }));
       gridViews = views.filter((v) => v.kind === "grid");
     }
     // Restored selection wins when it still exists; otherwise the first grid view.
@@ -379,6 +416,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     columns: [],
     visibleColumns: [],
     views: [],
+    allViews: [],
     activeViewId: null,
     lastWorkspace: null,
     recent: [],
@@ -428,10 +466,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     openWorkspace: async (path, password) => {
       await guard(set, get, async () => {
         const info = await ipc.workspaceOpen(path, password);
-        const tables = await ipc.tableList();
+        const [tables, allViews] = await Promise.all([ipc.tableList(), ipc.viewList()]);
         set({
           info,
           tables,
+          allViews,
           activeTableId: null,
           columns: [],
           visibleColumns: [],
@@ -462,6 +501,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         set({
           info,
           tables: [],
+          allViews: [],
           activeTableId: null,
           columns: [],
           visibleColumns: [],
@@ -486,6 +526,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         set({
           info: null,
           tables: [],
+          allViews: [],
           activeTableId: null,
           columns: [],
           visibleColumns: [],
@@ -510,22 +551,45 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       });
     },
 
-    selectTable: async (id) => {
-      await guard(set, get, () => activateTable(id));
+    selectTable: async (id, viewId = null) => {
+      await guard(set, get, () => activateTable(id, viewId));
     },
 
     selectView: async (viewId) => {
-      const { activeTableId } = get();
-      if (!activeTableId) return;
+      if (!viewId) return;
+      const { activeTableId, allViews, views } = get();
+      const view = allViews.find((v) => v.id === viewId) ?? views.find((v) => v.id === viewId);
+      if (!view) return;
       await guard(set, get, async () => {
         set((s) => ({ scratch: { ...s.scratch, open: false } }));
-        await loadTableData(activeTableId, viewId);
+        if (view.kind === "sql") {
+          // SQL views are workspace-level: running one does not need a table
+          // context, which also keeps the sidebar usable when no table exists.
+          set((s) => ({
+            activeViewId: view.id,
+            sqlResult: null,
+            searchQuery: "",
+            views: s.activeTableId ? s.views : s.allViews,
+          }));
+          const result = await ipc.viewRun(view.id, 1000, 0);
+          if (result.kind === "sql") {
+            set({ sqlResult: result, source: { kind: "none" }, rowsCache: new Map(), total: 0 });
+          }
+          await persistUi();
+          return;
+        }
+        if (!activeTableId) {
+          if (view.table_id) await activateTable(view.table_id, view.id);
+          return;
+        }
+        await loadTableData(activeTableId, view.id);
       });
     },
 
     refresh: async () => {
       await guard(set, get, async () => {
-        set({ tables: await ipc.tableList() });
+        const [tables, allViews] = await Promise.all([ipc.tableList(), ipc.viewList()]);
+        set({ tables, allViews });
         await afterWrite();
       });
     },
@@ -567,7 +631,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const name = get().tables.find((x) => x.id === id)?.name ?? "";
         await ipc.tableDelete(id);
         const tables = await ipc.tableList();
-        set({ tables });
+        set((s) => ({
+          tables,
+          allViews: s.allViews.filter((v) => v.table_id !== id),
+        }));
         if (get().activeTableId === id) {
           const next = tables[0]?.id ?? null;
           set({
@@ -682,6 +749,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           kind: "grid",
           data: { kind: "grid", ...defaultGridConfig() },
         });
+        set((s) => ({ allViews: upsertView(s.allViews, v) }));
         await loadTableData(activeTableId, v.id);
       });
     },
@@ -695,9 +763,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           data: { kind: "sql", statement },
         });
         const { activeTableId } = get();
-        if (activeTableId) {
-          set({ views: await ipc.viewList(activeTableId), activeViewId: v.id });
-        }
+        set((s) => ({
+          allViews: upsertView(s.allViews, v),
+          views: upsertView(s.views, v),
+          activeViewId: v.id,
+        }));
+        if (activeTableId) set({ views: await ipc.viewList(activeTableId) });
         const result = await ipc.viewRun(v.id, 1000, 0);
         if (result.kind === "sql") {
           set({ sqlResult: result, source: { kind: "none" }, rowsCache: new Map(), total: 0 });
@@ -708,13 +779,24 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     updateView: async (viewId, patch) => {
       await guard(set, get, async () => {
-        await ipc.viewUpdate(viewId, patch);
+        const updated = await ipc.viewUpdate(viewId, patch);
+        set((s) => ({
+          // Only touch `views` when it is in scope; editing another table's
+          // view from the sidebar must not inject it into the active tabs.
+          views: s.views.some((v) => v.id === viewId) ? upsertView(s.views, updated) : s.views,
+          allViews: upsertView(s.allViews, updated),
+        }));
+        // Presentation-only edits (icon / name / colour / position) do not
+        // change rows, so patching the metadata in place avoids a full reload.
+        const metaOnly = patch.data === undefined && patch.columns === undefined;
+        if (metaOnly) return;
         const { activeTableId, activeViewId } = get();
         if (!activeTableId) return;
         if (activeViewId === viewId) {
           await loadTableData(activeTableId, viewId);
         } else {
-          set({ views: await ipc.viewList(activeTableId) });
+          const views = await ipc.viewList(activeTableId);
+          set((s) => ({ views, allViews: mergeFetchedViews(s.allViews, activeTableId, views) }));
         }
       });
     },
@@ -732,14 +814,27 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     deleteView: async (viewId) => {
       await guard(set, get, async () => {
-        const name = get().views.find((v) => v.id === viewId)?.name ?? "";
+        const name =
+          get().views.find((v) => v.id === viewId)?.name ??
+          get().allViews.find((v) => v.id === viewId)?.name ??
+          "";
         await ipc.viewDelete(viewId);
+        set((s) => ({
+          views: s.views.filter((v) => v.id !== viewId),
+          allViews: s.allViews.filter((v) => v.id !== viewId),
+        }));
         const { activeTableId, activeViewId } = get();
-        if (!activeTableId) return;
+        if (!activeTableId) {
+          if (activeViewId === viewId) {
+            set({ activeViewId: null, sqlResult: null, source: { kind: "none" } });
+          }
+          return;
+        }
         if (activeViewId === viewId) {
           await activateTable(activeTableId);
         } else {
-          set({ views: await ipc.viewList(activeTableId) });
+          const views = await ipc.viewList(activeTableId);
+          set((s) => ({ views, allViews: mergeFetchedViews(s.allViews, activeTableId, views) }));
         }
         if (name) toast.success(t("toasts.viewDeleted", { name }));
       });

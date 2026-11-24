@@ -44,15 +44,19 @@ export function MenuItem({
   onSelect,
   danger,
   disabled,
+  className,
 }: {
   children: ReactNode;
   onSelect?: () => void;
   danger?: boolean;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
     <DropdownMenu.Item
-      className={danger ? "ui-menu-item danger" : "ui-menu-item"}
+      className={["ui-menu-item", danger ? "danger" : "", className ?? ""]
+        .filter(Boolean)
+        .join(" ")}
       onSelect={() => onSelect?.()}
       disabled={disabled}
     >
@@ -63,4 +67,36 @@ export function MenuItem({
 
 export function MenuSeparator() {
   return <DropdownMenu.Separator className="dropdown-sep" />;
+}
+
+/** A nested menu (e.g. an emoji palette) that keeps focus inside the menu. */
+export function MenuSub({
+  label,
+  children,
+  contentClassName,
+  ariaLabel,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  contentClassName?: string;
+  ariaLabel?: string;
+}) {
+  return (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className="ui-menu-item ui-menu-sub-trigger">
+        {label}
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent
+          className={
+            contentClassName ? `dropdown-menu ui-menu ${contentClassName}` : "dropdown-menu ui-menu"
+          }
+          sideOffset={4}
+          aria-label={ariaLabel}
+        >
+          {children}
+        </DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
+  );
 }

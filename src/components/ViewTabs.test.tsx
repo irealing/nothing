@@ -4,7 +4,7 @@
 // view must not advertise a delete action. Extra views still can be removed.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { ViewMeta } from "../types";
@@ -67,5 +67,24 @@ describe("ViewTabs grid view menu", () => {
     render(<ViewTabs hasTable />);
     await user.click(screen.getByRole("button", { name: "重命名" }));
     expect(await screen.findByText("删除视图")).toBeTruthy();
+  });
+
+  it("edits the view icon from the tab menu", async () => {
+    const updateView = vi.fn().mockResolvedValue(undefined);
+    useWorkspace.setState({ updateView });
+    const user = userEvent.setup();
+    render(<ViewTabs hasTable />);
+    await user.click(screen.getByRole("button", { name: "重命名" }));
+    await user.click(await screen.findByText("修改视图图标"));
+    // jsdom cannot emulate the submenu's pointer hover chain; a click event is
+    // what the real browser sends to the item.
+    fireEvent.click(await screen.findByRole("menuitem", { name: "🔥" }));
+    expect(updateView).toHaveBeenCalledWith(V1.id, { icon: "🔥" });
+  });
+
+  it("renders a custom view icon instead of the default glyph", () => {
+    useWorkspace.setState({ views: [{ ...V1, icon: "📊" }] });
+    render(<ViewTabs hasTable />);
+    expect(screen.getByText("📊")).toBeTruthy();
   });
 });

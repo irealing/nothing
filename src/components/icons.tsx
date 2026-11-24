@@ -143,6 +143,14 @@ export const IconGridView = (p: IconProps) => (
   </Svg>
 );
 
+export const IconEmoji = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
+    <path d="M9 9.5h.01M15 9.5h.01" />
+  </Svg>
+);
+
 export const IconCode = (p: IconProps) => (
   <Svg {...p}>
     <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />

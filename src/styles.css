@@ -504,6 +504,10 @@ body,
   padding: 7px 0;
 }
 
+.sidebar.collapsed .nav-chevron {
+  display: none;
+}
+
 .sidebar.collapsed .nav-item.active {
   background: var(--accent-weak);
   box-shadow: none;
@@ -648,6 +652,51 @@ body,
   background: var(--bg-active);
   color: var(--text);
   font-weight: 600;
+}
+
+/* A table row and its optional view list. The chevron is the explicit
+ * expand/collapse affordance; clicking the row also expands it. */
+.nav-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-weak);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nav-chevron svg {
+  transition: transform 0.12s ease;
+}
+
+.nav-chevron[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.nav-chevron:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.nav-sub-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-sub-item {
+  padding-left: 30px;
+  font-size: 12.5px;
+}
+
+.nav-sub-item.active {
+  background: var(--bg-hover);
 }
 
 .nav-icon {
@@ -2299,6 +2348,11 @@ input[type="checkbox"] {
   color: var(--text-mid);
 }
 
+.view-tab-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
 .tab-menu-btn {
   width: 18px;
   height: 18px;
@@ -3380,6 +3434,39 @@ input[type="checkbox"] {
   color: var(--text-weak);
   padding: 6px 9px 4px;
   user-select: none;
+}
+
+.ui-menu-sub-trigger::after {
+  content: "›";
+  margin-left: auto;
+  color: var(--text-weak);
+}
+
+/* Emoji palette as a submenu: a compact 8-column grid with the clear action
+ * spanning the full width above it. */
+.ui-menu-emoji {
+  display: grid;
+  grid-template-columns: repeat(8, 26px);
+  gap: 2px;
+  padding: 4px;
+}
+
+.ui-menu-emoji .ui-menu-item {
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ui-menu-emoji .ui-menu-item.clear {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  width: auto;
+  height: auto;
+  padding: 6px 8px;
+  font-size: 13px;
 }
 
 /* ---------- form primitives ---------- */
