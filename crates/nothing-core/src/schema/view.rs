@@ -153,7 +153,16 @@ fn reorder_view_columns(
 fn materialize_view_columns(conn: &Connection, view_id: &str, table_id: &str) -> Result<()> {
     for col in super::load_columns(conn, table_id)? {
         let id = new_id();
-        super::insert_view_column(conn, view_id, &id, &col.id, col.position, col.width, false)?;
+        super::insert_view_column(
+            conn,
+            view_id,
+            &id,
+            &col.id,
+            col.position,
+            col.width,
+            false,
+            false,
+        )?;
     }
     Ok(())
 }
@@ -375,12 +384,13 @@ impl Workspace {
                     let target = load_view_column(&tx, view_id, &c.column_id)?;
                     tx.execute(
                         r#"UPDATE "_meta" SET
-                             "position" = ?1, "width" = ?2, "hidden" = ?3
-                           WHERE "id" = ?4 AND "kind" = 'view_column'"#,
+                             "position" = ?1, "width" = ?2, "hidden" = ?3, "frozen" = ?4
+                           WHERE "id" = ?5 AND "kind" = 'view_column'"#,
                         rusqlite::params![
                             c.position.unwrap_or(target.position),
                             c.width.unwrap_or(target.width),
                             c.hidden.unwrap_or(target.hidden) as i64,
+                            c.frozen.unwrap_or(target.frozen) as i64,
                             target.id
                         ],
                     )?;
@@ -408,11 +418,12 @@ impl Workspace {
                 reorder_view_columns(conn, view_id, column_id, pos)?;
             }
             conn.execute(
-                r#"UPDATE "_meta" SET "width" = ?1, "hidden" = ?2
-                   WHERE "id" = ?3 AND "kind" = 'view_column'"#,
+                r#"UPDATE "_meta" SET "width" = ?1, "hidden" = ?2, "frozen" = ?3
+                   WHERE "id" = ?4 AND "kind" = 'view_column'"#,
                 rusqlite::params![
                     patch.width.unwrap_or(target.width),
                     patch.hidden.unwrap_or(target.hidden) as i64,
+                    patch.frozen.unwrap_or(target.frozen) as i64,
                     target.id
                 ],
             )?;

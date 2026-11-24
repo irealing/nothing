@@ -271,6 +271,106 @@ impl ColumnAlign {
     }
 }
 
+/// Presentation-only number style. Never part of the SQL: the stored value
+/// stays a plain REAL; the frontend renders it through `Intl.NumberFormat`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NumberStyle {
+    #[default]
+    Plain,
+    Currency,
+    Percent,
+}
+
+/// ISO-4217 currency token used by [`NumberStyle::Currency`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Currency {
+    Cny,
+    Usd,
+    Eur,
+    Gbp,
+    Jpy,
+}
+
+/// Presentation-only date display style. Storage is always ISO8601.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DateStyle {
+    /// Localized calendar date, no time component.
+    #[default]
+    Date,
+    /// Localized date plus hours/minutes.
+    DateTime,
+    /// The raw stored ISO8601 string.
+    Iso,
+}
+
+fn default_decimals() -> u8 {
+    2
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Cell display format for number/date columns (and formula columns whose
+/// result type is number/date). Stored as JSON in `_meta.format`; validated on
+/// write and applied only by the frontend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ColumnFormat {
+    Number {
+        #[serde(default)]
+        style: NumberStyle,
+        #[serde(default)]
+        currency: Option<Currency>,
+        #[serde(default = "default_decimals")]
+        decimals: u8,
+        #[serde(default = "default_true")]
+        thousands: bool,
+    },
+    Date {
+        #[serde(default)]
+        style: DateStyle,
+    },
+}
+
+impl ColumnFormat {
+    /// Whether this format can be applied to a column of `col_type`.
+    pub fn allows(&self, col_type: ColumnType) -> bool {
+        matches!(
+            (self, col_type),
+            (ColumnFormat::Number { .. }, ColumnType::Number)
+                | (ColumnFormat::Date { .. }, ColumnType::Date)
+        )
+    }
+
+    /// Strict validation for user writes.
+    pub fn validate(&self, col_type: ColumnType) -> Result<()> {
+        if !self.allows(col_type) {
+            return Err(AppError::InvalidInput(
+                "数字格式只能用于数字列，日期格式只能用于日期列".into(),
+            ));
+        }
+        if let ColumnFormat::Number {
+            style,
+            currency,
+            decimals,
+            ..
+        } = self
+        {
+            if *decimals > 6 {
+                return Err(AppError::InvalidInput("小数位必须在 0 到 6 之间".into()));
+            }
+            if *style == NumberStyle::Currency && currency.is_none() {
+                return Err(AppError::InvalidInput("货币格式必须指定币种".into()));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FormulaResultType {
@@ -502,6 +602,14 @@ impl ColumnData {
         }
     }
 
+    /// Value semantics: a formula behaves like its declared result type.
+    pub fn effective_type(&self) -> ColumnType {
+        match self {
+            ColumnData::Formula(f) => f.result_type.as_column_type(),
+            other => other.col_type(),
+        }
+    }
+
     pub fn is_physical(&self) -> bool {
         !matches!(self, ColumnData::Relation(_))
     }
@@ -563,6 +671,8 @@ pub struct ColumnMeta {
     /// Literal JSON in the cell's input shape; date columns additionally accept
     /// the `{"kind":"now"}` token (resolved on insert).
     pub default_value: Option<serde_json::Value>,
+    /// Presentation-only number/date format; `None` renders the raw value.
+    pub format: Option<ColumnFormat>,
     pub created_at: String,
     /// Polymorphic type-specific payload.
     pub data: ColumnData,
@@ -606,10 +716,7 @@ impl ColumnMeta {
 
     /// The type whose value semantics a column's stored values follow.
     pub fn effective_type(&self) -> ColumnType {
-        match self.data.formula() {
-            Some(f) => f.result_type.as_column_type(),
-            None => self.col_type(),
-        }
+        self.data.effective_type()
     }
 }
 
@@ -657,6 +764,9 @@ pub struct NewColumn {
     pub align: Option<String>,
     #[serde(default)]
     pub default_value: Option<serde_json::Value>,
+    /// Presentation-only number/date format; omitted/`null` keeps the raw value.
+    #[serde(default)]
+    pub format: Option<ColumnFormat>,
 }
 
 /// Partial update of a column. `None` fields keep their current value.
@@ -683,6 +793,11 @@ pub struct ColumnPatch {
     /// Remove the current default value.
     #[serde(default)]
     pub clear_default: bool,
+    /// New presentation format; omitted/`null` keeps the current one.
+    pub format: Option<ColumnFormat>,
+    /// Remove the current presentation format.
+    #[serde(default)]
+    pub clear_format: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -803,6 +918,8 @@ pub struct ViewColumnMeta {
     pub position: i64,
     pub width: i64,
     pub hidden: bool,
+    /// Part of this view's frozen left prefix (v5).
+    pub frozen: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -842,6 +959,7 @@ pub struct ViewColumnPatch {
     pub position: Option<i64>,
     pub width: Option<i64>,
     pub hidden: Option<bool>,
+    pub frozen: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -860,7 +978,7 @@ pub struct ViewPatch {
 // Raw row mapping
 // ---------------------------------------------------------------------------
 
-pub(crate) const META_COLS: &str = r#""id","parent_id","kind","name","position","icon","color","width","created_at","updated_at","sql_name","title_col_id","col_type","align","default_value","target_table_id","single","origin_id","formula_expr","formula_result_type","view_kind","filters","sorts","statement","ref_id","hidden""#;
+pub(crate) const META_COLS: &str = r#""id","parent_id","kind","name","position","icon","color","width","created_at","updated_at","sql_name","title_col_id","col_type","align","default_value","target_table_id","single","origin_id","formula_expr","formula_result_type","view_kind","filters","sorts","statement","ref_id","hidden","frozen","format""#;
 
 #[derive(Debug, Clone)]
 pub(crate) struct RawMeta {
@@ -890,6 +1008,8 @@ pub(crate) struct RawMeta {
     pub statement: Option<String>,
     pub ref_id: Option<String>,
     pub hidden: Option<i64>,
+    pub frozen: Option<i64>,
+    pub format: Option<String>,
 }
 
 pub(crate) fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawMeta> {
@@ -920,6 +1040,8 @@ pub(crate) fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawMeta> {
         statement: r.get("statement")?,
         ref_id: r.get("ref_id")?,
         hidden: r.get("hidden")?,
+        frozen: r.get("frozen")?,
+        format: r.get("format")?,
     })
 }
 
@@ -1030,6 +1152,14 @@ pub(crate) fn column_from_raw(
         Some(raw) => Some(serde_json::from_str(&raw).map_err(|e| internal(e.to_string()))?),
         None => None,
     };
+    // Lenient on read: a format from a newer build that no longer matches the
+    // column's effective type simply loses its formatting.
+    let format = r
+        .format
+        .as_deref()
+        .filter(|raw| !raw.trim().is_empty())
+        .and_then(|raw| serde_json::from_str::<ColumnFormat>(raw).ok())
+        .filter(|f| f.allows(data.effective_type()));
     Ok(ColumnMeta {
         id: r.id,
         table_id: r.parent_id.ok_or_else(|| internal("列缺少所属表"))?,
@@ -1040,6 +1170,7 @@ pub(crate) fn column_from_raw(
         color: parse_color(r.color.as_deref())?,
         align: parse_align(r.align.as_deref())?,
         default_value,
+        format,
         created_at: r.created_at,
         data,
     })
@@ -1052,6 +1183,7 @@ pub(crate) fn view_column_from_raw(r: RawMeta) -> rusqlite::Result<ViewColumnMet
         position: r.position,
         width: r.width.unwrap_or(160),
         hidden: r.hidden.unwrap_or(0) != 0,
+        frozen: r.frozen.unwrap_or(0) != 0,
     })
 }
 
@@ -1368,6 +1500,12 @@ pub(crate) fn insert_column_node(conn: &Connection, c: &ColumnMeta) -> Result<()
         None,
         None,
     )?;
+    if let Some(format) = &c.format {
+        conn.execute(
+            r#"UPDATE "_meta" SET "format" = ?1 WHERE "id" = ?2 AND "kind" = 'column'"#,
+            rusqlite::params![serde_json::to_string(format)?, c.id],
+        )?;
+    }
     for o in c.choices() {
         insert_node(
             conn,
@@ -1446,12 +1584,14 @@ pub(crate) fn insert_view_node(conn: &Connection, v: &ViewMeta) -> Result<()> {
             wc.position,
             wc.width,
             wc.hidden,
+            wc.frozen,
         )?;
     }
     Ok(())
 }
 
 /// Insert one view-column node under `view_id`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn insert_view_column(
     conn: &Connection,
     view_id: &str,
@@ -1460,6 +1600,7 @@ pub(crate) fn insert_view_column(
     position: i64,
     width: i64,
     hidden: bool,
+    frozen: bool,
 ) -> Result<()> {
     insert_node(
         conn,
@@ -1487,7 +1628,14 @@ pub(crate) fn insert_view_column(
         None,
         Some(column_id),
         Some(hidden),
-    )
+    )?;
+    if frozen {
+        conn.execute(
+            r#"UPDATE "_meta" SET "frozen" = 1 WHERE "id" = ?1 AND "kind" = 'view_column'"#,
+            [id],
+        )?;
+    }
+    Ok(())
 }
 
 /// Next free position among the children of `parent_id` with the given kind.
@@ -1608,7 +1756,7 @@ pub(crate) fn build_column_meta(
         }
     };
 
-    Ok(ColumnMeta {
+    let meta = ColumnMeta {
         id,
         table_id: table_id.to_string(),
         name,
@@ -1618,9 +1766,14 @@ pub(crate) fn build_column_meta(
         color,
         align,
         default_value,
+        format: new.format.clone(),
         created_at: now_iso(),
         data,
-    })
+    };
+    if let Some(format) = &meta.format {
+        format.validate(meta.effective_type())?;
+    }
+    Ok(meta)
 }
 
 /// Validate a column default: literals go through the same type/choice checks

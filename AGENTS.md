@@ -23,7 +23,7 @@ Cargo.toml               workspace 根
 crates/nothing-core/     存储内核（纯 Rust）
   src/
     db/                  Workspace：加密连接管理（单写连接 + 单一只读连接）、密码
-      manifest.rs        _nothing 清单表、format v4 单表 _meta schema、版本校验（无就地迁移）
+      manifest.rs        _nothing 清单表、format v5 单表 _meta schema、版本校验与 v4→v5 迁移
     schema/
       ident.rs           ULID、t_/c_/r_ 物理命名、quote_ident/quote_literal（唯二转义原语）
       mod.rs             元数据类型（TableMeta/ColumnMeta/OptionMeta/ViewMeta、ColumnData/ViewData、GridConfig/SqlConfig）
@@ -82,7 +82,7 @@ src-tauri/               Tauri 薄壳：commands.rs 只做参数校验与转发�
 4. **生成 SQL 只能通过视图编译器 / 白名单模板，一律参数绑定**。禁止把用户输入（筛选值、搜索词、单元格内容）字符串拼接进 SQL。SQL 视图语句必须校验（SELECT/WITH 开头 + EXPLAIN 试跑）且只在 `PRAGMA query_only = ON` 的独立只读连接上执行。
 5. **每个数据库连接必须设置**：`PRAGMA foreign_keys = ON`、`PRAGMA busy_timeout`；写连接必须 WAL 模式。
 6. **删除关联列 = 同事务内 `DROP TABLE r_xxxx`**；反向列由 `origin_id` 上的 `ON DELETE CASCADE` 清理，源列与反向列共享同一张 `r_xxxx` 表。
-7. **`_nothing.format_version` 的任何变更必须附带对应的迁移脚本**，且迁移必须幂等、事务化、可从任意旧版本逐级升级。当前是预发布例外：format v4 的 `_meta` 单表重构明确拒绝 v1–v3 旧库，不提供数据迁移；从 v4 起若要提升版本，必须补上逐级迁移。
+7. **`_nothing.format_version` 的任何变更必须附带对应的迁移脚本**，且迁移必须幂等、事务化、可从任意旧版本逐级升级。当前格式版本为 v5：v4 库在打开时事务内补上 `_meta.format` / `_meta.frozen` 两列并升级版本号；v1–v3（三张独立元数据表）仍明确拒绝、不提供数据迁移。
 8. **公式列编译只放行白名单**：列引用、字面量、四则运算、白名单 SQL 函数。禁止用户公式注入子查询或任意 SQL。
 9. 写操作走**单一写连接 + 队列**（Rust 侧 `Mutex<Connection>`），读操作走**单一只读连接**（`PRAGMA query_only = ON`，同样由 `Mutex` 串行化）。禁止多个连接并发写。
 
@@ -124,7 +124,7 @@ pnpm tauri build          # 打包
 
 ## 测试要求
 
-- **存储内核（schema/ 与 query/）的任何改动必须有 Rust 集成测试**，测试直接操作临时加密库文件，覆盖：DDL 事务回滚、列类型迁移、外键级联删除（含 `origin_id` 反向列）、视图编译器输出正确性、`_meta` 单表节点约束与 v4 格式校验。
+- **存储内核（schema/ 与 query/）的任何改动必须有 Rust 集成测试**，测试直接操作临时加密库文件，覆盖：DDL 事务回滚、列类型迁移、外键级联删除（含 `origin_id` 反向列）、视图编译器输出正确性、`_meta` 单表节点约束、v4→v5 迁移与格式校验。
 - 视图编译器测试需包含恶意输入用例（引号、`--`、`;`、SQL 关键字），验证参数绑定不被绕过。
 - 前端对 stores 和 ipc 层做单测；UI 组件测试非强制。
 

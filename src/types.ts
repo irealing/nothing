@@ -43,6 +43,22 @@ export type ColumnColor = PresetColor | `#${string}`;
 /** Explicit cell alignment; `null` on a column means "by type". */
 export type ColumnAlign = "left" | "center" | "right";
 
+/** Presentation-only number/date cell formatting (stored in `_meta.format`). */
+export type NumberStyle = "plain" | "currency" | "percent";
+export type Currency = "cny" | "usd" | "eur" | "gbp" | "jpy";
+export type DateStyle = "date" | "date_time" | "iso";
+
+export type ColumnFormat =
+  | {
+      kind: "number";
+      style: NumberStyle;
+      currency: Currency | null;
+      /** 0–6 fraction digits. */
+      decimals: number;
+      thousands: boolean;
+    }
+  | { kind: "date"; style: DateStyle };
+
 /** A select / multi-select choice node. */
 export interface Choice {
   id: string;
@@ -100,6 +116,8 @@ export interface ColumnMeta {
    * Date columns also accept the dynamic `{ kind: "now" }` token.
    */
   default_value: Json | null;
+  /** Presentation-only number/date format; `null` renders the raw value. */
+  format: ColumnFormat | null;
   created_at: string;
   data: ColumnData;
 }
@@ -128,6 +146,18 @@ export function isReverse(col: ColumnMeta): boolean {
   return col.data.kind === "relation" && col.data.origin_id !== null;
 }
 
+/** The type whose value semantics the column follows (formulas: result type). */
+export function effectiveType(col: ColumnMeta): ColumnType {
+  const result = formulaResultType(col);
+  return result ?? colType(col);
+}
+
+/** The column's default presentation format, used when the user enables it. */
+export function defaultColumnFormat(type: ColumnType | FormulaResultType): ColumnFormat {
+  if (type === "date") return { kind: "date", style: "date" };
+  return { kind: "number", style: "plain", currency: null, decimals: 0, thousands: true };
+}
+
 export interface NewColumn {
   name: string;
   type: ColumnType;
@@ -141,6 +171,7 @@ export interface NewColumn {
   color?: ColumnColor | null;
   align?: ColumnAlign | null;
   default_value?: Json | null;
+  format?: ColumnFormat | null;
 }
 
 /** `icon`/`color`/`align` accept "" to clear them. */
@@ -161,6 +192,10 @@ export interface ColumnPatch {
   default_value?: Json;
   /** Remove the current default value. */
   clear_default?: boolean;
+  /** New presentation format; omission keeps the current one. */
+  format?: ColumnFormat | null;
+  /** Remove the current presentation format. */
+  clear_format?: boolean;
 }
 
 // ---- views ----
@@ -228,6 +263,8 @@ export interface ViewColumnMeta {
   position: number;
   width: number;
   hidden: boolean;
+  /** Part of this view's frozen left prefix. */
+  frozen: boolean;
 }
 
 export interface ViewColumnPatch {
@@ -235,6 +272,7 @@ export interface ViewColumnPatch {
   position?: number;
   width?: number;
   hidden?: boolean;
+  frozen?: boolean;
 }
 
 export interface ViewMeta {
@@ -283,6 +321,34 @@ export interface RowPage {
   rows: Row[];
   total: number;
   titles: Record<string, string>;
+}
+
+/** One row plus display titles for every relation cell it carries. */
+export interface RowDetail {
+  row: Row;
+  titles: Record<string, string>;
+}
+
+/** Undo payload for a row delete (opaque to the UI, typed for safety). */
+export interface RowSnapshot {
+  rid: string;
+  created: string;
+  updated: string;
+  cells: Cells;
+}
+
+export interface LinkSnapshot {
+  /** Source relation column id (reverse columns share this junction). */
+  column_id: string;
+  a: string;
+  b: string;
+  ord: number;
+}
+
+export interface DeleteSnapshot {
+  table_id: string;
+  rows: RowSnapshot[];
+  links: LinkSnapshot[];
 }
 
 export interface SqlColumn {

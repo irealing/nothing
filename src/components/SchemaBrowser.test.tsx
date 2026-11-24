@@ -82,6 +82,7 @@ function col(
     created_at: "",
     data: dataFor(id, type),
     ...extra,
+    format: extra.format ?? null,
   };
 }
 

@@ -10,7 +10,8 @@ use serde::Serialize;
 use super::compiler::{compile, like_escape};
 use super::rows::{in_placeholders, IN_CHUNK};
 use super::{
-    clamp_pagination, stored_to_json, valueref_to_json, Row, RowPage, SqlColumn, SqlResult,
+    clamp_pagination, stored_to_json, valueref_to_json, Row, RowDetail, RowPage, SqlColumn,
+    SqlResult,
 };
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
@@ -296,6 +297,32 @@ impl Workspace {
                 .ok_or_else(|| AppError::NotFound(format!("行 {rid}")))?;
             attach_relations(conn, &visible, std::slice::from_mut(&mut row))?;
             Ok(row)
+        })
+    }
+
+    /// One row plus display titles for every relation cell it carries. The
+    /// detail panel needs this to avoid resolving titles one cell at a time.
+    pub fn get_row_detail(&self, table_id: &str, rid: &str) -> Result<RowDetail> {
+        self.with_read(|conn| {
+            let table = load_table(conn, table_id)?;
+            let cols = load_columns(conn, table_id)?;
+            let visible = sorted_columns(&cols);
+            let (mut rows, _) = fetch_page(
+                conn,
+                &table,
+                &visible,
+                &format!("{} = ?", quote_ident("_rid")),
+                &[Value::Text(rid.into())],
+                &format!("ORDER BY {}", quote_ident("_rid")),
+                1,
+                0,
+            )?;
+            let mut row = rows
+                .pop()
+                .ok_or_else(|| AppError::NotFound(format!("行 {rid}")))?;
+            let requests = attach_relations(conn, &visible, std::slice::from_mut(&mut row))?;
+            let titles = resolve_titles(conn, requests)?;
+            Ok(RowDetail { row, titles })
         })
     }
 

@@ -23,6 +23,7 @@ function col(type: ColumnType): ColumnMeta {
     color: null,
     align: null,
     default_value: null,
+    format: null,
     created_at: "",
     data,
   };

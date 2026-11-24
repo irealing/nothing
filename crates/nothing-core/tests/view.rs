@@ -326,3 +326,84 @@ fn sql_view_update_changes_stored_statement() {
         serde_json::json!(10)
     );
 }
+
+#[test]
+fn view_column_freeze_round_trips_and_is_per_view() {
+    let (_dir, ws) = common::create_ws("freeze.nothing");
+    let f = emp_task_fixture(&ws);
+    let table_id = f.task_table.id.clone();
+    let first = f.task_cols[0].id.clone();
+    let second = f.task_cols[1].id.clone();
+
+    let view_a = ws
+        .create_view(grid_view(
+            "A",
+            Some(table_id.clone()),
+            GridConfig::default(),
+        ))
+        .unwrap();
+    let view_b = ws
+        .create_view(grid_view("B", Some(table_id), GridConfig::default()))
+        .unwrap();
+    assert!(view_a.columns.iter().all(|c| !c.frozen));
+
+    let updated = ws
+        .update_view_column(
+            &view_a.id,
+            &first,
+            ViewColumnPatch {
+                frozen: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(updated.frozen);
+    // Width/hidden are untouched by a freeze-only patch.
+    let before = view_a
+        .columns
+        .iter()
+        .find(|c| c.column_id == first)
+        .unwrap();
+    assert_eq!(updated.width, before.width);
+    assert_eq!(updated.hidden, before.hidden);
+
+    // Freeze is per view: B stays unfrozen.
+    let reloaded_b = ws.get_view(&view_b.id).unwrap();
+    assert!(reloaded_b.columns.iter().all(|c| !c.frozen));
+
+    // Bulk view-column patches apply freeze to a left prefix atomically.
+    let patched = ws
+        .update_view(
+            &view_a.id,
+            ViewPatch {
+                columns: Some(vec![
+                    ViewColumnPatch {
+                        column_id: first.clone(),
+                        frozen: Some(true),
+                        ..Default::default()
+                    },
+                    ViewColumnPatch {
+                        column_id: second.clone(),
+                        frozen: Some(true),
+                        ..Default::default()
+                    },
+                ]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(patched.columns.iter().all(|c| c.frozen));
+
+    // Unfreeze again.
+    let thawed = ws
+        .update_view_column(
+            &view_a.id,
+            &first,
+            ViewColumnPatch {
+                frozen: Some(false),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!thawed.frozen);
+}

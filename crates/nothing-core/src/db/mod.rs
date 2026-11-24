@@ -74,7 +74,8 @@ impl Workspace {
     /// ([`AppError::WrongPassword`]), not-a-nothing-file
     /// ([`AppError::NotANothingDb`]), a too-new format version
     /// ([`AppError::FormatTooNew`]) and pre-release too-old files
-    /// ([`AppError::FormatTooOld`]). No format is migrated in place.
+    /// ([`AppError::FormatTooOld`]). Older supported formats are migrated in
+    /// place (transactional, idempotent) before the read connection opens.
     pub fn open(path: impl AsRef<Path>, password: &str) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
@@ -101,6 +102,7 @@ impl Workspace {
             .map_err(|_| AppError::WrongPassword)?;
         apply_connection_pragmas(&conn)?;
         manifest::verify_format(&mut conn)?;
+        manifest::migrate(&mut conn)?;
         let read = open_read_conn(&path, password)?;
 
         Ok(Self {

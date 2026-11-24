@@ -4,9 +4,9 @@
 use std::sync::Mutex;
 
 use nothing_core::{
-    Cells, ColumnMeta, ColumnPatch, CsvPreview, ImportCsvOptions, ImportReport, NewColumn, NewView,
-    Row, RowPage, SqlResult, TableMeta, ViewColumnMeta, ViewColumnPatch, ViewMeta, ViewPatch,
-    ViewResult, Workspace,
+    Cells, ColumnMeta, ColumnPatch, CsvPreview, DeleteSnapshot, ImportCsvOptions, ImportReport,
+    NewColumn, NewView, Row, RowDetail, RowPage, SqlResult, TableMeta, ViewColumnMeta,
+    ViewColumnPatch, ViewMeta, ViewPatch, ViewResult, Workspace,
 };
 use serde::Serialize;
 use tauri::State;
@@ -363,8 +363,22 @@ pub fn row_batch_update(
 }
 
 #[tauri::command]
-pub fn row_delete(state: State<AppState>, table_id: String, rids: Vec<String>) -> CmdResult<usize> {
-    with_ws(&state, |ws| ws.delete_rows(&table_id, &rids))
+pub fn row_detail(state: State<AppState>, table_id: String, rid: String) -> CmdResult<RowDetail> {
+    with_ws(&state, |ws| ws.get_row_detail(&table_id, &rid))
+}
+
+#[tauri::command]
+pub fn row_delete(
+    state: State<AppState>,
+    table_id: String,
+    rids: Vec<String>,
+) -> CmdResult<DeleteSnapshot> {
+    with_ws(&state, |ws| ws.delete_rows_snapshot(&table_id, &rids))
+}
+
+#[tauri::command]
+pub fn row_restore(state: State<AppState>, snapshot: DeleteSnapshot) -> CmdResult<usize> {
+    with_ws(&state, |ws| ws.restore_rows(&snapshot))
 }
 
 // ---------------------------------------------------------------------------

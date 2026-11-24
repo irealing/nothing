@@ -98,6 +98,7 @@ describe("optionCellFor", () => {
     color: null,
     align: null,
     default_value: null,
+    format: null,
     created_at: "",
     data: {
       kind: "select",

@@ -43,6 +43,7 @@ function column(
     color: null,
     align: null,
     default_value: null,
+    format: null,
     created_at: "",
     data:
       type === "select"
@@ -93,6 +94,7 @@ function viewWith(filters: unknown, sorts: { column_id: string; desc: boolean }[
       position: i,
       width: 160,
       hidden: false,
+      frozen: false,
     })),
   };
 }

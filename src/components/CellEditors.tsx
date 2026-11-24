@@ -24,6 +24,11 @@ export interface Anchor {
   height: number;
 }
 
+/** Build a `virtual-anchor` payload from a real element's bounding box. */
+export function anchorAt(rect: { left: number; top: number; width: number; height: number }): Anchor {
+  return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+}
+
 // ---------------------------------------------------------------------------
 // Select / multi-select popover
 // ---------------------------------------------------------------------------

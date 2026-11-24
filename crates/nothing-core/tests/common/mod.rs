@@ -55,6 +55,7 @@ pub fn col(name: &str, t: ColumnType) -> NewColumn {
         color: None,
         align: None,
         default_value: None,
+        format: None,
     }
 }
 

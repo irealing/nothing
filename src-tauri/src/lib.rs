@@ -75,6 +75,8 @@ pub fn run() {
             commands::row_update,
             commands::row_batch_update,
             commands::row_delete,
+            commands::row_restore,
+            commands::row_detail,
             // views
             commands::view_list,
             commands::view_create,

@@ -14,17 +14,21 @@ import { Dialog } from "../ui/Dialog";
 import { Field, Input, Select, Textarea, Checkbox, handleFormEnter } from "../ui/Field";
 import { ColorPicker, EmojiMenu, EmojiPicker } from "../ui/ColumnPickers";
 import { cellStyle, chipDot, chipStyle, pickAutoColor } from "../theme/grid";
+import { formatDate, formatNumber } from "../i18n/format";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconSigma, IconX } from "./icons";
 import type {
   ColumnAlign,
   ColumnColor,
+  ColumnFormat,
   ColumnMeta,
   ColumnPatch,
   ColumnType,
+  Currency,
   FormulaResultType,
   Json,
   NewChoice,
   NewColumn,
+  NumberStyle,
 } from "../types";
 import { choicesOf, colType, formulaResultType, isReverse } from "../types";
 
@@ -80,12 +84,16 @@ function previewAlign(
   return "left";
 }
 
-function previewValue(type: ColumnType, choices: NewChoice[]): string {
+function previewValue(
+  type: ColumnType,
+  choices: NewChoice[],
+  format: ColumnFormat | null,
+): string {
   switch (type) {
     case "number":
-      return "123";
+      return formatNumber(1234.5, format);
     case "date":
-      return todayIso();
+      return formatDate(todayIso(), format);
     case "checkbox":
       return "✓";
     case "select":
@@ -98,6 +106,13 @@ function previewValue(type: ColumnType, choices: NewChoice[]): string {
   }
 }
 
+/** Starting point when the user turns formatting on for this column kind. */
+function emptyColumnFormat(kind: "number" | "date"): ColumnFormat {
+  return kind === "date"
+    ? { kind: "date", style: "date" }
+    : { kind: "number", style: "plain", currency: null, decimals: 0, thousands: true };
+}
+
 /** Live DOM mock of the grid header + one cell for the current presentation. */
 function ColumnPreview({
   icon,
@@ -107,6 +122,7 @@ function ColumnPreview({
   choices,
   color,
   align,
+  format,
 }: {
   icon: string | null;
   name: string;
@@ -115,6 +131,7 @@ function ColumnPreview({
   choices: NewChoice[];
   color: ColumnColor | null;
   align: ColumnAlign | null;
+  format: ColumnFormat | null;
 }) {
   const cellColors = color ? cellStyle(color) : undefined;
   const contentAlign = previewAlign(type, resultType, align);
@@ -159,7 +176,7 @@ function ColumnPreview({
               {choices[0]?.name.trim() || t("column.previewUntitled")}
             </span>
           ) : (
-            previewValue(type, choices)
+            previewValue(type, choices, format)
           )}
         </span>
       </div>
@@ -210,6 +227,7 @@ export default function ColumnDialog({
   const [icon, setIcon] = useState<string | null>(existing?.icon ?? null);
   const [color, setColor] = useState<ColumnColor | null>(existing?.color ?? null);
   const [align, setAlign] = useState<ColumnAlign | null>(existing?.align ?? null);
+  const [format, setFormat] = useState<ColumnFormat | null>(existing?.format ?? null);
   const initialDefault = existing?.default_value ?? null;
   const [defaultEnabled, setDefaultEnabled] = useState(
     initialDefault !== null && initialDefault !== undefined,
@@ -235,6 +253,17 @@ export default function ColumnDialog({
     (type === "select" || type === "multi_select") && choices.length === 0;
   // Relation cells use Glide's Bubble renderer, which ignores contentAlign.
   const showAlign = type !== "relation";
+  // Formatting only applies to value types that have a display format.
+  const formatKind: "number" | "date" | null =
+    type === "number"
+      ? "number"
+      : type === "date"
+        ? "date"
+        : type === "formula" && resultType === "number"
+          ? "number"
+          : type === "formula" && resultType === "date"
+            ? "date"
+            : null;
 
   // Columns a formula may reference: physical, non-generated, non-reverse.
   const referenceable = useMemo(
@@ -249,6 +278,24 @@ export default function ColumnDialog({
     // new type would reject.
     setDefaultEnabled(false);
     setDefaultValue(null);
+    // A format is value-type-specific too.
+    const nextKind =
+      next === "number"
+        ? "number"
+        : next === "date"
+          ? "date"
+          : next === "formula" && resultType === "number"
+            ? "number"
+            : next === "formula" && resultType === "date"
+              ? "date"
+              : null;
+    if (format && format.kind !== nextKind) setFormat(null);
+  };
+
+  const changeResultType = (next: FormulaResultType) => {
+    setResultType(next);
+    const nextKind = next === "number" ? "number" : next === "date" ? "date" : null;
+    if (format && format.kind !== nextKind) setFormat(null);
   };
 
   const toggleDefault = (on: boolean) => {
@@ -357,6 +404,13 @@ export default function ColumnDialog({
             if (f?.expr !== formulaExpr) patch.formula_expr = formulaExpr;
             if (f?.result_type !== resultType) patch.formula_result_type = resultType;
           }
+          if (formatKind === null) {
+            if (existing.format) patch.clear_format = true;
+          } else if (format) {
+            patch.format = format;
+          } else if (existing.format) {
+            patch.clear_format = true;
+          }
           if (defaultUnsupported) {
             // no default payload
           } else if (defaultActive && defaultPayload !== null) {
@@ -385,6 +439,7 @@ export default function ColumnDialog({
           col.formula_expr = formulaExpr;
           col.formula_result_type = resultType;
         }
+        if (format) col.format = format;
         ok = await addColumn(col);
       }
       // Keeping the dialog open on failure preserves everything the user typed.
@@ -623,6 +678,7 @@ export default function ColumnDialog({
             choices={choices}
             color={color}
             align={align}
+            format={format}
           />
         </div>
 
@@ -643,6 +699,106 @@ export default function ColumnDialog({
               />
             </div>
           </div>
+        )}
+
+        {formatKind && (
+          <>
+            <div className="column-align-row">
+              <span className="field-label">{t("column.format")}</span>
+              <div className="column-format">
+                <Checkbox
+                  checked={format !== null}
+                  onChange={(on) => setFormat(on ? emptyColumnFormat(formatKind) : null)}
+                >
+                  {t("column.formatEnable")}
+                </Checkbox>
+                {format && format.kind === "number" && (
+                  <>
+                    <div className="column-format-style">
+                      <Select
+                        value={format.style}
+                        ariaLabel={t("column.formatNumberStyle")}
+                        onChange={(v) => {
+                          const style = v as NumberStyle;
+                          setFormat({
+                            ...format,
+                            style,
+                            currency:
+                              style === "currency" ? (format.currency ?? "cny") : null,
+                          });
+                        }}
+                        options={[
+                          { value: "plain", label: t("column.formatPlain") },
+                          { value: "currency", label: t("column.formatCurrency") },
+                          { value: "percent", label: t("column.formatPercent") },
+                        ]}
+                      />
+                    </div>
+                    {format.style === "currency" && (
+                      <div className="column-format-style">
+                        <Select
+                          value={format.currency ?? "cny"}
+                          ariaLabel={t("column.formatCurrencyCode")}
+                          onChange={(v) =>
+                            setFormat({ ...format, currency: v as Currency })
+                          }
+                          options={[
+                            { value: "cny", label: t("column.currencyCny") },
+                            { value: "usd", label: t("column.currencyUsd") },
+                            { value: "eur", label: t("column.currencyEur") },
+                            { value: "gbp", label: t("column.currencyGbp") },
+                            { value: "jpy", label: t("column.currencyJpy") },
+                          ]}
+                        />
+                      </div>
+                    )}
+                    <label className="column-format-decimals">
+                      <span>{t("column.formatDecimals")}</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={6}
+                        value={format.decimals}
+                        onChange={(e) => {
+                          const parsed = Number(e.target.value);
+                          const decimals = Number.isFinite(parsed)
+                            ? Math.min(6, Math.max(0, Math.round(parsed)))
+                            : 0;
+                          setFormat({ ...format, decimals });
+                        }}
+                      />
+                    </label>
+                    <Checkbox
+                      checked={format.thousands}
+                      onChange={(on) => setFormat({ ...format, thousands: on })}
+                    >
+                      {t("column.formatThousands")}
+                    </Checkbox>
+                  </>
+                )}
+                {format && format.kind === "date" && (
+                  <div className="column-format-style">
+                    <Select
+                      value={format.style}
+                      ariaLabel={t("column.formatDateStyle")}
+                      onChange={(v) =>
+                        setFormat({ kind: "date", style: v as "date" | "date_time" | "iso" })
+                      }
+                      options={[
+                        { value: "date", label: t("column.formatDateDate") },
+                        { value: "date_time", label: t("column.formatDateDateTime") },
+                        { value: "iso", label: t("column.formatDateIso") },
+                      ]}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            {format && format.kind === "number" && format.style === "percent" && (
+              <p className="hint">{t("column.formatPercentHint")}</p>
+            )}
+            <p className="hint">{t("column.formatHint")}</p>
+          </>
         )}
 
         {(type === "select" || type === "multi_select") && choicesEditor}
@@ -705,7 +861,7 @@ export default function ColumnDialog({
             <Field label={t("column.resultType")}>
               <Select
                 value={resultType}
-                onChange={(v) => setResultType(v as FormulaResultType)}
+                onChange={(v) => changeResultType(v as FormulaResultType)}
                 options={[
                   { value: "number", label: t("types.number") },
                   { value: "text", label: t("types.text") },

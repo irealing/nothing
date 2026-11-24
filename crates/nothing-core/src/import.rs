@@ -409,6 +409,7 @@ impl Workspace {
                 color: None,
                 align: None,
                 default_value: None,
+                format: None,
             })
             .collect();
 

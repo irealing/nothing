@@ -18,6 +18,7 @@ import type {
   ViewResult,
 } from "../types";
 import { PAGE_SIZE, useWorkspace } from "./workspace";
+import { useHistory } from "./history";
 
 const T1: TableMeta = {
   id: "t1",
@@ -41,6 +42,7 @@ const COL: ColumnMeta = {
   color: null,
   align: null,
   default_value: null,
+  format: null,
   created_at: "",
   data: { kind: "text", sql_name: "c_x" },
 };
@@ -66,6 +68,7 @@ const VC: ViewColumnMeta = {
   position: 0,
   width: 160,
   hidden: false,
+  frozen: false,
 };
 
 const GRID_V_LAYOUT: ViewMeta = { ...GRID_V, columns: [VC] };
@@ -142,6 +145,7 @@ const dataState = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useHistory.getState().clear();
   useWorkspace.setState({ ...dataState, rowsCache: new Map() });
 });
 
@@ -794,6 +798,7 @@ describe("updateViewColumn", () => {
       position: 1,
       width: 160,
       hidden: false,
+      frozen: false,
     };
     const layout: ViewMeta = { ...GRID_V, columns: [VC, VC2] };
     useWorkspace.setState({
@@ -903,5 +908,95 @@ describe("searchRows", () => {
     expect(s.searchQuery).toBe("");
     expect(s.total).toBe(1);
     expect(s.rowsCache.get(0)?.rid).toBe("r1");
+  });
+});
+
+describe("undo / redo", () => {
+  const ready = () =>
+    useWorkspace.setState({
+      ...dataState,
+      activeTableId: "t1",
+      activeViewId: "v1",
+      columns: [COL],
+      visibleColumns: [COL],
+      views: [GRID_V],
+      source: { kind: "view", viewId: "v1" },
+      rowsCache: new Map([[0, row("r1", "old")]]),
+    });
+
+  it("undoes a cell edit with the previous value", async () => {
+    ready();
+    vi.mocked(ipc.rowUpdate).mockResolvedValue(row("r1", "new"));
+    vi.mocked(ipc.rowBatchUpdate).mockResolvedValue(1);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([row("r1", "new")]));
+
+    await useWorkspace.getState().updateCell("r1", "c1", "new");
+    expect(useHistory.getState().past).toHaveLength(1);
+
+    await useWorkspace.getState().undo();
+    expect(ipc.rowBatchUpdate).toHaveBeenCalledWith("t1", [["r1", { c1: "old" }]]);
+    expect(useHistory.getState().past).toHaveLength(0);
+    expect(useHistory.getState().future).toHaveLength(1);
+
+    await useWorkspace.getState().redo();
+    expect(ipc.rowBatchUpdate).toHaveBeenCalledWith("t1", [["r1", { c1: "new" }]]);
+    expect(useHistory.getState().past).toHaveLength(1);
+  });
+
+  it("undoes a row delete by restoring the backend snapshot", async () => {
+    ready();
+    const snapshot = {
+      table_id: "t1",
+      rows: [{ rid: "r1", created: "", updated: "", cells: { c1: "old" } }],
+      links: [],
+    };
+    vi.mocked(ipc.rowDelete).mockResolvedValue(snapshot);
+    vi.mocked(ipc.rowRestore).mockResolvedValue(1);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().deleteRows(["r1"]);
+    expect(ipc.rowDelete).toHaveBeenCalledWith("t1", ["r1"]);
+    expect(useHistory.getState().past).toHaveLength(1);
+
+    await useWorkspace.getState().undo();
+    expect(ipc.rowRestore).toHaveBeenCalledWith(snapshot);
+
+    // Redo deletes again and refreshes the snapshot for another undo.
+    const second = { ...snapshot, links: [] };
+    vi.mocked(ipc.rowDelete).mockResolvedValue(second);
+    await useWorkspace.getState().redo();
+    expect(ipc.rowDelete).toHaveBeenCalledTimes(2);
+    await useWorkspace.getState().undo();
+    expect(ipc.rowRestore).toHaveBeenLastCalledWith(second);
+  });
+
+  it("does not record bulk deletes above the undo limit", async () => {
+    ready();
+    const rids = Array.from({ length: 501 }, (_, i) => `r${i}`);
+    vi.mocked(ipc.rowDelete).mockResolvedValue({
+      table_id: "t1",
+      rows: [],
+      links: [],
+    });
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().deleteRows(rids);
+    expect(useHistory.getState().past).toHaveLength(0);
+  });
+
+  it("clears the stack when a column changes shape", async () => {
+    ready();
+    useHistory.getState().push({
+      tableId: "t1",
+      label: "edit",
+      undo: async () => {},
+      redo: async () => {},
+    });
+    vi.mocked(ipc.columnUpdate).mockResolvedValue(COL);
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(gridResult([]));
+
+    await useWorkspace.getState().updateColumn("c1", { type: "number" });
+    expect(useHistory.getState().past).toHaveLength(0);
   });
 });

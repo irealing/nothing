@@ -461,6 +461,7 @@ mod tests {
             color: None,
             align: None,
             default_value: None,
+            format: None,
             created_at: String::new(),
             data,
         }

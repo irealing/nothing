@@ -14,7 +14,7 @@ pub use run::ViewResult;
 use std::collections::HashMap;
 
 use rusqlite::types::ValueRef;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
 use crate::schema::{ColumnMeta, ColumnType};
@@ -43,6 +43,42 @@ pub struct RowPage {
     /// rid → title for every row referenced by a relation cell on this page
     /// (batch-resolved; the frontend must never fetch these one by one).
     pub titles: HashMap<String, String>,
+}
+
+/// One row plus the display titles of every relation it points at. Used by the
+/// row-detail panel, which must not fetch titles one by one (防 N+1).
+#[derive(Debug, Clone, Serialize)]
+pub struct RowDetail {
+    pub row: Row,
+    pub titles: HashMap<String, String>,
+}
+
+/// One row exactly as it existed before a delete, with **restorable** physical
+/// cells only (formula columns are recomputed; relation cells live in links).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowSnapshot {
+    pub rid: String,
+    pub created: String,
+    pub updated: String,
+    pub cells: Cells,
+}
+
+/// One junction edge touching a deleted row, keyed by the **source** relation
+/// column (reverse columns share the source column's junction table).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkSnapshot {
+    pub column_id: String,
+    pub a: String,
+    pub b: String,
+    pub ord: i64,
+}
+
+/// Undo payload for a row delete: the rows plus every inbound/outbound edge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteSnapshot {
+    pub table_id: String,
+    pub rows: Vec<RowSnapshot>,
+    pub links: Vec<LinkSnapshot>,
 }
 
 /// Column descriptor of an ad-hoc SQL result.

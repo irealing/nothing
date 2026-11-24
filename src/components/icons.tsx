@@ -40,6 +40,27 @@ export const IconPlus = (p: IconProps) => (
   </Svg>
 );
 
+export const IconUndo = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+  </Svg>
+);
+
+export const IconRedo = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+  </Svg>
+);
+
+export const IconRows = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="5" width="18" height="5" rx="1.5" />
+    <rect x="3" y="14" width="18" height="5" rx="1.5" />
+  </Svg>
+);
+
 export const IconUpload = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 16V4" />

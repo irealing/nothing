@@ -19,10 +19,14 @@ pub use db::manifest::CURRENT_FORMAT_VERSION;
 pub use db::{Workspace, MAGIC};
 pub use error::AppError;
 pub use import::{read_csv_preview, CsvPreview, ImportCsvOptions, ImportReport};
-pub use query::{Cells, Row, RowPage, SqlColumn, SqlResult, ViewResult};
+pub use query::{
+    Cells, DeleteSnapshot, LinkSnapshot, Row, RowDetail, RowPage, RowSnapshot, SqlColumn,
+    SqlResult, ViewResult,
+};
 pub use schema::{
-    ColumnAlign, ColumnColor, ColumnData, ColumnMeta, ColumnPatch, ColumnType, FilterNode,
-    FilterOp, FilterRule, FormulaData, FormulaResultType, GridConfig, LogicOp, NewChoice,
-    NewColumn, NewView, OptionMeta, RelationData, SortSpec, SqlConfig, TableMeta, ViewColumnMeta,
-    ViewColumnPatch, ViewData, ViewKind, ViewMeta, ViewPatch, COLUMN_COLOR_TOKENS,
+    ColumnAlign, ColumnColor, ColumnData, ColumnFormat, ColumnMeta, ColumnPatch, ColumnType,
+    Currency, DateStyle, FilterNode, FilterOp, FilterRule, FormulaData, FormulaResultType,
+    GridConfig, LogicOp, NewChoice, NewColumn, NewView, NumberStyle, OptionMeta, RelationData,
+    SortSpec, SqlConfig, TableMeta, ViewColumnMeta, ViewColumnPatch, ViewData, ViewKind, ViewMeta,
+    ViewPatch, COLUMN_COLOR_TOKENS,
 };

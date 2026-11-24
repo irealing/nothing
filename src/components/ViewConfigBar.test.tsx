@@ -21,6 +21,7 @@ const TITLE: ColumnMeta = {
   color: null,
   align: null,
   default_value: null,
+  format: null,
   created_at: "",
   data: { kind: "text", sql_name: "c_1" },
 };

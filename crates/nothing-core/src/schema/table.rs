@@ -146,6 +146,7 @@ fn sync_view_columns_for_new_column(
             position,
             column.width,
             false,
+            false,
         )?;
     }
     Ok(())
@@ -201,6 +202,7 @@ fn setup_relation(
             color: None,
             align: None,
             default_value: None,
+            format: None,
             created_at: now_iso(),
             data: ColumnData::Relation(RelationData {
                 target_table_id: src_table.id.clone(),
@@ -752,6 +754,23 @@ impl Workspace {
                 new_meta.default_value = None;
             }
 
+            // Presentation format is tied to the effective value type: an
+            // explicit clear always wins, and an inherited format is dropped
+            // when a type change makes it meaningless.
+            let effective_type = new_meta.effective_type();
+            if patch.clear_format {
+                new_meta.format = None;
+            } else if let Some(format) = &patch.format {
+                format.validate(effective_type)?;
+                new_meta.format = Some(format.clone());
+            } else if new_meta
+                .format
+                .as_ref()
+                .is_some_and(|f| !f.allows(effective_type))
+            {
+                new_meta.format = None;
+            }
+
             let explicit_default = !patch.clear_default
                 && patch.default_value.as_ref().is_some_and(|v| !v.is_null());
             if let Some(default) = new_meta.default_value.clone() {
@@ -786,8 +805,8 @@ impl Workspace {
                          "color" = ?5, "align" = ?6, "default_value" = ?7,
                          "target_table_id" = ?8, "single" = ?9,
                          "formula_expr" = ?10, "formula_result_type" = ?11,
-                         "updated_at" = ?12
-                       WHERE "id" = ?13 AND "kind" = 'column'"#,
+                         "format" = ?12, "updated_at" = ?13
+                       WHERE "id" = ?14 AND "kind" = 'column'"#,
                     rusqlite::params![
                         new_meta.name,
                         new_meta.col_type().as_str(),
@@ -804,6 +823,11 @@ impl Workspace {
                         single,
                         formula_expr,
                         formula_result_type,
+                        new_meta
+                            .format
+                            .as_ref()
+                            .map(serde_json::to_string)
+                            .transpose()?,
                         now_iso(),
                         col_id,
                     ],

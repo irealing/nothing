@@ -22,6 +22,7 @@ fn col(name: &str, t: ColumnType) -> NewColumn {
         color: None,
         align: None,
         default_value: None,
+        format: None,
     }
 }
 
@@ -99,6 +100,7 @@ fn icon_and_color_round_trip_and_clear() {
                     color: Some("orange".into()),
                     align: None,
                     default_value: None,
+                    format: None,
                 },
             ],
         )
@@ -166,6 +168,7 @@ fn option_icon_and_color_round_trip() {
                     color: None,
                     align: None,
                     default_value: None,
+                    format: None,
                 },
             ],
         )
@@ -256,6 +259,7 @@ fn presentation_survives_a_type_change_rebuild() {
                     color: Some("blue".into()),
                     align: None,
                     default_value: None,
+                    format: None,
                 },
             ],
         )
@@ -449,4 +453,172 @@ fn unknown_color_token_degrades_on_read() {
     let after = ws.list_columns(&table.id).unwrap();
     assert_eq!(after[0].id, cols[0].id);
     assert!(after[0].color.is_none());
+}
+
+#[test]
+fn v4_workspace_migrates_in_place_and_is_idempotent() {
+    let (dir, ws) = common::create_ws("v4.nothing");
+    let path = db_path(&dir, "v4.nothing");
+    let table = ws
+        .create_table("Task", vec![col("Title", ColumnType::Text)])
+        .unwrap();
+    drop(ws);
+    {
+        let conn = raw(&path);
+        conn.execute_batch(
+            r#"ALTER TABLE "_meta" DROP COLUMN "format";
+               ALTER TABLE "_meta" DROP COLUMN "frozen";"#,
+        )
+        .unwrap();
+        conn.execute(
+            r#"UPDATE "_nothing" SET "value" = '4' WHERE "key" = 'format_version'"#,
+            [],
+        )
+        .unwrap();
+    }
+
+    let ws = Workspace::open(&path, PASSWORD).unwrap();
+    assert_eq!(ws.format_version().unwrap(), 5);
+    assert_eq!(ws.list_tables().unwrap()[0].id, table.id);
+    let cols = ws.list_columns(&table.id).unwrap();
+    assert_eq!(cols[0].name, "Title");
+    assert!(cols[0].format.is_none());
+    drop(ws);
+
+    let conn = raw(&path);
+    let names = table_info(&conn, "_meta");
+    assert!(names.iter().any(|c| c == "format"), "{names:?}");
+    assert!(names.iter().any(|c| c == "frozen"), "{names:?}");
+    drop(conn);
+
+    // Re-opening a v5 file must not try to add the columns again.
+    let ws = Workspace::open(&path, PASSWORD).unwrap();
+    assert_eq!(ws.format_version().unwrap(), 5);
+}
+
+#[test]
+fn column_format_round_trips_and_validates() {
+    use nothing_core::{ColumnFormat, Currency, DateStyle, NumberStyle};
+
+    let (_dir, ws) = common::create_ws("format.nothing");
+    let table = ws
+        .create_table(
+            "Task",
+            vec![
+                col("Title", ColumnType::Text),
+                col("Amount", ColumnType::Number),
+                col("Due", ColumnType::Date),
+            ],
+        )
+        .unwrap();
+    let cols = ws.list_columns(&table.id).unwrap();
+
+    let money = ColumnFormat::Number {
+        style: NumberStyle::Currency,
+        currency: Some(Currency::Cny),
+        decimals: 2,
+        thousands: true,
+    };
+    let updated = ws
+        .update_column(
+            &table.id,
+            &cols[1].id,
+            ColumnPatch {
+                format: Some(money.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(updated.format, Some(money.clone()));
+    // The stored metadata is what list_columns reads back.
+    let reloaded = ws.list_columns(&table.id).unwrap();
+    assert_eq!(reloaded[1].format, Some(money));
+
+    let date = ColumnFormat::Date {
+        style: DateStyle::Iso,
+    };
+    let updated = ws
+        .update_column(
+            &table.id,
+            &cols[2].id,
+            ColumnPatch {
+                format: Some(date.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(updated.format, Some(date));
+
+    // A number format on a text column is rejected and leaves metadata intact.
+    let err = ws
+        .update_column(
+            &table.id,
+            &cols[0].id,
+            ColumnPatch {
+                format: Some(ColumnFormat::Number {
+                    style: NumberStyle::Plain,
+                    currency: None,
+                    decimals: 0,
+                    thousands: false,
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+
+    // Currency requires a currency code.
+    let err = ws
+        .update_column(
+            &table.id,
+            &cols[1].id,
+            ColumnPatch {
+                format: Some(ColumnFormat::Number {
+                    style: NumberStyle::Currency,
+                    currency: None,
+                    decimals: 2,
+                    thousands: true,
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+
+    // Explicit clear.
+    let cleared = ws
+        .update_column(
+            &table.id,
+            &cols[1].id,
+            ColumnPatch {
+                clear_format: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(cleared.format.is_none());
+
+    // A type change that makes the format meaningless drops it automatically.
+    ws.update_column(
+        &table.id,
+        &cols[2].id,
+        ColumnPatch {
+            format: Some(ColumnFormat::Date {
+                style: DateStyle::Date,
+            }),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let changed = ws
+        .update_column(
+            &table.id,
+            &cols[2].id,
+            ColumnPatch {
+                col_type: Some(ColumnType::Text),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(changed.format.is_none());
 }

@@ -6,14 +6,18 @@
 //! [`map_sqlite_err`]. Relation cells write to the junction table (FKs
 //! enforce target existence and cascade cleanup).
 
-use rusqlite::{Connection, OptionalExtension};
+use std::collections::{HashMap, HashSet};
 
-use super::{json_to_stored, Cells, Row};
+use rusqlite::{params_from_iter, Connection, OptionalExtension};
+
+use super::{
+    json_to_stored, stored_to_json, Cells, DeleteSnapshot, LinkSnapshot, Row, RowSnapshot,
+};
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
 use crate::schema::ident::{junction_sql_name, new_id, now_iso, quote_ident};
 use crate::schema::table::map_sqlite_err;
-use crate::schema::{load_column, load_columns, load_table, ColumnMeta, TableMeta};
+use crate::schema::{load_column, load_columns, load_table, ColumnMeta, ColumnType, TableMeta};
 
 /// Chunk size for `IN (...)` lists (well below SQLite's variable limit).
 pub(crate) const IN_CHUNK: usize = 500;
@@ -312,26 +316,215 @@ impl Workspace {
     /// Delete rows by rid; relation links cascade automatically (FKs).
     /// Returns the number deleted.
     pub fn delete_rows(&self, table_id: &str, rids: &[String]) -> Result<usize> {
+        Ok(self.delete_rows_snapshot(table_id, rids)?.rows.len())
+    }
+
+    /// Delete rows while capturing everything needed to undo the operation:
+    /// the physical cells of each row plus **every** junction edge that touches
+    /// them (outbound links and inbound links from other tables).
+    ///
+    /// Snapshot and DELETE run in the same transaction, so no concurrent change
+    /// can slip between them (铁律 1/9).
+    pub fn delete_rows_snapshot(&self, table_id: &str, rids: &[String]) -> Result<DeleteSnapshot> {
         if rids.is_empty() {
-            return Ok(0);
+            return Ok(DeleteSnapshot {
+                table_id: table_id.to_string(),
+                rows: Vec::new(),
+                links: Vec::new(),
+            });
         }
         self.with_tx(|conn| {
             let table = load_table(conn, table_id)?;
+            let cols = load_columns(conn, table_id)?;
             let qtab = quote_ident(&table.sql_name);
-            let mut deleted = 0;
+            // Formula columns are generated and reverse relations live in the
+            // junction table: neither belongs in the physical snapshot.
+            let restorable: Vec<&ColumnMeta> = cols
+                .iter()
+                .filter(|c| c.is_physical() && c.col_type() != ColumnType::Formula)
+                .collect();
+
+            // ---- physical rows -------------------------------------------
+            let mut rows = Vec::new();
+            let mut select = vec![
+                quote_ident("_rid"),
+                quote_ident("_created"),
+                quote_ident("_updated"),
+            ];
+            select.extend(
+                restorable
+                    .iter()
+                    .map(|c| quote_ident(c.sql_name().unwrap_or_default())),
+            );
+            for chunk in rids.chunks(IN_CHUNK) {
+                let sql = format!(
+                    "SELECT {} FROM {qtab} WHERE {} IN ({})",
+                    select.join(", "),
+                    quote_ident("_rid"),
+                    in_placeholders(chunk.len())
+                );
+                let mut stmt = conn.prepare(&sql)?;
+                let snapshots = stmt
+                    .query_map(params_from_iter(chunk.iter().map(|s| s.as_str())), |r| {
+                        let mut cells = Cells::new();
+                        for (i, col) in restorable.iter().enumerate() {
+                            let value = r.get_ref(3 + i)?;
+                            let json = stored_to_json(col, value).map_err(|e| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    3 + i,
+                                    rusqlite::types::Type::Null,
+                                    Box::new(e),
+                                )
+                            })?;
+                            cells.insert(col.id.clone(), json);
+                        }
+                        Ok(RowSnapshot {
+                            rid: r.get(0)?,
+                            created: r.get(1)?,
+                            updated: r.get(2)?,
+                            cells,
+                        })
+                    })?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                rows.extend(snapshots);
+            }
+            rows.sort_by(|a, b| a.rid.cmp(&b.rid));
+
+            // ---- junction edges touching the deleted rows -----------------
+            // A relation column is relevant when it belongs to this table
+            // (outbound) or targets this table (inbound). Reverse columns share
+            // the source column's junction, so resolve `origin_id` first.
+            let mut source_columns: Vec<String> = Vec::new();
+            {
+                let mut stmt = conn.prepare(
+                    r#"SELECT "id", "origin_id" FROM "_meta"
+                       WHERE "kind" = 'column' AND "col_type" = 'relation'
+                         AND ("parent_id" = ?1 OR "target_table_id" = ?1)"#,
+                )?;
+                let mut seen = HashSet::new();
+                let mut meta_rows = stmt.query_map([table_id], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+                })?;
+                while let Some((id, origin)) = meta_rows.next().transpose()? {
+                    let source = origin.unwrap_or(id);
+                    if seen.insert(source.clone()) {
+                        source_columns.push(source);
+                    }
+                }
+            }
+
+            let mut links: Vec<LinkSnapshot> = Vec::new();
+            let mut seen_links: HashSet<(String, String, String)> = HashSet::new();
+            for source in &source_columns {
+                let junction = quote_ident(&junction_sql_name(source));
+                for chunk in rids.chunks(IN_CHUNK) {
+                    let placeholders = in_placeholders(chunk.len());
+                    let sql = format!(
+                        r#"SELECT "a", "b", "ord" FROM {junction}
+                           WHERE "a" IN ({placeholders}) OR "b" IN ({placeholders})"#
+                    );
+                    let mut params: Vec<&str> = chunk.iter().map(String::as_str).collect();
+                    params.extend(chunk.iter().map(String::as_str));
+                    let mut stmt = conn.prepare(&sql)?;
+                    let edges = stmt
+                        .query_map(params_from_iter(params), |r| {
+                            Ok((
+                                r.get::<_, String>(0)?,
+                                r.get::<_, String>(1)?,
+                                r.get::<_, i64>(2)?,
+                            ))
+                        })?
+                        .collect::<std::result::Result<Vec<_>, _>>()?;
+                    for (a, b, ord) in edges {
+                        if seen_links.insert((source.clone(), a.clone(), b.clone())) {
+                            links.push(LinkSnapshot {
+                                column_id: source.clone(),
+                                a,
+                                b,
+                                ord,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // ---- delete ---------------------------------------------------
             for chunk in rids.chunks(IN_CHUNK) {
                 let sql = format!(
                     r#"DELETE FROM {qtab} WHERE "_rid" IN ({})"#,
                     in_placeholders(chunk.len())
                 );
-                deleted += conn
-                    .execute(
-                        &sql,
-                        rusqlite::params_from_iter(chunk.iter().map(|s| s.as_str())),
-                    )
+                conn.execute(&sql, params_from_iter(chunk.iter().map(|s| s.as_str())))
                     .map_err(map_sqlite_err)?;
             }
-            Ok(deleted)
+
+            Ok(DeleteSnapshot {
+                table_id: table_id.to_string(),
+                rows,
+                links,
+            })
+        })
+    }
+
+    /// Restore a [`DeleteSnapshot`] exactly: same `_rid`/timestamps, same
+    /// physical values, and every junction edge (inbound links included).
+    ///
+    /// All rows and links are written in one transaction. Formula columns are
+    /// recomputed by SQLite; relation cells are restored from the link list.
+    pub fn restore_rows(&self, snapshot: &DeleteSnapshot) -> Result<usize> {
+        self.with_tx(|conn| {
+            let table = load_table(conn, &snapshot.table_id)?;
+            let cols = load_columns(conn, &snapshot.table_id)?;
+            let by_id: HashMap<&str, &ColumnMeta> =
+                cols.iter().map(|c| (c.id.as_str(), c)).collect();
+            let qtab = quote_ident(&table.sql_name);
+
+            for row in &snapshot.rows {
+                let mut insert_cols = vec![
+                    quote_ident("_rid"),
+                    quote_ident("_created"),
+                    quote_ident("_updated"),
+                ];
+                let mut values = vec![
+                    rusqlite::types::Value::Text(row.rid.clone()),
+                    rusqlite::types::Value::Text(row.created.clone()),
+                    rusqlite::types::Value::Text(row.updated.clone()),
+                ];
+                let mut cell_ids: Vec<&String> = row.cells.keys().collect();
+                cell_ids.sort();
+                for id in cell_ids {
+                    let Some(col) = by_id.get(id.as_str()) else {
+                        continue;
+                    };
+                    if !col.is_physical() || col.col_type() == ColumnType::Formula {
+                        continue;
+                    }
+                    if let Some(value) = json_to_stored(col, &row.cells[id])? {
+                        insert_cols.push(quote_ident(col.sql_name().unwrap_or_default()));
+                        values.push(value);
+                    }
+                }
+                let sql = format!(
+                    "INSERT INTO {qtab} ({}) VALUES ({})",
+                    insert_cols.join(", "),
+                    in_placeholders(values.len())
+                );
+                conn.execute(&sql, params_from_iter(values))
+                    .map_err(map_sqlite_err)?;
+            }
+
+            // Links may belong to another table's relation column (inbound
+            // edges); the junction name is derived from the source column id.
+            for link in &snapshot.links {
+                let junction = quote_ident(&junction_sql_name(&link.column_id));
+                conn.execute(
+                    &format!(r#"INSERT INTO {junction} ("a", "b", "ord") VALUES (?1, ?2, ?3)"#),
+                    rusqlite::params![link.a, link.b, link.ord],
+                )
+                .map_err(map_sqlite_err)?;
+            }
+
+            Ok(snapshot.rows.len())
         })
     }
 

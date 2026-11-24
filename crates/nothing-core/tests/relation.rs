@@ -332,3 +332,140 @@ fn relation_data_survives_unrelated_table_rebuild() {
     assert_eq!(n, 1, "junction rows must survive table rebuild");
     assert_eq!(common::raw_count(&conn, &f.emp_table.sql_name), 1);
 }
+
+#[test]
+fn delete_snapshot_restores_row_and_both_link_directions() {
+    let (dir, ws) = common::create_ws("restore.nothing");
+    let f = emp_task_fixture(&ws);
+    let rel = ws
+        .add_column(
+            &f.task_table.id,
+            common::relation_col("Owner", &f.emp_table.id, Some("Tasks")),
+        )
+        .unwrap();
+    let conn = raw(&dbp(&dir, "restore.nothing"));
+    let junction = junction_sql_name(&rel.id);
+
+    let emp_name = f.emp_cols[0].id.clone();
+    let mut cells = nothing_core::Cells::new();
+    cells.insert(emp_name, serde_json::json!("Alice"));
+    let alice = ws.insert_row(&f.emp_table.id, cells).unwrap();
+
+    raw_insert_row(&conn, &f.task_table.sql_name, "task1");
+    raw_insert_row(&conn, &f.task_table.sql_name, "task2");
+    // Inbound links: two tasks point at alice (b side of the junction).
+    link(&conn, &junction, "task1", &alice.rid, 0);
+    link(&conn, &junction, "task2", &alice.rid, 1);
+
+    let snapshot = ws
+        .delete_rows_snapshot(&f.emp_table.id, std::slice::from_ref(&alice.rid))
+        .unwrap();
+    assert_eq!(snapshot.rows.len(), 1);
+    assert_eq!(snapshot.rows[0].rid, alice.rid);
+    assert_eq!(snapshot.rows[0].created, alice.created);
+    assert_eq!(
+        snapshot.rows[0].cells.get(&f.emp_cols[0].id),
+        Some(&serde_json::json!("Alice"))
+    );
+    // Both inbound edges were captured, not just the deleted row's own links.
+    assert_eq!(snapshot.links.len(), 2);
+    assert!(ws.get_row(&f.emp_table.id, &alice.rid).is_err());
+
+    ws.restore_rows(&snapshot).unwrap();
+    let restored = ws.get_row(&f.emp_table.id, &alice.rid).unwrap();
+    assert_eq!(restored.rid, alice.rid);
+    assert_eq!(restored.created, alice.created);
+    assert_eq!(
+        restored.cells.get(&f.emp_cols[0].id),
+        Some(&serde_json::json!("Alice"))
+    );
+    // The same junction edges are back, with their original order.
+    let links: Vec<(String, String, i64)> = conn
+        .prepare(&format!(
+            r#"SELECT "a", "b", "ord" FROM "{junction}" ORDER BY "ord""#
+        ))
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        links,
+        vec![
+            ("task1".to_string(), alice.rid.clone(), 0),
+            ("task2".to_string(), alice.rid.clone(), 1),
+        ]
+    );
+}
+
+#[test]
+fn delete_snapshot_restores_outbound_links_and_cascades_cleanly() {
+    let (_dir, ws) = common::create_ws("restore-out.nothing");
+    let f = emp_task_fixture(&ws);
+    let rel = ws
+        .add_column(
+            &f.task_table.id,
+            common::relation_col("Owner", &f.emp_table.id, None),
+        )
+        .unwrap();
+
+    let emp_name = f.emp_cols[0].id.clone();
+    let mut emp_cells = nothing_core::Cells::new();
+    emp_cells.insert(emp_name.clone(), serde_json::json!("Bob"));
+    let bob = ws.insert_row(&f.emp_table.id, emp_cells).unwrap();
+
+    let mut task_cells = nothing_core::Cells::new();
+    task_cells.insert(rel.id.clone(), serde_json::json!([bob.rid]));
+    let task = ws.insert_row(&f.task_table.id, task_cells).unwrap();
+    let before = ws.get_row(&f.task_table.id, &task.rid).unwrap();
+    assert_eq!(
+        before.cells.get(&rel.id),
+        Some(&serde_json::json!([bob.rid]))
+    );
+
+    let snapshot = ws
+        .delete_rows_snapshot(&f.task_table.id, std::slice::from_ref(&task.rid))
+        .unwrap();
+    assert_eq!(snapshot.links.len(), 1);
+    assert!(ws.get_row(&f.task_table.id, &task.rid).is_err());
+
+    ws.restore_rows(&snapshot).unwrap();
+    let after = ws.get_row(&f.task_table.id, &task.rid).unwrap();
+    assert_eq!(after.rid, task.rid);
+    assert_eq!(
+        after.cells.get(&rel.id),
+        Some(&serde_json::json!([bob.rid]))
+    );
+}
+
+#[test]
+fn restore_rolls_back_when_a_linked_row_is_missing() {
+    let (_dir, ws) = common::create_ws("restore-bad.nothing");
+    let f = emp_task_fixture(&ws);
+    let rel = ws
+        .add_column(
+            &f.task_table.id,
+            common::relation_col("Owner", &f.emp_table.id, None),
+        )
+        .unwrap();
+
+    let emp_name = f.emp_cols[0].id.clone();
+    let mut emp_cells = nothing_core::Cells::new();
+    emp_cells.insert(emp_name, serde_json::json!("Carol"));
+    let carol = ws.insert_row(&f.emp_table.id, emp_cells).unwrap();
+
+    let mut task_cells = nothing_core::Cells::new();
+    task_cells.insert(rel.id.clone(), serde_json::json!([carol.rid]));
+    let task = ws.insert_row(&f.task_table.id, task_cells).unwrap();
+
+    let snapshot = ws
+        .delete_rows_snapshot(&f.task_table.id, std::slice::from_ref(&task.rid))
+        .unwrap();
+
+    // The link target disappears after the snapshot: restoring the task must
+    // fail as a whole rather than leaving a half-restored row behind.
+    ws.delete_rows(&f.emp_table.id, std::slice::from_ref(&carol.rid))
+        .unwrap();
+    assert!(ws.restore_rows(&snapshot).is_err());
+    assert!(ws.get_row(&f.task_table.id, &task.rid).is_err());
+}

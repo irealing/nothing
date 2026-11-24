@@ -89,16 +89,23 @@ export function PanelDialog({
   badge,
   onClose,
   footer,
+  side,
   children,
 }: {
   title: ReactNode;
   badge?: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
+  /** Slide-in side drawer instead of the centred panel. */
+  side?: boolean;
   children: ReactNode;
 }) {
   return (
-    <Shell onClose={onClose} layerClass="panel-layer" contentClass="panel">
+    <Shell
+      onClose={onClose}
+      layerClass={side ? "panel-layer side-layer" : "panel-layer"}
+      contentClass={side ? "panel panel-side" : "panel"}
+    >
       <div className="panel-head">
         <h3>
           {title}

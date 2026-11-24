@@ -12,11 +12,13 @@ import type {
   ColumnPatch,
   CommandError,
   CsvPreview,
+  DeleteSnapshot,
   ImportCsvOptions,
   ImportReport,
   NewColumn,
   NewView,
   Row,
+  RowDetail,
   RowPage,
   SettingsView,
   SqlResult,
@@ -127,6 +129,9 @@ export const rowList = (tableId: string, limit?: number, offset?: number) =>
 export const rowGet = (tableId: string, rid: string) =>
   call<Row>("row_get", { tableId, rid });
 
+export const rowDetail = (tableId: string, rid: string) =>
+  call<RowDetail>("row_detail", { tableId, rid });
+
 export const rowInsert = (tableId: string, cells: Cells) =>
   call<Row>("row_insert", { tableId, cells });
 
@@ -137,7 +142,10 @@ export const rowBatchUpdate = (tableId: string, updates: [string, Cells][]) =>
   call<number>("row_batch_update", { tableId, updates });
 
 export const rowDelete = (tableId: string, rids: string[]) =>
-  call<number>("row_delete", { tableId, rids });
+  call<DeleteSnapshot>("row_delete", { tableId, rids });
+
+export const rowRestore = (snapshot: DeleteSnapshot) =>
+  call<number>("row_restore", { snapshot });
 
 // ---- views, search, ad-hoc SQL ----
 

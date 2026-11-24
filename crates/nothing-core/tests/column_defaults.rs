@@ -21,6 +21,7 @@ fn col(name: &str, t: ColumnType) -> NewColumn {
         color: None,
         align: None,
         default_value: None,
+        format: None,
     }
 }
 
@@ -45,6 +46,7 @@ fn align_round_trip_and_clear() {
                     color: None,
                     align: Some("center".into()),
                     default_value: None,
+                    format: None,
                 },
             ],
         )
@@ -118,6 +120,7 @@ fn default_values_apply_to_new_rows_only() {
                     color: None,
                     align: None,
                     default_value: Some(serde_json::json!(8)),
+                    format: None,
                 },
                 status,
             ],
@@ -194,6 +197,7 @@ fn date_now_default_is_resolved_on_insert() {
                     color: None,
                     align: None,
                     default_value: Some(serde_json::json!({ "kind": "now" })),
+                    format: None,
                 },
             ],
         )
@@ -254,6 +258,7 @@ fn default_value_validation_rejects_unsupported_columns_and_values() {
                 color: None,
                 align: None,
                 default_value: Some(serde_json::json!("abc")),
+                format: None,
             }],
         )
         .unwrap_err();
@@ -332,6 +337,7 @@ fn type_change_clears_incompatible_default_and_choices_change_prunes_it() {
                     color: None,
                     align: None,
                     default_value: Some(serde_json::json!("abc")),
+                    format: None,
                 },
                 status,
             ],

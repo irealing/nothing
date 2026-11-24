@@ -19,10 +19,11 @@ import {
   type Rectangle,
 } from "@glideapps/glide-data-grid";
 import { PAGE_SIZE, useWorkspace } from "../stores/workspace";
+import { useHistory } from "../stores/history";
 import { useTheme } from "../stores/theme";
 import { useLayout } from "../stores/layout";
 import { readGridTheme, readOptionPalette, tagThemeOverride } from "../theme/grid";
-import { formatDate } from "../i18n/format";
+import { formatDate, formatNumber } from "../i18n/format";
 import { t } from "../i18n";
 import { confirm } from "../ui/ConfirmDialog";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
@@ -37,6 +38,7 @@ import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
 import { InlineCellEditor, type EditorMove } from "./GridEditors";
 import StartActions from "./StartActions";
 import CellHover, { toLocalBounds } from "./CellHover";
+import RowDetailPanel from "./RowDetail";
 import { EmojiMenu } from "../ui/ColumnPickers";
 import {
   IconCopy,
@@ -48,6 +50,9 @@ import {
   IconStar,
   IconTable,
   IconTrash,
+  IconUndo,
+  IconRedo,
+  IconRows,
   IconX,
 } from "./icons";
 
@@ -117,7 +122,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
       return {
         kind: GridCellKind.Number,
         data: typeof value === "number" ? value : undefined,
-        displayData: value === null || value === undefined ? "" : String(value),
+        displayData: formatNumber(value, col.format),
         copyData,
         contentAlign,
         readonly: false,
@@ -133,7 +138,7 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         readonly: isReverse(col),
       };
     case "date": {
-      const shown = formatDate(value);
+      const shown = formatDate(value, col.format);
       return {
         kind: GridCellKind.Text,
         data: shown,
@@ -150,7 +155,19 @@ function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string
         return {
           kind: GridCellKind.Number,
           data: typeof value === "number" ? value : undefined,
-          displayData: value === null || value === undefined ? "" : String(value),
+          displayData: formatNumber(value, col.format),
+          copyData,
+          contentAlign,
+          readonly: true,
+          allowOverlay: false,
+        };
+      }
+      if (rt === "date") {
+        const shown = formatDate(value, col.format);
+        return {
+          kind: GridCellKind.Text,
+          data: shown,
+          displayData: shown,
           copyData,
           contentAlign,
           readonly: true,
@@ -361,6 +378,7 @@ export default function TableView() {
   const deleteColumn = useWorkspace((s) => s.deleteColumn);
   const updateColumn = useWorkspace((s) => s.updateColumn);
   const updateViewColumn = useWorkspace((s) => s.updateViewColumn);
+  const updateView = useWorkspace((s) => s.updateView);
   const previewViewColumnWidth = useWorkspace((s) => s.previewViewColumnWidth);
   const setTitleColumn = useWorkspace((s) => s.setTitleColumn);
   const setTableIcon = useWorkspace((s) => s.setTableIcon);
@@ -381,6 +399,7 @@ export default function TableView() {
   } | null>(null);
   const [headerEmoji, setHeaderEmoji] = useState<{ col: ColumnMeta; x: number; y: number } | null>(null);
   const [colDialog, setColDialog] = useState<{ existing: ColumnMeta | null } | null>(null);
+  const [detailRow, setDetailRow] = useState<string | null>(null);
   const [hover, setHover] = useState<{
     col: number;
     row: number;
@@ -417,6 +436,7 @@ export default function TableView() {
     setPicker(null);
     setHeaderEmoji(null);
     setHover(null);
+    setDetailRow(null);
   }, [activeTableId, activeViewId]);
 
   // A width gesture can outlive the component (view switch); drop its timer.
@@ -452,7 +472,69 @@ export default function TableView() {
 
   const columns = visibleColumns;
   const duplicateRows = useWorkspace((s) => s.duplicateRows);
+  const undo = useWorkspace((s) => s.undo);
+  const redo = useWorkspace((s) => s.redo);
+  const canUndo = useHistory((s) => s.past.length > 0);
+  const canRedo = useHistory((s) => s.future.length > 0);
   const layout = activeView?.columns ?? [];
+
+  // Frozen columns are always a left prefix of the *visible* columns (Glide
+  // excludes the row-marker column from `freezeColumns`).
+  const frozenCount = useMemo(() => {
+    const flags = new Map(layout.map((c) => [c.column_id, c.frozen]));
+    let count = 0;
+    for (const col of columns) {
+      if (!flags.get(col.id)) break;
+      count += 1;
+    }
+    return count;
+  }, [columns, layout]);
+
+  /** Freeze the first `count` visible columns; everything to the right thaws. */
+  const setFrozenPrefix = useCallback(
+    (count: number) => {
+      if (!activeViewId || layout.length === 0) return;
+      const visibleIndex = new Map(columns.map((c, i) => [c.id, i]));
+      const patches = layout.map((wc) => {
+        const idx = visibleIndex.get(wc.column_id);
+        return { column_id: wc.column_id, frozen: idx !== undefined && idx < count };
+      });
+      const changed = patches.some(
+        (p) =>
+          (layout.find((c) => c.column_id === p.column_id)?.frozen ?? false) !== p.frozen,
+      );
+      if (changed) void updateView(activeViewId, { columns: patches });
+    },
+    [activeViewId, columns, layout, updateView],
+  );
+
+  // Workspace-level undo/redo. Skip while any in-cell editor or overlay is
+  // open, and never steal Ctrl+Z from a real text field (SQL editor, search).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (editor || picker || colMenu || cellMenu || headerEmoji || colDialog || panelOpen || detailRow) {
+        return;
+      }
+      e.preventDefault();
+      if (key === "y" || e.shiftKey) void redo();
+      else void undo();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editor, picker, colMenu, cellMenu, headerEmoji, colDialog, panelOpen, detailRow, redo, undo]);
   const resolvedTheme = useTheme((s) => s.resolved);
   const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme]);
   const optionPalette = useMemo(() => readOptionPalette(), [resolvedTheme]);
@@ -1165,6 +1247,26 @@ export default function TableView() {
           {searchQuery && <span className="pill-filter">{t("table.searching", { query: searchQuery })}</span>}
         </div>
         <div className="toolbar-spacer" />
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={!canUndo}
+          title={t("history.undoHint")}
+          aria-label={t("history.undo")}
+          onClick={() => void undo()}
+        >
+          <IconUndo size={14} />
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={!canRedo}
+          title={t("history.redoHint")}
+          aria-label={t("history.redo")}
+          onClick={() => void redo()}
+        >
+          <IconRedo size={14} />
+        </button>
         <label className="search-field">
           <IconSearch size={14} />
           <input
@@ -1296,6 +1398,7 @@ export default function TableView() {
           rowMarkers={{ kind: showRowNumbers ? "both" : "none", width: ROW_MARKER_WIDTH }}
           gridSelection={gridSelection}
           onGridSelectionChange={setGridSelection}
+          freezeColumns={frozenCount}
           trailingRowOptions={{ tint: false, sticky: true, hint: t("table.newRowHint") }}
           onRowAppended={() => {
             void insertRow({});
@@ -1411,6 +1514,15 @@ export default function TableView() {
           }
         >
           <MenuItem
+            onSelect={() => {
+              setDetailRow(cellMenuRow.rid);
+              setCellMenu(null);
+            }}
+          >
+            <IconRows size={14} /> {t("table.openRowDetail")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
             disabled={!canClearCell}
             onSelect={() => {
               if (cellMenuCol) void updateCell(cellMenuRow.rid, cellMenuCol.id, emptyValue(cellMenuCol));
@@ -1488,6 +1600,25 @@ export default function TableView() {
           >
             {t("table.moveColumnRight")}
           </MenuItem>
+          <MenuItem
+            disabled={colMenuIndex < 0 || colMenuIndex + 1 === frozenCount}
+            onSelect={() => {
+              setFrozenPrefix(colMenuIndex + 1);
+              setColMenu(null);
+            }}
+          >
+            {t("table.freezeThrough")}
+          </MenuItem>
+          {frozenCount > 0 && colMenuIndex >= 0 && colMenuIndex < frozenCount && (
+            <MenuItem
+              onSelect={() => {
+                setFrozenPrefix(colMenuIndex);
+                setColMenu(null);
+              }}
+            >
+              {t("table.unfreeze")}
+            </MenuItem>
+          )}
           {colType(colMenu.col) === "text" &&
             !isReverse(colMenu.col) &&
             table.title_col_id !== colMenu.col.id && (
@@ -1539,6 +1670,14 @@ export default function TableView() {
 
       {colDialog && (
         <ColumnDialog existing={colDialog.existing} onClose={() => setColDialog(null)} />
+      )}
+
+      {detailRow && activeTableId && (
+        <RowDetailPanel
+          tableId={activeTableId}
+          rid={detailRow}
+          onClose={() => setDetailRow(null)}
+        />
       )}
     </div>
   );
