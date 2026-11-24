@@ -15,7 +15,7 @@ use crate::settings;
 
 #[derive(Default)]
 pub struct AppState {
-    /// The single open workspace (one window = one `.nothing` file in M3).
+    /// The single open workspace (one window = one `.nothing` file).
     ws: Mutex<Option<Workspace>>,
     /// A `.nothing` path handed to us by the shell (file association, drag onto
     /// the executable, or a second instance). Drained by the frontend so an
@@ -150,21 +150,6 @@ pub fn workspace_close(state: State<AppState>) -> CmdResult<()> {
         .map_err(|_| CommandError::internal("工作区状态锁已损坏"))?;
     *guard = None;
     Ok(())
-}
-
-#[tauri::command]
-pub fn workspace_info(state: State<AppState>) -> CmdResult<Option<WorkspaceInfo>> {
-    let guard = state
-        .ws
-        .lock()
-        .map_err(|_| CommandError::internal("工作区状态锁已损坏"))?;
-    match guard.as_ref() {
-        Some(ws) => Ok(Some(WorkspaceInfo {
-            path: ws.path().to_string_lossy().into_owned(),
-            format_version: ws.format_version().map_err(CommandError::from)?,
-        })),
-        None => Ok(None),
-    }
 }
 
 #[tauri::command]

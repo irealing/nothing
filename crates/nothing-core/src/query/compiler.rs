@@ -399,8 +399,8 @@ fn compile_relation_rule(
     col: &ColumnMeta,
     op: FilterOp,
 ) -> Result<(String, Vec<Value>)> {
-    // Relation columns live in junction tables: only emptiness is filterable
-    // in M2. Source columns own side "a"; reverse columns own side "b".
+    // Relation columns live in junction tables: only emptiness is filterable.
+    // Source columns own side "a"; reverse columns own side "b".
     let source_col_id = if let Some(origin) = col.origin_id() {
         origin
     } else {

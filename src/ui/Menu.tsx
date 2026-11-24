@@ -64,7 +64,3 @@ export function MenuItem({
 export function MenuSeparator() {
   return <DropdownMenu.Separator className="dropdown-sep" />;
 }
-
-export function MenuLabel({ children }: { children: ReactNode }) {
-  return <DropdownMenu.Label className="ui-menu-label">{children}</DropdownMenu.Label>;
-}

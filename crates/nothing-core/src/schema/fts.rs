@@ -7,7 +7,7 @@
 //!
 //! Tokenizer: `trigram`, which supports substring matching and works for CJK
 //! text (unicode61 would treat a whole Chinese run as one token). Queries
-//! shorter than 3 chars fall back to LIKE in the query layer (M2).
+//! shorter than 3 chars fall back to LIKE in the query layer.
 
 use rusqlite::Connection;
 

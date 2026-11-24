@@ -23,6 +23,9 @@ export interface Hsl {
 
 const HEX_BODY = /^[0-9a-fA-F]+$/;
 
+/** Default custom color shown when the picker has no previous value. */
+export const DEFAULT_CUSTOM_COLOR = "#3b82f6";
+
 /** Parse `#rgb` or `#rrggbb`; anything else returns `null`. */
 export function parseHex(value: string): Rgb | null {
   const raw = value.trim();
@@ -39,10 +42,6 @@ export function parseHex(value: string): Rgb | null {
     g: parseInt(body.slice(2, 4), 16),
     b: parseInt(body.slice(4, 6), 16),
   };
-}
-
-export function isHexColor(value: string): value is `#${string}` {
-  return parseHex(value) !== null;
 }
 
 /** Canonical lowercase `#rrggbb`, or `null` when the input is not a color. */

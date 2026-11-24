@@ -1,10 +1,11 @@
 //! Workspace: opening/creating encrypted `.nothing` files and connection management.
 //!
 //! 铁律 5/9: every connection sets `foreign_keys=ON` and `busy_timeout`; the
-//! workspace owns a single write connection behind a `Mutex`. Read pooling is
-//! added in M2 when the query layer lands.
+//! workspace owns one write connection and one permanently read-only
+//! (`query_only = ON`) connection, each behind a `Mutex`. WAL lets the reader
+//! and writer proceed concurrently without competing for the same connection.
 
-pub mod migrate;
+pub mod manifest;
 
 use std::fs::File;
 use std::io::Read;
@@ -17,9 +18,6 @@ use crate::error::{AppError, Result};
 
 /// Magic value stored in `_nothing`, identifying a nothing workspace file.
 pub const MAGIC: &str = "nothing-db";
-
-/// Recommended file extension for workspace files.
-pub const FILE_EXTENSION: &str = "nothing";
 
 /// Version string recorded as `created_by` in new workspaces.
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -61,7 +59,7 @@ impl Workspace {
         let mut conn = Connection::open(&path)?;
         conn.pragma_update(None, "key", password)?;
         apply_connection_pragmas(&conn)?;
-        migrate::bootstrap(&mut conn)?;
+        manifest::bootstrap(&mut conn)?;
         let read = open_read_conn(&path, password)?;
         Ok(Self {
             path,
@@ -72,10 +70,11 @@ impl Workspace {
 
     /// Open an existing workspace, verifying password and file identity.
     ///
-    /// Distinguishes the three failure modes: wrong password
+    /// Distinguishes the failure modes: wrong password
     /// ([`AppError::WrongPassword`]), not-a-nothing-file
-    /// ([`AppError::NotANothingDb`]) and a too-new format version
-    /// ([`AppError::FormatTooNew`]). Runs pending format migrations.
+    /// ([`AppError::NotANothingDb`]), a too-new format version
+    /// ([`AppError::FormatTooNew`]) and pre-release too-old files
+    /// ([`AppError::FormatTooOld`]). No format is migrated in place.
     pub fn open(path: impl AsRef<Path>, password: &str) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
@@ -101,7 +100,7 @@ impl Workspace {
             .query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
             .map_err(|_| AppError::WrongPassword)?;
         apply_connection_pragmas(&conn)?;
-        migrate::verify_and_migrate(&mut conn)?;
+        manifest::verify_format(&mut conn)?;
         let read = open_read_conn(&path, password)?;
 
         Ok(Self {
@@ -118,7 +117,7 @@ impl Workspace {
 
     /// Current on-disk format version of this workspace.
     pub fn format_version(&self) -> Result<u32> {
-        self.with_conn(|conn| migrate::read_format_version(conn))
+        self.with_conn(|conn| manifest::read_format_version(conn))
     }
 
     /// Re-encrypt the whole file with a new password (`PRAGMA rekey`), then

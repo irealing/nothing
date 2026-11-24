@@ -1,9 +1,12 @@
-//! Workspace bootstrap and format-version checks.
+//! Workspace manifest, bootstrap and format-version checks.
 //!
 //! Format v4 replaced the three typed metadata tables (`_tables`, `_columns`,
 //! `_views`) with a **single** self-referencing `_meta` node table. The Rust
 //! object model (see [`crate::schema`]) is the source of truth for invariants;
 //! SQL only stores typed fields and provides a safety net (CHECK + FK).
+//!
+//! Bootstrap creates the current schema; opening only verifies the format.
+//! There is no in-place migration path yet (see 铁律 7 in AGENTS.md).
 //!
 //! 铁律 7 is intentionally relaxed for this pre-release reset: older workspace
 //! files are rejected with a clear "format too old" error instead of being
@@ -158,7 +161,7 @@ pub fn bootstrap(conn: &mut Connection) -> Result<()> {
 }
 
 /// Verify the file is a nothing workspace and that its format is supported.
-pub fn verify_and_migrate(conn: &mut Connection) -> Result<()> {
+pub fn verify_format(conn: &mut Connection) -> Result<()> {
     let magic = manifest_get(conn, "magic")?;
     if magic.as_deref() != Some(MAGIC) {
         return Err(AppError::NotANothingDb);

@@ -335,7 +335,7 @@ impl Workspace {
         })
     }
 
-    /// Internal: load column metadata for a single column (used by M3 shell).
+    /// Load column metadata for a single column.
     pub fn get_column(&self, table_id: &str, col_id: &str) -> Result<ColumnMeta> {
         self.with_conn(|conn| load_column(conn, table_id, col_id))
     }

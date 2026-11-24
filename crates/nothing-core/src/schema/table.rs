@@ -18,9 +18,9 @@ use super::ident::{
 };
 use super::{
     build_column_meta, insert_column_node, insert_node, insert_table_node, load_column,
-    load_columns, load_table, load_table_by_name, next_position, normalize_color, normalize_icon,
-    touch_table, validate_default_value, ColumnData, ColumnMeta, ColumnPatch, ColumnType,
-    FormulaData, FormulaResultType, NewChoice, NewColumn, OptionMeta, RelationData, TableMeta,
+    load_columns, load_table, next_position, normalize_color, normalize_icon, touch_table,
+    validate_default_value, ColumnData, ColumnMeta, ColumnPatch, ColumnType, FormulaData,
+    FormulaResultType, NewChoice, NewColumn, OptionMeta, RelationData, TableMeta,
 };
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
@@ -356,10 +356,6 @@ impl Workspace {
 
     pub fn get_table(&self, table_id: &str) -> Result<TableMeta> {
         self.with_conn(|conn| load_table(conn, table_id))
-    }
-
-    pub fn get_table_by_name(&self, name: &str) -> Result<TableMeta> {
-        self.with_conn(|conn| load_table_by_name(conn, name))
     }
 
     /// Rename a table (metadata only — the physical name never changes).

@@ -9,9 +9,6 @@ import { ColumnTypeIcon, IconChevronDown, IconPlus, IconX } from "./icons";
 import { pickAutoColor } from "../theme/grid";
 import { EmojiPicker } from "../ui/ColumnPickers";
 
-/** Modal shell (kept as an alias so call sites stay terse). */
-export const Modal = Dialog;
-
 // Types that can be created straight from the builder. Selects get an inline
 // choices field; relation/formula need the table to exist first, so they stay
 // in the per-column dialog.

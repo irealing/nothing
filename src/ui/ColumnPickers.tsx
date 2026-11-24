@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { HexColorPicker } from "react-colorful";
 import type { ColumnColor, PresetColor } from "../types";
 import { TAG_COLORS, isPresetColor, swatchStyle } from "../theme/grid";
-import { normalizeHex } from "../theme/color";
+import { DEFAULT_CUSTOM_COLOR, normalizeHex } from "../theme/color";
 import { IconCheck, IconX } from "../components/icons";
 import { t } from "../i18n";
 import { Popover as PopoverShell } from "./Popover";
@@ -181,7 +181,7 @@ export function ColorSwatches({
   const [customOpen, setCustomOpen] = useState(false);
   // Seed the picker with the current custom value, or a pleasant default the
   // first time. Nothing is emitted until the user actually moves the pointer.
-  const [draft, setDraft] = useState<string>(custom ?? "#3b82f6");
+  const [draft, setDraft] = useState<string>(custom ?? DEFAULT_CUSTOM_COLOR);
 
   const openCustom = () => {
     setDraft(custom ?? draft);

@@ -128,10 +128,6 @@ export function isReverse(col: ColumnMeta): boolean {
   return col.data.kind === "relation" && col.data.origin_id !== null;
 }
 
-export function originIdOf(col: ColumnMeta): string | null {
-  return col.data.kind === "relation" ? col.data.origin_id : null;
-}
-
 export interface NewColumn {
   name: string;
   type: ColumnType;

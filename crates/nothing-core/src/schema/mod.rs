@@ -1113,18 +1113,6 @@ pub(crate) fn load_table(conn: &Connection, table_id: &str) -> Result<TableMeta>
     Ok(table_from_raw(raw)?)
 }
 
-pub(crate) fn load_table_by_name(conn: &Connection, name: &str) -> Result<TableMeta> {
-    let raw: RawMeta = conn
-        .query_row(
-            &format!(r#"SELECT {META_COLS} FROM "_meta" WHERE "name" = ?1 AND "kind" = 'table'"#),
-            [name],
-            raw_from_row,
-        )
-        .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("表 {name}")))?;
-    Ok(table_from_raw(raw)?)
-}
-
 fn load_options(conn: &Connection, column_id: &str) -> Result<Vec<OptionMeta>> {
     let mut stmt = conn.prepare(&format!(
         r#"SELECT {META_COLS} FROM "_meta"

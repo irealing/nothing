@@ -61,8 +61,6 @@ export const workspaceOpen = (path: string, password: string) =>
 
 export const workspaceClose = () => call<void>("workspace_close");
 
-export const workspaceInfo = () => call<WorkspaceInfo | null>("workspace_info");
-
 export const workspaceChangePassword = (newPassword: string) =>
   call<void>("workspace_change_password", { newPassword });
 

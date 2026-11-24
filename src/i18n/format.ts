@@ -17,8 +17,6 @@ const dateTimeFmt = new Intl.DateTimeFormat(DISPLAY_LOCALE, {
   minute: "2-digit",
 });
 
-const numberFmt = new Intl.NumberFormat(DISPLAY_LOCALE, { maximumFractionDigits: 6 });
-
 /** Format an ISO date for display; invalid/empty values pass through. */
 export function formatDate(value: unknown): string {
   if (value === null || value === undefined || value === "") return "";
@@ -27,8 +25,4 @@ export function formatDate(value: unknown): string {
   if (Number.isNaN(date.getTime())) return raw;
   // Date-only values (yyyy-mm-dd) are shown without a time component.
   return raw.length <= 10 ? dateFmt.format(date) : dateTimeFmt.format(date);
-}
-
-export function formatNumber(value: number): string {
-  return Number.isFinite(value) ? numberFmt.format(value) : String(value);
 }

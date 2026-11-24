@@ -38,15 +38,11 @@ pub fn junction_index_name(column_id: &str) -> String {
     format!("{}_rev", junction_sql_name(column_id))
 }
 
-/// Physical SQL view name for a view id: `v_<ulid lowercase>`.
-pub fn view_sql_name(view_id: &str) -> String {
-    format!("v_{}", view_id.to_ascii_lowercase())
-}
-
 /// Quote a SQL identifier (double quotes, embedded quotes doubled).
 ///
-/// Only ever called with generated names (`t_/c_/r_/v_` + ULID) and fixed
-/// internal names — never with raw user input.
+/// Only ever called with generated names (`t_/c_/r_` + ULID, FTS objects) and
+/// fixed internal names — never with raw user input. Views have no physical
+/// names: their statements live in `_meta`.
 pub fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }

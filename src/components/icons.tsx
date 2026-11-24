@@ -68,12 +68,6 @@ export const IconSearch = (p: IconProps) => (
   </Svg>
 );
 
-export const IconFilter = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 5h16l-6.2 7.2V19l-3.6 1.8v-8.6L4 5Z" />
-  </Svg>
-);
-
 export const IconSliders = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
@@ -103,12 +97,6 @@ export const IconChevronDown = (p: IconProps) => (
 export const IconChevronRight = (p: IconProps) => (
   <Svg {...p}>
     <path d="m9 6 6 6-6 6" />
-  </Svg>
-);
-
-export const IconChevronLeft = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="m15 6-6 6 6 6" />
   </Svg>
 );
 
@@ -256,29 +244,10 @@ export const IconSortDesc = (p: IconProps) => (
   </Svg>
 );
 
-export const IconRows = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="3" y="4" width="18" height="16" rx="2" />
-    <path d="M3 9h18M3 14h18" />
-  </Svg>
-);
-
 export const IconAlert = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="9" />
     <path d="M12 8v5M12 16h.01" />
-  </Svg>
-);
-
-export const IconArrowUp = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 19V5M5 12l7-7 7 7" />
-  </Svg>
-);
-
-export const IconArrowDown = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 5v14M5 12l7 7 7-7" />
   </Svg>
 );
 
