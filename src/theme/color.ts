@@ -166,31 +166,31 @@ export function customScale(hex: string, dark: boolean): CustomScale {
   const rgb = parseHex(hex) ?? { r: 100, g: 116, b: 139 };
   const { h, s } = rgbToHsl(rgb);
   if (dark) {
-    const chipBg = cssHsl(h, s * 0.45, 0.24);
-    const headerBg = cssHsl(h, s * 0.4, 0.29);
+    const chipBg = cssHsl(h, s * 0.38, 0.23);
+    const headerBg = cssHsl(h, s * 0.32, 0.27);
     return {
       chipBg,
-      chipFg: readableHsl(h, s * 0.65, hslToRgb({ h, s: s * 0.45, l: 0.24 }), 0.84, 1),
-      chipBorder: cssHsl(h, s * 0.4, 0.37),
+      chipFg: readableHsl(h, s * 0.55, hslToRgb({ h, s: s * 0.38, l: 0.23 }), 0.82, 1),
+      chipBorder: "rgba(255, 255, 255, 0.09)",
       swatchBg: toHex(rgb),
       swatchFg: readableText(rgb),
       headerBg,
-      headerFg: readableHsl(h, s * 0.55, hslToRgb({ h, s: s * 0.4, l: 0.29 }), 0.88, 1),
-      cellBg: cssHsl(h, s * 0.4, 0.16),
-      cellHover: cssHsl(h, s * 0.45, 0.21),
+      headerFg: readableHsl(h, s * 0.45, hslToRgb({ h, s: s * 0.32, l: 0.27 }), 0.86, 1),
+      cellBg: cssHsl(h, s * 0.28, 0.13),
+      cellHover: cssHsl(h, s * 0.32, 0.17),
     };
   }
-  const chipBg = cssHsl(h, s * 0.6, 0.94);
-  const headerBg = cssHsl(h, s * 0.45, 0.88);
+  const chipBg = cssHsl(h, s * 0.5, 0.945);
+  const headerBg = cssHsl(h, s * 0.38, 0.9);
   return {
     chipBg,
-    chipFg: readableHsl(h, s * 0.8, hslToRgb({ h, s: s * 0.6, l: 0.94 }), 0.3, -1),
-    chipBorder: cssHsl(h, s * 0.45, 0.8),
+    chipFg: readableHsl(h, s * 0.7, hslToRgb({ h, s: s * 0.5, l: 0.945 }), 0.32, -1),
+    chipBorder: "rgba(15, 15, 15, 0.08)",
     swatchBg: toHex(rgb),
     swatchFg: readableText(rgb),
     headerBg,
-    headerFg: readableHsl(h, s * 0.8, hslToRgb({ h, s: s * 0.45, l: 0.88 }), 0.29, -1),
-    cellBg: cssHsl(h, s * 0.4, 0.965),
-    cellHover: cssHsl(h, s * 0.45, 0.945),
+    headerFg: readableHsl(h, s * 0.7, hslToRgb({ h, s: s * 0.38, l: 0.9 }), 0.3, -1),
+    cellBg: cssHsl(h, s * 0.35, 0.972),
+    cellHover: cssHsl(h, s * 0.38, 0.955),
   };
 }

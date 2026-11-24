@@ -157,9 +157,10 @@ export function InlineCellEditor({
   const cancel = () => finish(onClose);
 
   const width = Math.min(Math.max(anchor.width, 160), window.innerWidth - 16);
+  const height = Math.max(30, Math.min(anchor.height - 2, 44));
   const left = Math.max(8, Math.min(anchor.x, window.innerWidth - width - 10));
-  const top = Math.max(8, Math.min(anchor.y, window.innerHeight - 46));
-  const style: CSSProperties = { position: "fixed", left, top, width, zIndex: 320 };
+  const top = Math.max(8, Math.min(anchor.y + 1, window.innerHeight - height - 8));
+  const style: CSSProperties = { position: "fixed", left, top, width, height, zIndex: 320 };
 
   return (
     <input

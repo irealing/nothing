@@ -30,7 +30,7 @@ export const PILL_HEIGHT = 22;
 export const PILL_RADIUS = 6;
 export const PILL_PADDING_X = 8;
 export const PILL_GAP = 6;
-export const CELL_PADDING_X = 8;
+export const CELL_PADDING_X = 10;
 
 /** Text drawn inside a pill: icon and name with a single separating space. */
 export function pillLabel(pill: OptionPill): string {

@@ -67,6 +67,11 @@ function hasPopupEditor(col: ColumnMeta): boolean {
 /** Synthetic trailing header cell that opens the "add column" dialog. */
 const ADD_COLUMN_ID = "__add_column__";
 
+/** Roomier than Glide's default 34px: one line of content plus breathing space. */
+const ROW_HEIGHT = 38;
+const HEADER_HEIGHT = 40;
+const ROW_MARKER_WIDTH = 40;
+
 type CellAlign = "left" | "center" | "right";
 
 /** Explicit alignment wins; otherwise numbers (including numeric formulas)
@@ -933,38 +938,36 @@ export default function TableView() {
         <button className="btn primary" onClick={() => void insertRow({})}>
           <IconPlus size={14} /> {t("table.addRow")}
         </button>
-        <button
-          className="btn"
-          disabled={selectedRids.length === 0}
-          title={t("table.duplicateRowsHint")}
-          onClick={() => duplicateAndReveal(selectedRids)}
-        >
-          <IconCopy size={14} />{" "}
-          {selectedRids.length > 0
-            ? t("table.duplicateRows", { count: selectedRids.length })
-            : t("table.duplicateRow")}
-        </button>
-        <button
-          className="btn danger-ghost"
-          disabled={selectedRids.length === 0}
-          title={t("table.deleteRowsHint")}
-          onClick={() => {
-            const count = selectedRids.length;
-            void confirm({
-              title: t("table.deleteRowsTitle"),
-              description: t("table.deleteRowsConfirm", { count }),
-              confirmLabel: t("common.delete"),
-              danger: true,
-            }).then((ok) => {
-              if (ok) void deleteRows(selectedRids);
-            });
-          }}
-        >
-          <IconTrash size={14} />{" "}
-          {selectedRids.length > 0
-            ? t("table.deleteRows", { count: selectedRids.length })
-            : t("common.delete")}
-        </button>
+        {selectedRids.length > 0 && (
+          <>
+            <button
+              className="btn"
+              title={t("table.duplicateRowsHint")}
+              onClick={() => duplicateAndReveal(selectedRids)}
+            >
+              <IconCopy size={14} />{" "}
+              {t("table.duplicateRows", { count: selectedRids.length })}
+            </button>
+            <button
+              className="btn danger-ghost"
+              title={t("table.deleteRowsHint")}
+              onClick={() => {
+                const count = selectedRids.length;
+                void confirm({
+                  title: t("table.deleteRowsTitle"),
+                  description: t("table.deleteRowsConfirm", { count }),
+                  confirmLabel: t("common.delete"),
+                  danger: true,
+                }).then((ok) => {
+                  if (ok) void deleteRows(selectedRids);
+                });
+              }}
+            >
+              <IconTrash size={14} />{" "}
+              {t("table.deleteRows", { count: selectedRids.length })}
+            </button>
+          </>
+        )}
       </div>
       {activeView?.kind === "grid" && (
         <ViewConfigBar
@@ -985,6 +988,10 @@ export default function TableView() {
           ref={gridRef}
           columns={gridColumns}
           rows={total}
+          rowHeight={ROW_HEIGHT}
+          headerHeight={HEADER_HEIGHT}
+          rowMarkerWidth={ROW_MARKER_WIDTH}
+          verticalBorder={false}
           theme={gridTheme}
           customRenderers={customRenderers}
           getCellContent={getCellContent}
@@ -1001,7 +1008,7 @@ export default function TableView() {
           rowMarkers={{ kind: "both" }}
           gridSelection={gridSelection}
           onGridSelectionChange={setGridSelection}
-          trailingRowOptions={{ tint: true, sticky: true, hint: t("table.newRowHint") }}
+          trailingRowOptions={{ tint: false, sticky: true, hint: t("table.newRowHint") }}
           onRowAppended={() => {
             void insertRow({});
           }}

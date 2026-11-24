@@ -87,7 +87,7 @@ export function isDarkTheme(): boolean {
 export interface ChipColors {
   background: string;
   color: string;
-  /** One hairline in the hue's border step. */
+  /** Neutral hairline ring; the hue is carried by the background only. */
   borderColor: string;
 }
 
@@ -171,14 +171,19 @@ export function readGridTheme(): Theme {
     bgBubble: cssVar("--bg-hover"),
     bgBubbleSelected: cssVar("--accent-weak"),
     bgSearchResult: cssVar("--search-highlight"),
-    borderColor: cssVar("--border"),
+    borderColor: cssVar("--border-soft"),
+    horizontalBorderColor: cssVar("--border-soft"),
+    headerBottomBorderColor: cssVar("--border-soft"),
     drilldownBorder: cssVar("--border-strong"),
     linkColor: accent,
     fontFamily: cssVar("--font"),
-    headerFontStyle: "600 13px",
+    headerFontStyle: "600 12.5px",
     baseFontStyle: "13px",
-    markerFontStyle: "500 12px",
-    headerIconSize: 16,
+    markerFontStyle: "500 11.5px",
+    headerIconSize: 15,
+    cellHorizontalPadding: 10,
+    cellVerticalPadding: 6,
+    lineHeight: 1.45,
   };
 }
 
