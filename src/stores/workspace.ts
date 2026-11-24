@@ -26,6 +26,7 @@ import type {
   RowPage,
   SqlResult,
   TableMeta,
+  ViewColumnMeta,
   ViewData,
   ViewMeta,
   ViewPatch,
@@ -95,6 +96,31 @@ function mergeFetchedViews(
   );
   out.push(...fetched);
   return out;
+}
+
+/** Replace one view-column node in a view list (no-op when the view is absent). */
+function patchViewColumn(
+  views: ViewMeta[],
+  viewId: string,
+  next: ViewColumnMeta,
+): ViewMeta[] {
+  const idx = views.findIndex((v) => v.id === viewId);
+  if (idx < 0) return views;
+  const view = views[idx];
+  const columns = view.columns.some((c) => c.column_id === next.column_id)
+    ? view.columns.map((c) => (c.column_id === next.column_id ? next : c))
+    : [...view.columns, next];
+  const out = views.slice();
+  out[idx] = { ...view, columns };
+  return out;
+}
+
+/** Sort rendered columns by their per-view layout positions. */
+function reorderVisible(columns: ColumnMeta[], layout: ViewColumnMeta[]): ColumnMeta[] {
+  const position = new Map(layout.map((c) => [c.column_id, c.position]));
+  return columns
+    .slice()
+    .sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0));
 }
 
 /** What the row window pipeline currently reads from. */
@@ -183,6 +209,8 @@ interface WorkspaceState {
   createGridView: (name: string) => Promise<void>;
   createSqlView: (name: string, statement: string) => Promise<void>;
   updateView: (viewId: string, patch: ViewPatch) => Promise<void>;
+  /** Immediate drag feedback: patches the rendered width without any I/O. */
+  previewViewColumnWidth: (viewId: string, columnId: string, width: number) => void;
   updateViewColumn: (
     viewId: string,
     columnId: string,
@@ -801,13 +829,52 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       });
     },
 
+    previewViewColumnWidth: (viewId, columnId, width) => {
+      const { activeViewId, visibleColumns } = get();
+      if (activeViewId !== viewId) return;
+      if (!visibleColumns.some((c) => c.id === columnId)) return;
+      set({
+        visibleColumns: visibleColumns.map((c) =>
+          c.id === columnId ? { ...c, width } : c,
+        ),
+      });
+    },
+
     updateViewColumn: async (viewId, columnId, patch) => {
       await guard(set, get, async () => {
-        await ipc.viewColumnUpdate(viewId, columnId, patch);
+        const updated = await ipc.viewColumnUpdate(viewId, columnId, patch);
+        set((s) => ({
+          views: patchViewColumn(s.views, viewId, updated),
+          allViews: patchViewColumn(s.allViews, viewId, updated),
+        }));
+        // Width is presentation-only. The grid is already showing the final
+        // width from `previewViewColumnWidth`, so no view/row refetch is
+        // needed — that reload was what made dragging a column edge flash.
+        const widthOnly =
+          patch.width !== undefined && patch.hidden === undefined && patch.position === undefined;
+        if (widthOnly) return;
         const { activeTableId, activeViewId } = get();
         if (!activeTableId) return;
+        // A position change renumbers every view-column node, so pull the
+        // layout once; rows can stay in place because their cells are keyed by
+        // column id, not by visible order.
+        if (patch.position !== undefined && patch.hidden === undefined) {
+          const views = await ipc.viewList(activeTableId);
+          set((s) => {
+            const active = views.find((v) => v.id === activeViewId);
+            return {
+              views,
+              allViews: mergeFetchedViews(s.allViews, activeTableId, views),
+              visibleColumns: active
+                ? reorderVisible(s.visibleColumns, active.columns)
+                : s.visibleColumns,
+            };
+          });
+          return;
+        }
         set({ views: await ipc.viewList(activeTableId) });
-        // Width/hidden/order all change what the grid returns.
+        // Visibility changes alter which columns the source returns, so the
+        // visible row window must be rebuilt.
         if (activeViewId === viewId) await afterWrite();
       });
     },

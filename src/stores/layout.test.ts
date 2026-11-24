@@ -13,7 +13,7 @@ beforeEach(() => {
     removeItem: (key: string) => storage.delete(key),
     clear: () => storage.clear(),
   });
-  useLayout.setState({ sidebarCollapsed: false });
+  useLayout.setState({ sidebarCollapsed: false, showRowNumbers: false });
 });
 
 afterEach(() => {
@@ -29,5 +29,17 @@ describe("layout store", () => {
     useLayout.getState().toggleSidebar();
     expect(useLayout.getState().sidebarCollapsed).toBe(false);
     expect(storage.get("nothing.layout.sidebar")).toBe("expanded");
+  });
+
+  it("keeps row numbers hidden by default and persists the toggle", () => {
+    expect(useLayout.getState().showRowNumbers).toBe(false);
+
+    useLayout.getState().toggleRowNumbers();
+    expect(useLayout.getState().showRowNumbers).toBe(true);
+    expect(storage.get("nothing.layout.rowNumbers")).toBe("shown");
+
+    useLayout.getState().toggleRowNumbers();
+    expect(useLayout.getState().showRowNumbers).toBe(false);
+    expect(storage.get("nothing.layout.rowNumbers")).toBe("hidden");
   });
 });

@@ -13,6 +13,7 @@ import type {
   Row,
   RowPage,
   TableMeta,
+  ViewColumnMeta,
   ViewMeta,
   ViewResult,
 } from "../types";
@@ -58,6 +59,16 @@ const GRID_V: ViewMeta = {
 };
 
 const GRID_V2: ViewMeta = { ...GRID_V, id: "v2", name: "视图 2" };
+
+const VC: ViewColumnMeta = {
+  id: "vc1",
+  column_id: "c1",
+  position: 0,
+  width: 160,
+  hidden: false,
+};
+
+const GRID_V_LAYOUT: ViewMeta = { ...GRID_V, columns: [VC] };
 
 const SQL_V: ViewMeta = {
   id: "vs",
@@ -724,6 +735,88 @@ describe("updateColumn", () => {
 
     expect(ipc.viewRun).toHaveBeenCalled();
     expect(useWorkspace.getState().columns[0].position).toBe(1);
+  });
+});
+
+describe("updateViewColumn", () => {
+  it("previews a width synchronously without touching ipc", () => {
+    useWorkspace.setState({
+      ...dataState,
+      activeTableId: "t1",
+      activeViewId: "v1",
+      columns: [COL],
+      visibleColumns: [COL],
+      views: [GRID_V_LAYOUT],
+      allViews: [GRID_V_LAYOUT],
+    });
+
+    useWorkspace.getState().previewViewColumnWidth("v1", "c1", 240);
+
+    expect(useWorkspace.getState().visibleColumns[0].width).toBe(240);
+    expect(ipc.viewColumnUpdate).not.toHaveBeenCalled();
+    expect(ipc.viewList).not.toHaveBeenCalled();
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+  });
+
+  it("persists a width-only change without refetching views or rows", async () => {
+    useWorkspace.setState({
+      ...dataState,
+      activeTableId: "t1",
+      activeViewId: "v1",
+      columns: [COL],
+      visibleColumns: [{ ...COL, width: 240 }],
+      views: [GRID_V_LAYOUT],
+      allViews: [GRID_V_LAYOUT],
+      source: { kind: "view", viewId: "v1" },
+      rowsCache: new Map([[0, row("r1")]]),
+      total: 1,
+    });
+    const updated: ViewColumnMeta = { ...VC, width: 240 };
+    vi.mocked(ipc.viewColumnUpdate).mockResolvedValue(updated);
+
+    await useWorkspace.getState().updateViewColumn("v1", "c1", { width: 240 });
+
+    const s = useWorkspace.getState();
+    expect(ipc.viewColumnUpdate).toHaveBeenCalledWith("v1", "c1", { width: 240 });
+    expect(ipc.viewList).not.toHaveBeenCalled();
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+    expect(s.visibleColumns[0].width).toBe(240);
+    expect(s.views[0].columns[0].width).toBe(240);
+    expect(s.allViews[0].columns[0].width).toBe(240);
+    expect(s.rowsCache.size).toBe(1);
+  });
+
+  it("reorders visible columns locally without reloading rows", async () => {
+    const C2: ColumnMeta = { ...COL, id: "c2", name: "状态", position: 1 };
+    const VC2: ViewColumnMeta = {
+      id: "vc2",
+      column_id: "c2",
+      position: 1,
+      width: 160,
+      hidden: false,
+    };
+    const layout: ViewMeta = { ...GRID_V, columns: [VC, VC2] };
+    useWorkspace.setState({
+      ...dataState,
+      activeTableId: "t1",
+      activeViewId: "v1",
+      columns: [COL, C2],
+      visibleColumns: [COL, C2],
+      views: [layout],
+      allViews: [layout],
+      source: { kind: "view", viewId: "v1" },
+    });
+    vi.mocked(ipc.viewColumnUpdate).mockResolvedValue({ ...VC2, position: 0 });
+    vi.mocked(ipc.viewList).mockResolvedValue([
+      { ...layout, columns: [{ ...VC2, position: 0 }, { ...VC, position: 1 }] },
+    ]);
+
+    await useWorkspace.getState().updateViewColumn("v1", "c2", { position: 0 });
+
+    const s = useWorkspace.getState();
+    expect(ipc.viewList).toHaveBeenCalledWith("t1");
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+    expect(s.visibleColumns.map((c) => c.id)).toEqual(["c2", "c1"]);
   });
 });
 

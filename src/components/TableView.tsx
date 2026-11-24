@@ -9,6 +9,7 @@ import {
   type EditableGridCell,
   type GridCell,
   type GridColumn,
+  type GridMouseEventArgs,
   type GridSelection,
   type HeaderClickedEventArgs,
   type Item,
@@ -16,6 +17,7 @@ import {
 } from "@glideapps/glide-data-grid";
 import { PAGE_SIZE, useWorkspace } from "../stores/workspace";
 import { useTheme } from "../stores/theme";
+import { useLayout } from "../stores/layout";
 import { readGridTheme, readOptionPalette, tagThemeOverride } from "../theme/grid";
 import { formatDate } from "../i18n/format";
 import { t } from "../i18n";
@@ -31,9 +33,11 @@ import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
 import { InlineCellEditor, type EditorMove } from "./GridEditors";
 import StartActions from "./StartActions";
+import CellHover from "./CellHover";
 import { EmojiMenu } from "../ui/ColumnPickers";
 import {
   IconCopy,
+  IconHash,
   IconPencil,
   IconPlus,
   IconSearch,
@@ -327,9 +331,12 @@ export default function TableView() {
   const deleteColumn = useWorkspace((s) => s.deleteColumn);
   const updateColumn = useWorkspace((s) => s.updateColumn);
   const updateViewColumn = useWorkspace((s) => s.updateViewColumn);
+  const previewViewColumnWidth = useWorkspace((s) => s.previewViewColumnWidth);
   const setTitleColumn = useWorkspace((s) => s.setTitleColumn);
   const setTableIcon = useWorkspace((s) => s.setTableIcon);
   const searchRows = useWorkspace((s) => s.searchRows);
+  const showRowNumbers = useLayout((s) => s.showRowNumbers);
+  const toggleRowNumbers = useLayout((s) => s.toggleRowNumbers);
 
   const [localQuery, setLocalQuery] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -344,12 +351,24 @@ export default function TableView() {
   } | null>(null);
   const [headerEmoji, setHeaderEmoji] = useState<{ col: ColumnMeta; x: number; y: number } | null>(null);
   const [colDialog, setColDialog] = useState<{ existing: ColumnMeta | null } | null>(null);
+  const [hover, setHover] = useState<{
+    col: number;
+    row: number;
+    bounds: Rectangle;
+  } | null>(null);
   const [gridSelection, setGridSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
   });
   const gridRef = useRef<DataEditorRef | null>(null);
   const visibleRange = useRef<Rectangle>({ x: 0, y: 0, width: 0, height: PAGE_SIZE });
+  // Column widths are persisted once per gesture; the preview path is local.
+  const pendingWidth = useRef<{
+    viewId: string;
+    columnId: string;
+    width: number;
+  } | null>(null);
+  const widthTimer = useRef<number | null>(null);
 
   const table = tables.find((t) => t.id === activeTableId) ?? null;
   const activeView = views.find((v) => v.id === activeViewId) ?? null;
@@ -366,7 +385,16 @@ export default function TableView() {
     setEditor(null);
     setPicker(null);
     setHeaderEmoji(null);
+    setHover(null);
   }, [activeTableId, activeViewId]);
+
+  // A width gesture can outlive the component (view switch); drop its timer.
+  useEffect(
+    () => () => {
+      if (widthTimer.current !== null) window.clearTimeout(widthTimer.current);
+    },
+    [],
+  );
 
   const columns = visibleColumns;
   const duplicateRows = useWorkspace((s) => s.duplicateRows);
@@ -397,6 +425,76 @@ export default function TableView() {
   );
 
   const getRow = useCallback((idx: number): Row | undefined => rowsCache.get(idx), [rowsCache, rowsVersion]);
+
+  /**
+   * Persist the last width of a drag (or of a double-click auto-size). One
+   * write per gesture; the grid itself already moved via the local preview.
+   */
+  const flushColumnWidth = useCallback(() => {
+    if (widthTimer.current !== null) {
+      window.clearTimeout(widthTimer.current);
+      widthTimer.current = null;
+    }
+    const pending = pendingWidth.current;
+    pendingWidth.current = null;
+    if (pending) {
+      void updateViewColumn(pending.viewId, pending.columnId, { width: pending.width });
+    }
+  }, [updateViewColumn]);
+
+  const previewColumnWidth = useCallback(
+    (viewId: string, columnId: string, width: number) => {
+      previewViewColumnWidth(viewId, columnId, width);
+      pendingWidth.current = { viewId, columnId, width };
+      if (widthTimer.current !== null) window.clearTimeout(widthTimer.current);
+      widthTimer.current = window.setTimeout(flushColumnWidth, 250);
+    },
+    [flushColumnWidth, previewViewColumnWidth],
+  );
+
+  const onItemHovered = useCallback(
+    (args: GridMouseEventArgs) => {
+      if (args.kind !== "cell" || args.isTouch) {
+        setHover(null);
+        return;
+      }
+      const [col, row] = args.location;
+      if (col < 0 || col >= columns.length || row < 0 || row >= total) {
+        setHover(null);
+        return;
+      }
+      setHover((prev) => {
+        if (
+          prev &&
+          prev.col === col &&
+          prev.row === row &&
+          prev.bounds.x === args.bounds.x &&
+          prev.bounds.y === args.bounds.y &&
+          prev.bounds.width === args.bounds.width &&
+          prev.bounds.height === args.bounds.height
+        ) {
+          return prev;
+        }
+        return { col, row, bounds: args.bounds };
+      });
+    },
+    [columns.length, total],
+  );
+
+  /**
+   * Glide draws a vertical line at the right edge of every rendered column and
+   * calls this with a 1-based index *within the visible window* (the row-marker
+   * offset is already removed). Reconstruct the source index so the trailing
+   * "+" column does not get an outer border. `col === 0` is the row-marker
+   * gutter's right edge, which is a real boundary when the gutter is visible.
+   */
+  const verticalBorder = useCallback(
+    (col: number) => {
+      if (col <= 0) return true;
+      return visibleRange.current.x + col - 1 < columns.length;
+    },
+    [columns.length],
+  );
 
   const getCellContent = useCallback(
     ([col, rowIdx]: Item): GridCell => {
@@ -432,6 +530,9 @@ export default function TableView() {
   const onVisibleRegionChanged = useCallback(
     (range: Rectangle) => {
       visibleRange.current = range;
+      // The overlay is anchored in grid coordinates; scrolling invalidates it
+      // until the pointer moves again.
+      setHover(null);
       void fetchWindow(Math.max(0, range.y - OVERSCAN), range.y + range.height + OVERSCAN);
     },
     [fetchWindow],
@@ -867,6 +968,12 @@ export default function TableView() {
   const editorCol = editor ? columns[editor.colIdx] : undefined;
   const cellMenuRow = cellMenu ? getRow(cellMenu.rowIdx) : undefined;
   const cellMenuCol = cellMenu ? columns[cellMenu.colIdx] : undefined;
+  const hoverCol = hover ? columns[hover.col] : undefined;
+  const hoverRow = hover ? getRow(hover.row) : undefined;
+  const hoverCopyText =
+    hoverCol && hoverRow
+      ? (cellFor(hoverCol, hoverRow.cells[hoverCol.id], titles).copyData ?? "")
+      : "";
   const canClearCell =
     !!cellMenuCol && colType(cellMenuCol) !== "formula" && !isReverse(cellMenuCol);
 
@@ -931,6 +1038,22 @@ export default function TableView() {
             <IconSliders size={14} /> {t("table.filterSort")}
           </button>
         )}
+        <button
+          className="btn ghost"
+          aria-pressed={showRowNumbers}
+          title={showRowNumbers ? t("table.hideRowNumbers") : t("table.showRowNumbers")}
+          onClick={() => {
+            setHover(null);
+            if (showRowNumbers) {
+              // Hiding the gutter also removes the only checkbox affordance;
+              // drop invisible row selections so batch actions cannot linger.
+              setGridSelection((sel) => ({ ...sel, rows: CompactSelection.empty() }));
+            }
+            toggleRowNumbers();
+          }}
+        >
+          <IconHash size={14} /> {t("table.rowNumbers")}
+        </button>
         <button className="btn ghost" onClick={() => setColDialog({ existing: null })}>
           <IconPlus size={14} /> {t("table.addColumn")}
         </button>
@@ -989,8 +1112,7 @@ export default function TableView() {
           rows={total}
           rowHeight={ROW_HEIGHT}
           headerHeight={HEADER_HEIGHT}
-          rowMarkerWidth={ROW_MARKER_WIDTH}
-          verticalBorder={false}
+          verticalBorder={verticalBorder}
           theme={gridTheme}
           customRenderers={customRenderers}
           getCellContent={getCellContent}
@@ -1004,18 +1126,23 @@ export default function TableView() {
           onHeaderContextMenu={onHeaderContextMenu}
           onHeaderMenuClick={onHeaderMenuClick}
           onVisibleRegionChanged={onVisibleRegionChanged}
-          rowMarkers={{ kind: "both" }}
+          onItemHovered={onItemHovered}
+          rowMarkers={{ kind: showRowNumbers ? "both" : "none", width: ROW_MARKER_WIDTH }}
           gridSelection={gridSelection}
           onGridSelectionChange={setGridSelection}
           trailingRowOptions={{ tint: false, sticky: true, hint: t("table.newRowHint") }}
           onRowAppended={() => {
             void insertRow({});
           }}
+          onColumnResizeStart={() => setHover(null)}
           onColumnResize={(column, newSize) => {
-            if (column.id === ADD_COLUMN_ID) return;
-            if (column.id && activeViewId) {
-              void updateViewColumn(activeViewId, column.id, { width: newSize });
-            }
+            if (column.id === ADD_COLUMN_ID || !column.id || !activeViewId) return;
+            previewColumnWidth(activeViewId, column.id, newSize);
+          }}
+          onColumnResizeEnd={(column, newSize) => {
+            if (column.id === ADD_COLUMN_ID || !column.id || !activeViewId) return;
+            previewColumnWidth(activeViewId, column.id, newSize);
+            flushColumnWidth();
           }}
           onColumnMoved={onColumnMoved}
           smoothScrollX={true}
@@ -1024,6 +1151,13 @@ export default function TableView() {
           rangeSelect="rect"
           columnSelect="none"
         />
+        {hover && hoverCol && hoverRow && !editor && !picker && (
+          <CellHover
+            key={`${hover.col}:${hover.row}`}
+            bounds={hover.bounds}
+            copyText={hoverCopyText}
+          />
+        )}
         {columns.length === 0 && (
           <div className="grid-empty-overlay">
             <p>{t("table.noColumns")}</p>

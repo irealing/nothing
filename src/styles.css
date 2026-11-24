@@ -460,6 +460,69 @@ body,
   flex: 1;
   min-height: 0;
   position: relative;
+  overflow: hidden;
+}
+
+/* Hovered cell overlay. Glide paints on canvas, so this DOM layer supplies the
+ * transition and the clickable copy affordance; only the button takes events. */
+.cell-hover {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 2px;
+  background: var(--accent-weak);
+  animation: cell-hover-in 100ms ease-out;
+}
+
+.cell-hover-copy {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-mid);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: cell-hover-copy-in 120ms ease-out;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.cell-hover-copy:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.cell-hover-copy.copied {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@keyframes cell-hover-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cell-hover-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
 }
 
 /* ---------- sidebar ---------- */
@@ -1081,6 +1144,18 @@ body,
 .btn.ghost:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+/* Pressed toolbar toggles (currently the optional row-number gutter). */
+.btn[aria-pressed="true"] {
+  background: var(--accent-weak);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.btn[aria-pressed="true"]:hover {
+  background: var(--accent-weak);
+  color: var(--accent);
 }
 
 .btn.danger {
