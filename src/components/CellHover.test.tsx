@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import CellHover from "./CellHover";
+import CellHover, { toLocalBounds } from "./CellHover";
 
 const bounds = { x: 100, y: 50, width: 160, height: 36 };
 const writeText = vi.fn<(text: string) => Promise<void>>();
@@ -23,6 +23,11 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("CellHover", () => {
+  it("rebases viewport bounds onto the grid container", () => {
+    const local = toLocalBounds({ x: 300, y: 220, width: 160, height: 36 }, { left: 256, top: 132 });
+    expect(local).toEqual({ x: 44, y: 88, width: 160, height: 36 });
+  });
+
   it("copies the cell text and flips to the copied state", async () => {
     render(<CellHover bounds={bounds} copyText="hello" />);
 

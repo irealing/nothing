@@ -12,11 +12,33 @@ const CHECK_MS = 900;
 /** Below this width the button would cover most of the cell's content. */
 const MIN_COPY_WIDTH = 48;
 
+export interface HoverBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Glide hands out cell bounds relative to the viewport (its `getBoundsForItem`
+ * adds the canvas `getBoundingClientRect()` origin), while the overlay is
+ * absolutely positioned inside `.grid-wrap`. Rebase them onto that container or
+ * the overlay lands wherever the grid happens to be on the page. */
+export function toLocalBounds(
+  bounds: HoverBounds,
+  container: { left: number; top: number },
+): HoverBounds {
+  return {
+    ...bounds,
+    x: bounds.x - container.left,
+    y: bounds.y - container.top,
+  };
+}
+
 export default function CellHover({
   bounds,
   copyText,
 }: {
-  bounds: { x: number; y: number; width: number; height: number };
+  bounds: HoverBounds;
   copyText: string;
 }) {
   const [copied, setCopied] = useState(false);

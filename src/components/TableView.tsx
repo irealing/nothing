@@ -33,7 +33,7 @@ import ColumnDialog from "./ColumnDialogs";
 import { RelationModal, SelectPopover, type Anchor } from "./CellEditors";
 import { InlineCellEditor, type EditorMove } from "./GridEditors";
 import StartActions from "./StartActions";
-import CellHover from "./CellHover";
+import CellHover, { toLocalBounds } from "./CellHover";
 import { EmojiMenu } from "../ui/ColumnPickers";
 import {
   IconCopy,
@@ -361,6 +361,7 @@ export default function TableView() {
     rows: CompactSelection.empty(),
   });
   const gridRef = useRef<DataEditorRef | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const visibleRange = useRef<Rectangle>({ x: 0, y: 0, width: 0, height: PAGE_SIZE });
   // Column widths are persisted once per gesture; the preview path is local.
   const pendingWidth = useRef<{
@@ -395,6 +396,16 @@ export default function TableView() {
     },
     [],
   );
+
+  // Hover bounds are frozen in container coordinates, so any layout shift of
+  // the grid (sidebar collapse, window resize) would leave the overlay behind.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setHover(null));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const columns = visibleColumns;
   const duplicateRows = useWorkspace((s) => s.duplicateRows);
@@ -463,19 +474,27 @@ export default function TableView() {
         setHover(null);
         return;
       }
+      const container = wrapRef.current?.getBoundingClientRect();
+      if (!container) {
+        setHover(null);
+        return;
+      }
+      // Glide reports viewport coordinates; the overlay lives inside the grid
+      // wrapper, so rebase before storing.
+      const bounds = toLocalBounds(args.bounds, container);
       setHover((prev) => {
         if (
           prev &&
           prev.col === col &&
           prev.row === row &&
-          prev.bounds.x === args.bounds.x &&
-          prev.bounds.y === args.bounds.y &&
-          prev.bounds.width === args.bounds.width &&
-          prev.bounds.height === args.bounds.height
+          prev.bounds.x === bounds.x &&
+          prev.bounds.y === bounds.y &&
+          prev.bounds.width === bounds.width &&
+          prev.bounds.height === bounds.height
         ) {
           return prev;
         }
-        return { col, row, bounds: args.bounds };
+        return { col, row, bounds };
       });
     },
     [columns.length, total],
@@ -1105,7 +1124,7 @@ export default function TableView() {
         !(activeView?.data.kind === "grid" && activeView.data.filters !== null) && (
           <div className="grid-hint-bar">{t("table.emptyRowsHint")}</div>
         )}
-      <div className="grid-wrap">
+      <div className="grid-wrap" ref={wrapRef}>
         <DataEditor
           ref={gridRef}
           columns={gridColumns}
