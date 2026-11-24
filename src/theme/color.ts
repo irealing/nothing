@@ -132,6 +132,8 @@ export interface CustomScale {
   chipBg: string;
   chipFg: string;
   chipBorder: string;
+  /** Leading-dot shade: chromatic mid-tone, not the near-black text color. */
+  dot: string;
   swatchBg: string;
   swatchFg: string;
   cellBg: string;
@@ -153,6 +155,25 @@ function readableHsl(h: number, s: number, bg: Rgb, startL: number, dir: -1 | 1)
 }
 
 /**
+ * Leading-dot shade for a custom color.
+ *
+ * A 6px dot is a graphical object, so it only needs WCAG's 3:1 rather than the
+ * 4.6:1 text target. Reusing `readableHsl` made pale picks collapse into a
+ * near-black dot; here the hue is kept, saturation is nudged up so pastel
+ * colors still read as a color, and the walk stops as soon as 3:1 is reached.
+ */
+function dotHsl(h: number, s: number, bg: Rgb, startL: number, dir: -1 | 1): string {
+  const sat = Math.min(1, s * 1.6);
+  let l = startL;
+  for (let i = 0; i < 40; i += 1) {
+    if (contrastRatio(hslToRgb({ h, s: sat, l }), bg) >= 3) return cssHsl(h, sat, l);
+    l += dir * 0.02;
+    if (l < 0.28 || l > 0.9) break;
+  }
+  return cssHsl(h, sat, Math.min(0.9, Math.max(0.28, l)));
+}
+
+/**
  * Derive every presentation shade from one picked color.
  *
  * Hue is preserved; saturation is scaled per surface so tints stay quiet.
@@ -168,6 +189,7 @@ export function customScale(hex: string, dark: boolean): CustomScale {
       chipBg,
       chipFg: readableHsl(h, s * 0.55, hslToRgb({ h, s: s * 0.38, l: 0.23 }), 0.82, 1),
       chipBorder: "rgba(255, 255, 255, 0.09)",
+      dot: dotHsl(h, s, hslToRgb({ h, s: s * 0.38, l: 0.23 }), 0.62, 1),
       swatchBg: toHex(rgb),
       swatchFg: readableText(rgb),
       cellBg: cssHsl(h, s * 0.28, 0.13),
@@ -179,6 +201,7 @@ export function customScale(hex: string, dark: boolean): CustomScale {
     chipBg,
     chipFg: readableHsl(h, s * 0.7, hslToRgb({ h, s: s * 0.5, l: 0.945 }), 0.32, -1),
     chipBorder: "rgba(15, 15, 15, 0.08)",
+    dot: dotHsl(h, s, hslToRgb({ h, s: s * 0.5, l: 0.945 }), 0.5, -1),
     swatchBg: toHex(rgb),
     swatchFg: readableText(rgb),
     cellBg: cssHsl(h, s * 0.35, 0.972),

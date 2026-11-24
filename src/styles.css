@@ -77,11 +77,15 @@
  * Three surfaces per hue:
  *   chip/swatch  option tags and the picker dots
  *   tag          grid column chrome (header + cell tint)
+ *
+ * `--chip-*-dot` is step 11: vivid enough to read as a color in the 6px dot
+ * inside a pale chip, where the step-12 text color looks black.
  */
 :root {
   --chip-gray-bg: var(--gray-3);
   --chip-gray-fg: var(--gray-12);
   --chip-gray-border: var(--chip-ring);
+  --chip-gray-dot: var(--gray-11);
   --swatch-gray-bg: var(--gray-9);
   --swatch-gray-fg: #111111;
   --tag-gray-cell-bg: var(--gray-1);
@@ -90,6 +94,7 @@
   --chip-blue-bg: var(--blue-3);
   --chip-blue-fg: var(--blue-12);
   --chip-blue-border: var(--chip-ring);
+  --chip-blue-dot: var(--blue-11);
   --swatch-blue-bg: var(--blue-9);
   --swatch-blue-fg: #ffffff;
   --tag-blue-cell-bg: var(--blue-1);
@@ -98,6 +103,7 @@
   --chip-green-bg: var(--green-3);
   --chip-green-fg: var(--green-12);
   --chip-green-border: var(--chip-ring);
+  --chip-green-dot: var(--green-11);
   --swatch-green-bg: var(--green-9);
   --swatch-green-fg: #ffffff;
   --tag-green-cell-bg: var(--green-1);
@@ -106,6 +112,7 @@
   --chip-yellow-bg: var(--yellow-3);
   --chip-yellow-fg: var(--yellow-12);
   --chip-yellow-border: var(--chip-ring);
+  --chip-yellow-dot: var(--yellow-11);
   --swatch-yellow-bg: var(--yellow-9);
   --swatch-yellow-fg: #3d2a00;
   --tag-yellow-cell-bg: var(--yellow-1);
@@ -114,6 +121,7 @@
   --chip-orange-bg: var(--orange-3);
   --chip-orange-fg: var(--orange-12);
   --chip-orange-border: var(--chip-ring);
+  --chip-orange-dot: var(--orange-11);
   --swatch-orange-bg: var(--orange-9);
   --swatch-orange-fg: #ffffff;
   --tag-orange-cell-bg: var(--orange-1);
@@ -122,6 +130,7 @@
   --chip-red-bg: var(--red-3);
   --chip-red-fg: var(--red-12);
   --chip-red-border: var(--chip-ring);
+  --chip-red-dot: var(--red-11);
   --swatch-red-bg: var(--red-9);
   --swatch-red-fg: #ffffff;
   --tag-red-cell-bg: var(--red-1);
@@ -130,6 +139,7 @@
   --chip-purple-bg: var(--purple-3);
   --chip-purple-fg: var(--purple-12);
   --chip-purple-border: var(--chip-ring);
+  --chip-purple-dot: var(--purple-11);
   --swatch-purple-bg: var(--purple-9);
   --swatch-purple-fg: #ffffff;
   --tag-purple-cell-bg: var(--purple-1);
@@ -138,6 +148,7 @@
   --chip-pink-bg: var(--pink-3);
   --chip-pink-fg: var(--pink-12);
   --chip-pink-border: var(--chip-ring);
+  --chip-pink-dot: var(--pink-11);
   --swatch-pink-bg: var(--pink-9);
   --swatch-pink-fg: #ffffff;
   --tag-pink-cell-bg: var(--pink-1);
@@ -146,6 +157,7 @@
   --chip-brown-bg: var(--brown-3);
   --chip-brown-fg: var(--brown-12);
   --chip-brown-border: var(--chip-ring);
+  --chip-brown-dot: var(--brown-11);
   --swatch-brown-bg: var(--brown-9);
   --swatch-brown-fg: #ffffff;
   --tag-brown-cell-bg: var(--brown-1);
@@ -154,6 +166,7 @@
   --chip-amber-bg: var(--amber-3);
   --chip-amber-fg: var(--amber-12);
   --chip-amber-border: var(--chip-ring);
+  --chip-amber-dot: var(--amber-11);
   --swatch-amber-bg: var(--amber-9);
   --swatch-amber-fg: #3d2400;
   --tag-amber-cell-bg: var(--amber-1);
@@ -162,6 +175,7 @@
   --chip-lime-bg: var(--lime-3);
   --chip-lime-fg: var(--lime-12);
   --chip-lime-border: var(--chip-ring);
+  --chip-lime-dot: var(--lime-11);
   --swatch-lime-bg: var(--lime-9);
   --swatch-lime-fg: #1f2d00;
   --tag-lime-cell-bg: var(--lime-1);
@@ -170,6 +184,7 @@
   --chip-teal-bg: var(--teal-3);
   --chip-teal-fg: var(--teal-12);
   --chip-teal-border: var(--chip-ring);
+  --chip-teal-dot: var(--teal-11);
   --swatch-teal-bg: var(--teal-9);
   --swatch-teal-fg: #ffffff;
   --tag-teal-cell-bg: var(--teal-1);
@@ -178,6 +193,7 @@
   --chip-cyan-bg: var(--cyan-3);
   --chip-cyan-fg: var(--cyan-12);
   --chip-cyan-border: var(--chip-ring);
+  --chip-cyan-dot: var(--cyan-11);
   --swatch-cyan-bg: var(--cyan-9);
   --swatch-cyan-fg: #ffffff;
   --tag-cyan-cell-bg: var(--cyan-1);
@@ -186,6 +202,7 @@
   --chip-sky-bg: var(--sky-3);
   --chip-sky-fg: var(--sky-12);
   --chip-sky-border: var(--chip-ring);
+  --chip-sky-dot: var(--sky-11);
   --swatch-sky-bg: var(--sky-9);
   --swatch-sky-fg: #0a2a33;
   --tag-sky-cell-bg: var(--sky-1);
@@ -194,6 +211,7 @@
   --chip-indigo-bg: var(--indigo-3);
   --chip-indigo-fg: var(--indigo-12);
   --chip-indigo-border: var(--chip-ring);
+  --chip-indigo-dot: var(--indigo-11);
   --swatch-indigo-bg: var(--indigo-9);
   --swatch-indigo-fg: #ffffff;
   --tag-indigo-cell-bg: var(--indigo-1);
@@ -202,6 +220,7 @@
   --chip-violet-bg: var(--violet-3);
   --chip-violet-fg: var(--violet-12);
   --chip-violet-border: var(--chip-ring);
+  --chip-violet-dot: var(--violet-11);
   --swatch-violet-bg: var(--violet-9);
   --swatch-violet-fg: #ffffff;
   --tag-violet-cell-bg: var(--violet-1);
@@ -210,6 +229,7 @@
   --chip-plum-bg: var(--plum-3);
   --chip-plum-fg: var(--plum-12);
   --chip-plum-border: var(--chip-ring);
+  --chip-plum-dot: var(--plum-11);
   --swatch-plum-bg: var(--plum-9);
   --swatch-plum-fg: #ffffff;
   --tag-plum-cell-bg: var(--plum-1);
@@ -218,6 +238,7 @@
   --chip-crimson-bg: var(--crimson-3);
   --chip-crimson-fg: var(--crimson-12);
   --chip-crimson-border: var(--chip-ring);
+  --chip-crimson-dot: var(--crimson-11);
   --swatch-crimson-bg: var(--crimson-9);
   --swatch-crimson-fg: #ffffff;
   --tag-crimson-cell-bg: var(--crimson-1);

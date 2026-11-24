@@ -79,6 +79,23 @@ describe("customScale", () => {
     }
   });
 
+  it("keeps leading dots visible and chromatic on pale chips", () => {
+    for (const picked of ["#d3eaea", "#e6f6eb", "#f5d90a", "#e6e6e6"]) {
+      const scale = customScale(picked, false);
+      const dot = hslStringToRgb(scale.dot);
+      const bg = hslStringToRgb(scale.chipBg);
+      // A 6px dot is a graphical object: 3:1, not the near-black text shade.
+      expect(contrastRatio(dot, bg), picked).toBeGreaterThanOrEqual(3);
+      expect(rgbToHsl(dot).l, picked).toBeGreaterThan(0.28);
+    }
+
+    // Pastel picks keep their hue family instead of collapsing to gray.
+    const cyan = customScale("#d3eaea", false);
+    expect(rgbToHsl(hslStringToRgb(cyan.dot)).s).toBeGreaterThan(0.4);
+    const green = customScale("#e6f6eb", false);
+    expect(rgbToHsl(hslStringToRgb(green.dot)).s).toBeGreaterThan(0.4);
+  });
+
   it("derives different surfaces per theme instead of reusing the picked value", () => {
     const light = customScale("#3b82f6", false);
     const dark = customScale("#3b82f6", true);

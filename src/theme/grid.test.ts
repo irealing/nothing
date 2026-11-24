@@ -34,6 +34,7 @@ describe("palette stylesheet", () => {
     "--chip-%s-bg",
     "--chip-%s-fg",
     "--chip-%s-border",
+    "--chip-%s-dot",
     "--swatch-%s-bg",
     "--swatch-%s-fg",
     "--tag-%s-cell-bg",

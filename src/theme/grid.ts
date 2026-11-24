@@ -108,7 +108,7 @@ function chipFromScale(scale: CustomScale): ChipColors {
     background: scale.chipBg,
     color: scale.chipFg,
     borderColor: scale.chipBorder,
-    dot: scale.chipFg,
+    dot: scale.dot,
   };
 }
 
@@ -125,7 +125,9 @@ export function readOptionPalette(dark = isDarkTheme()): OptionPalette {
         background: cssVar(`--chip-${color}-bg`),
         color: cssVar(`--chip-${color}-fg`),
         borderColor: cssVar(`--chip-${color}-border`),
-        dot: cssVar(`--chip-${color}-fg`),
+        // Step 11 instead of the step-12 text color: a 6px dot only needs the
+        // 3:1 graphical contrast, and step 12 reads as black on a pale tint.
+        dot: cssVar(`--chip-${color}-dot`),
       } satisfies ChipColors,
     ]),
   ) as ChipPalette;
@@ -235,12 +237,14 @@ export function chipStyle(color: ColumnColor): {
 }
 
 /**
- * Leading-dot color for an option chip. It matches the chip text so the dot
- * keeps AA contrast against the tint in both themes (Yellow's vivid step would
- * vanish on a pale yellow chip). `null` means the option has no color at all.
+ * Leading-dot color for an option chip. Presets use Radix step 11 (vivid, but
+ * not the near-black step-12 text color); custom colors derive their own
+ * mid-tone. `null` means the option has no color at all.
  */
 export function chipDot(color: ColumnColor | null): string {
-  return color ? chipStyle(color).color : cssVar("--text-mid");
+  if (!color) return cssVar("--text-mid");
+  if (!isPresetColor(color)) return customScale(color, isDarkTheme()).dot;
+  return cssVar(`--chip-${color}-dot`);
 }
 
 /** Solid, vivid dot for the palette picker. */
