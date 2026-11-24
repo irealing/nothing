@@ -37,9 +37,13 @@ export function toLocalBounds(
 export default function CellHover({
   bounds,
   copyText,
+  selected = false,
 }: {
   bounds: HoverBounds;
   copyText: string;
+  /** The cell is already highlighted by the grid selection: skip the tint so
+   * the two states do not stack into a double frame. */
+  selected?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | null>(null);
@@ -70,7 +74,7 @@ export default function CellHover({
 
   return (
     <div
-      className="cell-hover"
+      className={selected ? "cell-hover selected" : "cell-hover"}
       style={{
         left: bounds.x,
         top: bounds.y,

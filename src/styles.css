@@ -495,6 +495,12 @@ body,
   animation: cell-hover-in 100ms ease-out;
 }
 
+/* The grid already tints the selected cell; a second tint would look like a
+ * frame inside a frame. Keep the copy button, drop the background. */
+.cell-hover.selected {
+  background: transparent;
+}
+
 .cell-hover-copy {
   position: absolute;
   right: 4px;
@@ -3085,14 +3091,15 @@ input[type="checkbox"] {
   background: var(--bg);
   border: 1.5px solid var(--accent);
   border-radius: var(--radius);
-  box-shadow: 0 0 0 3px var(--accent-weak), var(--shadow-2);
+  /* No outer ring: the editor already overlays the selected cell, and a second
+   * frame around it read as a duplicate selection. */
+  box-shadow: var(--shadow-2);
   outline: none;
 }
 
 /* Rejected value (e.g. "12abc" in a number column): stay open, look wrong. */
 .cell-editor.invalid {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px var(--danger-weak), var(--shadow-2);
   animation: cell-editor-shake 0.16s ease;
 }
 
@@ -4115,6 +4122,8 @@ input[type="checkbox"] {
 }
 
 .column-preview-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

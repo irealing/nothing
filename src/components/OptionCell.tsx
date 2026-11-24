@@ -51,6 +51,8 @@ export interface OptionPillLayout {
   hidden: number;
   counterLabel: string | null;
   counterWidth: number;
+  /** Width actually painted, including gaps and a visible `+N` counter. */
+  usedWidth: number;
 }
 
 /**
@@ -68,7 +70,7 @@ export function layoutOptionPills(
   measure: (text: string) => number,
 ): OptionPillLayout {
   if (pills.length === 0) {
-    return { visible: [], hidden: 0, counterLabel: null, counterWidth: 0 };
+    return { visible: [], hidden: 0, counterLabel: null, counterWidth: 0, usedWidth: 0 };
   }
 
   const items = pills.map((pill) => {
@@ -82,7 +84,7 @@ export function layoutOptionPills(
     0,
   );
   if (total <= availableWidth) {
-    return { visible: items, hidden: 0, counterLabel: null, counterWidth: 0 };
+    return { visible: items, hidden: 0, counterLabel: null, counterWidth: 0, usedWidth: total };
   }
 
   const counterWidthFor = (count: number) =>
@@ -104,16 +106,41 @@ export function layoutOptionPills(
     visible.push({ ...items[0], width: Math.max(0, availableWidth) });
   }
 
+  // Width actually occupied by the painted pills, used for alignment.
+  let painted = 0;
+  for (const item of visible) {
+    painted += item.width + (painted > 0 ? PILL_GAP : 0);
+  }
+
   const hidden = pills.length - visible.length;
   if (hidden === 0) {
-    return { visible, hidden: 0, counterLabel: null, counterWidth: 0 };
+    return { visible, hidden: 0, counterLabel: null, counterWidth: 0, usedWidth: painted };
   }
+  const counterWidth = counterWidthFor(hidden);
+  // The counter is only painted when there is room left after the pills.
+  const withCounter = painted + (painted > 0 ? PILL_GAP : 0) + counterWidth;
   return {
     visible,
     hidden,
     counterLabel: `+${hidden}`,
-    counterWidth: counterWidthFor(hidden),
+    counterWidth,
+    usedWidth: withCounter <= availableWidth ? withCounter : painted,
   };
+}
+
+/**
+ * Horizontal offset of the pill row inside the cell's padded content box.
+ * Oversized rows keep the left edge so the clipped overflow stays readable.
+ */
+export function pillRowOffset(
+  contentAlign: "left" | "right" | "center" | undefined,
+  availableWidth: number,
+  usedWidth: number,
+): number {
+  const room = Math.max(0, availableWidth - usedWidth);
+  if (contentAlign === "right") return room;
+  if (contentAlign === "center") return room / 2;
+  return 0;
 }
 
 /** Build the custom cell payload for a select / multi_select value. */
@@ -180,7 +207,10 @@ export function createOptionCellRenderer(
         ctx.measureText(text).width,
       );
       const y = rect.y + (rect.height - PILL_HEIGHT) / 2;
-      let x = rect.x + CELL_PADDING_X;
+      let x =
+        rect.x +
+        CELL_PADDING_X +
+        pillRowOffset(cell.contentAlign, available, layout.usedWidth);
 
       for (const item of layout.visible) {
         const dotSpace = item.pill.icon ? 0 : PILL_DOT_SIZE + PILL_DOT_GAP;

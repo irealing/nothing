@@ -124,7 +124,13 @@ function ColumnPreview({
         <span className="column-preview-icon">
           {icon ? <span className="column-preview-emoji">{icon}</span> : <ColumnTypeIcon type={type} size={13} />}
         </span>
-        <span className="column-preview-name">{name.trim() || t("column.previewUntitled")}</span>
+        <span
+          className="column-preview-name"
+          // Mirrors the grid header: only an explicit choice moves the title.
+          style={{ textAlign: align ?? "left" }}
+        >
+          {name.trim() || t("column.previewUntitled")}
+        </span>
         <IconChevronDown size={10} className="column-preview-caret" />
       </div>
       <div className="column-preview-cell" style={cellColors}>
@@ -227,7 +233,8 @@ export default function ColumnDialog({
   const defaultUnsupported = type === "formula" || type === "relation" || existingReverse;
   const defaultBlocked =
     (type === "select" || type === "multi_select") && choices.length === 0;
-  const showAlign = type !== "select" && type !== "multi_select" && type !== "relation";
+  // Relation cells use Glide's Bubble renderer, which ignores contentAlign.
+  const showAlign = type !== "relation";
 
   // Columns a formula may reference: physical, non-generated, non-reverse.
   const referenceable = useMemo(

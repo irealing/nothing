@@ -43,6 +43,13 @@ describe("CellHover", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("drops the background tint on an already-selected cell", () => {
+    const { container } = render(<CellHover bounds={bounds} copyText="hello" selected />);
+    expect(container.querySelector(".cell-hover.selected")).toBeTruthy();
+    // The copy affordance stays available on the selected cell.
+    expect(screen.getByRole("button", { name: "复制内容" })).toBeTruthy();
+  });
+
   it("hides the button when the column is too narrow", () => {
     render(<CellHover bounds={{ ...bounds, width: 40 }} copyText="x" />);
     expect(screen.queryByRole("button")).toBeNull();

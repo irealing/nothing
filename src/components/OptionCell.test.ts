@@ -7,6 +7,7 @@ import {
   layoutOptionPills,
   optionCellFor,
   pillLabel,
+  pillRowOffset,
   type OptionPill,
 } from "./OptionCell";
 
@@ -27,6 +28,8 @@ describe("layoutOptionPills", () => {
     expect(layout.hidden).toBe(0);
     expect(layout.counterLabel).toBeNull();
     expect(layout.visible.map((v) => v.label)).toEqual(["待办", "进行中", "完成"]);
+    // 41 + 48 + 41 plus two 6px gaps.
+    expect(layout.usedWidth).toBe(142);
   });
 
   it("reserves room for a +N counter when the row overflows", () => {
@@ -37,6 +40,8 @@ describe("layoutOptionPills", () => {
     expect(layout.hidden).toBe(2);
     expect(layout.counterLabel).toBe("+2");
     expect(layout.counterWidth).toBeGreaterThan(0);
+    // One 41px pill, a 6px gap and the 30px counter.
+    expect(layout.usedWidth).toBe(77);
   });
 
   it("reserves dot space only when the option has no icon", () => {
@@ -63,7 +68,22 @@ describe("layoutOptionPills", () => {
       hidden: 0,
       counterLabel: null,
       counterWidth: 0,
+      usedWidth: 0,
     });
+  });
+});
+
+describe("pillRowOffset", () => {
+  it("anchors left, centers, or right-aligns the painted row", () => {
+    expect(pillRowOffset(undefined, 100, 60)).toBe(0);
+    expect(pillRowOffset("left", 100, 60)).toBe(0);
+    expect(pillRowOffset("center", 100, 60)).toBe(20);
+    expect(pillRowOffset("right", 100, 60)).toBe(40);
+  });
+
+  it("falls back to the left edge when the row overflows", () => {
+    expect(pillRowOffset("center", 100, 140)).toBe(0);
+    expect(pillRowOffset("right", 100, 140)).toBe(0);
   });
 });
 

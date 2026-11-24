@@ -4,8 +4,11 @@ import {
   DataEditor,
   GridCellKind,
   GridColumnIcon,
+  getMiddleCenterBias,
+  roundedPoly,
   type CellClickedEventArgs,
   type DataEditorRef,
+  type DrawHeaderCallback,
   type EditableGridCell,
   type GridCell,
   type GridColumn,
@@ -87,6 +90,23 @@ function cellAlign(col: ColumnMeta): CellAlign {
     return "right";
   }
   return "left";
+}
+
+/** Whether the cell already carries the grid's own selection tint. */
+function selectionContains(selection: GridSelection, col: number, row: number): boolean {
+  const current = selection.current;
+  if (current) {
+    const range = current.range;
+    if (
+      col >= range.x &&
+      col < range.x + range.width &&
+      row >= range.y &&
+      row < range.y + range.height
+    ) {
+      return true;
+    }
+  }
+  return selection.rows.hasIndex(row);
 }
 
 function cellFor(col: ColumnMeta, value: Json | undefined, titles: Record<string, string>): GridCell {
@@ -205,6 +225,16 @@ function headerIcon(col: ColumnMeta): GridColumnIcon | undefined {
     default:
       return undefined;
   }
+}
+
+/** Header name without the emoji that decorates it. */
+function columnLabel(col: ColumnMeta): string {
+  return `${col.name}${isReverse(col) ? t("column.reverseSuffix") : ""}`;
+}
+
+/** Header title as Glide draws it: custom emoji, then the name. */
+function columnTitle(col: ColumnMeta): string {
+  return `${col.icon ? `${col.icon} ` : ""}${columnLabel(col)}`;
 }
 
 /** `YYYY-MM-DD` from the shapes spreadsheets actually produce. */
@@ -407,6 +437,19 @@ export default function TableView() {
     return () => observer.disconnect();
   }, []);
 
+  // Glide only reports hover changes while the pointer is over its canvas, so
+  // a click elsewhere (toolbar, sidebar, page background) would leave the DOM
+  // hover overlay behind on the last cell. Clear it on any outside press.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const wrap = wrapRef.current;
+      if (!wrap || !(e.target instanceof Node) || wrap.contains(e.target)) return;
+      setHover(null);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, []);
+
   const columns = visibleColumns;
   const duplicateRows = useWorkspace((s) => s.duplicateRows);
   const layout = activeView?.columns ?? [];
@@ -420,7 +463,7 @@ export default function TableView() {
   const gridColumns: GridColumn[] = useMemo(
     () => [
       ...columns.map((c) => ({
-        title: `${c.icon ? `${c.icon} ` : ""}${c.name}${isReverse(c) ? t("column.reverseSuffix") : ""}`,
+        title: columnTitle(c),
         id: c.id,
         width: c.width || 160,
         // A custom emoji replaces the default type icon in the header.
@@ -433,6 +476,104 @@ export default function TableView() {
       { title: "+", id: ADD_COLUMN_ID, width: 44, hasMenu: false },
     ],
     [columns, resolvedTheme],
+  );
+
+  const columnById = useMemo(
+    () => new Map(columns.map((column) => [column.id, column])),
+    [columns],
+  );
+
+  /**
+   * Glide has no header alignment. Only an explicit center/right choice gets a
+   * custom header; "auto" (and explicit left) keep Glide's own left-aligned
+   * header so numeric columns do not suddenly right-align their titles.
+   *
+   * The type icon stays pinned to the leading edge (that is also the click
+   * target for the emoji picker); only the title follows the alignment.
+   */
+  const drawHeader = useCallback<DrawHeaderCallback>(
+    (
+      { ctx, column, theme, rect, isSelected, isHovered, menuBounds, spriteManager },
+      drawContent,
+    ) => {
+      const meta = column.id ? columnById.get(column.id) : undefined;
+      const align = meta?.align;
+      if (!meta || (align !== "center" && align !== "right")) {
+        drawContent();
+        return;
+      }
+
+      const pad = theme.cellHorizontalPadding;
+      const font = `${theme.headerFontStyle} ${theme.fontFamily}`;
+      const fill = isSelected ? theme.textHeaderSelected : theme.textHeader;
+      const centerY = rect.y + rect.height / 2;
+      const emoji = meta.icon;
+      let textLeft = rect.x + pad;
+
+      ctx.save();
+      ctx.font = font;
+      ctx.textAlign = "left";
+      // Glide's header draws with the default alphabetic baseline; keep the
+      // same bias so aligned titles sit on the same line as every other one.
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = fill;
+      if (column.icon !== undefined) {
+        const variant = isSelected
+          ? "selected"
+          : column.style === "highlight"
+            ? "special"
+            : "normal";
+        spriteManager.drawSprite(
+          column.icon,
+          variant,
+          ctx,
+          rect.x + pad,
+          rect.y + (rect.height - theme.headerIconSize) / 2,
+          theme.headerIconSize,
+          theme,
+        );
+        textLeft += Math.ceil(theme.headerIconSize * 1.3);
+      } else if (emoji) {
+        // Custom emoji live inside the title in Glide; draw the glyph here so
+        // the title itself can align while the emoji stays clickable at left.
+        ctx.fillText(emoji, rect.x + pad, centerY + getMiddleCenterBias(ctx, font));
+        textLeft += ctx.measureText(emoji).width + 5;
+      }
+
+      let textRight = rect.x + rect.width - pad;
+      // Reserve the hover caret so a right-aligned title never sits under it.
+      if (column.hasMenu === true && rect.width > 35) textRight -= 22;
+
+      ctx.beginPath();
+      ctx.rect(textLeft, rect.y, Math.max(0, textRight - textLeft), rect.height);
+      ctx.clip();
+      ctx.fillStyle = fill;
+      ctx.textAlign = align;
+      ctx.fillText(
+        columnLabel(meta),
+        align === "center" ? (textLeft + textRight) / 2 : textRight,
+        centerY + getMiddleCenterBias(ctx, font),
+      );
+      ctx.restore();
+
+      if (isHovered && column.hasMenu === true && rect.width > 35) {
+        const triangleX = menuBounds.x + menuBounds.width / 2 - 5.5;
+        const triangleY = menuBounds.y + menuBounds.height / 2 - 3;
+        ctx.beginPath();
+        roundedPoly(
+          ctx,
+          [
+            { x: triangleX, y: triangleY },
+            { x: triangleX + 11, y: triangleY },
+            { x: triangleX + 5.5, y: triangleY + 6 },
+          ],
+          1,
+        );
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+    },
+    [columnById],
   );
 
   const getRow = useCallback((idx: number): Row | undefined => rowsCache.get(idx), [rowsCache, rowsVersion]);
@@ -989,6 +1130,7 @@ export default function TableView() {
   const cellMenuCol = cellMenu ? columns[cellMenu.colIdx] : undefined;
   const hoverCol = hover ? columns[hover.col] : undefined;
   const hoverRow = hover ? getRow(hover.row) : undefined;
+  const hoverSelected = hover ? selectionContains(gridSelection, hover.col, hover.row) : false;
   const hoverCopyText =
     hoverCol && hoverRow
       ? (cellFor(hoverCol, hoverRow.cells[hoverCol.id], titles).copyData ?? "")
@@ -1124,7 +1266,11 @@ export default function TableView() {
         !(activeView?.data.kind === "grid" && activeView.data.filters !== null) && (
           <div className="grid-hint-bar">{t("table.emptyRowsHint")}</div>
         )}
-      <div className="grid-wrap" ref={wrapRef}>
+      <div
+        className="grid-wrap"
+        ref={wrapRef}
+        onMouseLeave={() => setHover(null)}
+      >
         <DataEditor
           ref={gridRef}
           columns={gridColumns}
@@ -1146,6 +1292,7 @@ export default function TableView() {
           onHeaderMenuClick={onHeaderMenuClick}
           onVisibleRegionChanged={onVisibleRegionChanged}
           onItemHovered={onItemHovered}
+          drawHeader={drawHeader}
           rowMarkers={{ kind: showRowNumbers ? "both" : "none", width: ROW_MARKER_WIDTH }}
           gridSelection={gridSelection}
           onGridSelectionChange={setGridSelection}
@@ -1175,6 +1322,7 @@ export default function TableView() {
             key={`${hover.col}:${hover.row}`}
             bounds={hover.bounds}
             copyText={hoverCopyText}
+            selected={hoverSelected}
           />
         )}
         {columns.length === 0 && (

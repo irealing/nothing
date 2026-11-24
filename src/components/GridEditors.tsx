@@ -156,10 +156,13 @@ export function InlineCellEditor({
 
   const cancel = () => finish(onClose);
 
-  const width = Math.min(Math.max(anchor.width, 160), window.innerWidth - 16);
-  const height = Math.max(30, Math.min(anchor.height - 2, 44));
-  const left = Math.max(8, Math.min(anchor.x, window.innerWidth - width - 10));
-  const top = Math.max(8, Math.min(anchor.y + 1, window.innerHeight - height - 8));
+  // Cover the cell exactly: a wider/taller editor would leave a sliver of the
+  // grid's selection highlight showing around it, which reads as a second
+  // frame next to the editor border.
+  const width = Math.max(24, Math.min(anchor.width, window.innerWidth - 16));
+  const height = Math.max(24, Math.min(anchor.height, window.innerHeight - 16));
+  const left = Math.max(0, Math.min(anchor.x, window.innerWidth - width));
+  const top = Math.max(0, Math.min(anchor.y, window.innerHeight - height));
   const style: CSSProperties = { position: "fixed", left, top, width, height, zIndex: 320 };
 
   return (

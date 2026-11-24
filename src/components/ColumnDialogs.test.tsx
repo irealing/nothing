@@ -185,6 +185,12 @@ describe("ColumnDialog", () => {
     expect(screen.getAllByPlaceholderText(/^选项 \d+$/)).toHaveLength(2);
   });
 
+  it("offers alignment for select columns", () => {
+    render(<ColumnDialog existing={SELECT_COL} onClose={() => {}} />);
+
+    expect(screen.getByRole("combobox", { name: "对齐" })).toBeTruthy();
+  });
+
   it("greys out the default value control until it is enabled", async () => {
     const user = userEvent.setup();
     render(<ColumnDialog existing={TEXT_COL} onClose={() => {}} />);
