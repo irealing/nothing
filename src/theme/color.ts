@@ -1,9 +1,9 @@
 // Color math for user-picked colors.
 //
 // The curated palette is resolved from CSS tokens, but a custom color is an
-// arbitrary `#rrggbb` value. Every presentation shade (chip, swatch, header,
-// cell tint) is derived here so the rest of the app only deals with ready-made
-// color strings. Derivation is theme-aware and keeps chip text readable; the
+// arbitrary `#rrggbb` value. Every presentation shade (chip, swatch, cell tint)
+// is derived here so the rest of the app only deals with ready-made color
+// strings. Derivation is theme-aware and keeps chip text readable; the
 // contrast guarantees are covered by unit tests.
 
 export interface Rgb {
@@ -134,8 +134,6 @@ export interface CustomScale {
   chipBorder: string;
   swatchBg: string;
   swatchFg: string;
-  headerBg: string;
-  headerFg: string;
   cellBg: string;
   cellHover: string;
 }
@@ -166,29 +164,23 @@ export function customScale(hex: string, dark: boolean): CustomScale {
   const { h, s } = rgbToHsl(rgb);
   if (dark) {
     const chipBg = cssHsl(h, s * 0.38, 0.23);
-    const headerBg = cssHsl(h, s * 0.32, 0.27);
     return {
       chipBg,
       chipFg: readableHsl(h, s * 0.55, hslToRgb({ h, s: s * 0.38, l: 0.23 }), 0.82, 1),
       chipBorder: "rgba(255, 255, 255, 0.09)",
       swatchBg: toHex(rgb),
       swatchFg: readableText(rgb),
-      headerBg,
-      headerFg: readableHsl(h, s * 0.45, hslToRgb({ h, s: s * 0.32, l: 0.27 }), 0.86, 1),
       cellBg: cssHsl(h, s * 0.28, 0.13),
       cellHover: cssHsl(h, s * 0.32, 0.17),
     };
   }
   const chipBg = cssHsl(h, s * 0.5, 0.945);
-  const headerBg = cssHsl(h, s * 0.38, 0.9);
   return {
     chipBg,
     chipFg: readableHsl(h, s * 0.7, hslToRgb({ h, s: s * 0.5, l: 0.945 }), 0.32, -1),
     chipBorder: "rgba(15, 15, 15, 0.08)",
     swatchBg: toHex(rgb),
     swatchFg: readableText(rgb),
-    headerBg,
-    headerFg: readableHsl(h, s * 0.7, hslToRgb({ h, s: s * 0.38, l: 0.9 }), 0.3, -1),
     cellBg: cssHsl(h, s * 0.35, 0.972),
     cellHover: cssHsl(h, s * 0.38, 0.955),
   };

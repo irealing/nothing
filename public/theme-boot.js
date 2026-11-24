@@ -3,18 +3,17 @@
 // Kept CSP-friendly: external file, no inline script.
 (function () {
   var pref = "system";
-  var scheme = "notion";
   try {
     var raw = localStorage.getItem("nothing.theme") || "system";
     if (raw === "light" || raw === "dark" || raw === "system") {
       // Older builds stored a bare preference string.
       pref = raw;
     } else {
+      // Newer builds stored JSON; a removed `scheme` field is ignored.
       var parsed = JSON.parse(raw);
       if (parsed && (parsed.preference === "light" || parsed.preference === "dark" || parsed.preference === "system")) {
         pref = parsed.preference;
       }
-      if (parsed && parsed.scheme === "fluent") scheme = "fluent";
     }
   } catch (e) {
     // Storage unavailable or malformed: fall back to the system preference.
@@ -25,5 +24,4 @@
       window.matchMedia &&
       window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-  document.documentElement.dataset.scheme = scheme;
 })();

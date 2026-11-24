@@ -1,5 +1,6 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { sql } from "@codemirror/lang-sql";
+import { nothingEditorTheme } from "../theme/codemirror";
 
 /** Small shared CodeMirror 6 editor preset for SQL. */
 export function SqlEditor({
@@ -27,6 +28,7 @@ export function SqlEditor({
       <CodeMirror
         value={value}
         height={height}
+        theme={nothingEditorTheme}
         extensions={[sql()]}
         onChange={onChange}
         basicSetup={{

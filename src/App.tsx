@@ -24,8 +24,8 @@ export default function App() {
   const scratchOpen = useWorkspace((s) => s.scratch.open);
   const activeView = views.find((v) => v.id === activeViewId) ?? null;
 
-  // Subscribing here keeps the document theme/scheme in sync with the preference.
-  useTheme((s) => `${s.resolved}:${s.scheme}`);
+  // Subscribing here keeps the document theme in sync with the preference.
+  useTheme((s) => s.resolved);
 
   useEffect(() => {
     void useWorkspace.getState().boot();

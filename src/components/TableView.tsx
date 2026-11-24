@@ -68,9 +68,9 @@ function hasPopupEditor(col: ColumnMeta): boolean {
 const ADD_COLUMN_ID = "__add_column__";
 
 /** Roomier than Glide's default 34px: one line of content plus breathing space. */
-const ROW_HEIGHT = 38;
-const HEADER_HEIGHT = 40;
-const ROW_MARKER_WIDTH = 40;
+const ROW_HEIGHT = 36;
+const HEADER_HEIGHT = 36;
+const ROW_MARKER_WIDTH = 36;
 
 type CellAlign = "left" | "center" | "right";
 
@@ -372,9 +372,8 @@ export default function TableView() {
   const duplicateRows = useWorkspace((s) => s.duplicateRows);
   const layout = activeView?.columns ?? [];
   const resolvedTheme = useTheme((s) => s.resolved);
-  const scheme = useTheme((s) => s.scheme);
-  const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme, scheme]);
-  const optionPalette = useMemo(() => readOptionPalette(), [resolvedTheme, scheme]);
+  const gridTheme = useMemo(() => readGridTheme(), [resolvedTheme]);
+  const optionPalette = useMemo(() => readOptionPalette(), [resolvedTheme]);
   const customRenderers = useMemo(
     () => [createOptionCellRenderer(optionPalette)],
     [optionPalette],

@@ -36,8 +36,6 @@ describe("palette stylesheet", () => {
     "--chip-%s-border",
     "--swatch-%s-bg",
     "--swatch-%s-fg",
-    "--tag-%s-header-bg",
-    "--tag-%s-header-fg",
     "--tag-%s-cell-bg",
     "--tag-%s-cell-bg-hover",
   ];
@@ -55,6 +53,18 @@ describe("palette stylesheet", () => {
     for (const color of TAG_COLORS) {
       expect(css).toContain(`@radix-ui/colors/${color}.css`);
       expect(css).toContain(`@radix-ui/colors/${color}-dark.css`);
+    }
+  });
+
+  it("defines the SQL editor syntax tokens", () => {
+    for (const token of [
+      "--syntax-keyword",
+      "--syntax-string",
+      "--syntax-number",
+      "--syntax-function",
+      "--syntax-type",
+    ]) {
+      expect(css, `${token} is missing`).toContain(`${token}:`);
     }
   });
 });

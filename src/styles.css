@@ -84,180 +84,144 @@
   --chip-gray-border: var(--chip-ring);
   --swatch-gray-bg: var(--gray-9);
   --swatch-gray-fg: #111111;
-  --tag-gray-header-bg: var(--gray-4);
-  --tag-gray-header-fg: var(--gray-12);
-  --tag-gray-cell-bg: var(--gray-2);
-  --tag-gray-cell-bg-hover: var(--gray-3);
+  --tag-gray-cell-bg: var(--gray-1);
+  --tag-gray-cell-bg-hover: var(--gray-2);
 
   --chip-blue-bg: var(--blue-3);
   --chip-blue-fg: var(--blue-12);
   --chip-blue-border: var(--chip-ring);
   --swatch-blue-bg: var(--blue-9);
   --swatch-blue-fg: #ffffff;
-  --tag-blue-header-bg: var(--blue-4);
-  --tag-blue-header-fg: var(--blue-12);
-  --tag-blue-cell-bg: var(--blue-2);
-  --tag-blue-cell-bg-hover: var(--blue-3);
+  --tag-blue-cell-bg: var(--blue-1);
+  --tag-blue-cell-bg-hover: var(--blue-2);
 
   --chip-green-bg: var(--green-3);
   --chip-green-fg: var(--green-12);
   --chip-green-border: var(--chip-ring);
   --swatch-green-bg: var(--green-9);
   --swatch-green-fg: #ffffff;
-  --tag-green-header-bg: var(--green-4);
-  --tag-green-header-fg: var(--green-12);
-  --tag-green-cell-bg: var(--green-2);
-  --tag-green-cell-bg-hover: var(--green-3);
+  --tag-green-cell-bg: var(--green-1);
+  --tag-green-cell-bg-hover: var(--green-2);
 
   --chip-yellow-bg: var(--yellow-3);
   --chip-yellow-fg: var(--yellow-12);
   --chip-yellow-border: var(--chip-ring);
   --swatch-yellow-bg: var(--yellow-9);
   --swatch-yellow-fg: #3d2a00;
-  --tag-yellow-header-bg: var(--yellow-4);
-  --tag-yellow-header-fg: var(--yellow-12);
-  --tag-yellow-cell-bg: var(--yellow-2);
-  --tag-yellow-cell-bg-hover: var(--yellow-3);
+  --tag-yellow-cell-bg: var(--yellow-1);
+  --tag-yellow-cell-bg-hover: var(--yellow-2);
 
   --chip-orange-bg: var(--orange-3);
   --chip-orange-fg: var(--orange-12);
   --chip-orange-border: var(--chip-ring);
   --swatch-orange-bg: var(--orange-9);
   --swatch-orange-fg: #ffffff;
-  --tag-orange-header-bg: var(--orange-4);
-  --tag-orange-header-fg: var(--orange-12);
-  --tag-orange-cell-bg: var(--orange-2);
-  --tag-orange-cell-bg-hover: var(--orange-3);
+  --tag-orange-cell-bg: var(--orange-1);
+  --tag-orange-cell-bg-hover: var(--orange-2);
 
   --chip-red-bg: var(--red-3);
   --chip-red-fg: var(--red-12);
   --chip-red-border: var(--chip-ring);
   --swatch-red-bg: var(--red-9);
   --swatch-red-fg: #ffffff;
-  --tag-red-header-bg: var(--red-4);
-  --tag-red-header-fg: var(--red-12);
-  --tag-red-cell-bg: var(--red-2);
-  --tag-red-cell-bg-hover: var(--red-3);
+  --tag-red-cell-bg: var(--red-1);
+  --tag-red-cell-bg-hover: var(--red-2);
 
   --chip-purple-bg: var(--purple-3);
   --chip-purple-fg: var(--purple-12);
   --chip-purple-border: var(--chip-ring);
   --swatch-purple-bg: var(--purple-9);
   --swatch-purple-fg: #ffffff;
-  --tag-purple-header-bg: var(--purple-4);
-  --tag-purple-header-fg: var(--purple-12);
-  --tag-purple-cell-bg: var(--purple-2);
-  --tag-purple-cell-bg-hover: var(--purple-3);
+  --tag-purple-cell-bg: var(--purple-1);
+  --tag-purple-cell-bg-hover: var(--purple-2);
 
   --chip-pink-bg: var(--pink-3);
   --chip-pink-fg: var(--pink-12);
   --chip-pink-border: var(--chip-ring);
   --swatch-pink-bg: var(--pink-9);
   --swatch-pink-fg: #ffffff;
-  --tag-pink-header-bg: var(--pink-4);
-  --tag-pink-header-fg: var(--pink-12);
-  --tag-pink-cell-bg: var(--pink-2);
-  --tag-pink-cell-bg-hover: var(--pink-3);
+  --tag-pink-cell-bg: var(--pink-1);
+  --tag-pink-cell-bg-hover: var(--pink-2);
 
   --chip-brown-bg: var(--brown-3);
   --chip-brown-fg: var(--brown-12);
   --chip-brown-border: var(--chip-ring);
   --swatch-brown-bg: var(--brown-9);
   --swatch-brown-fg: #ffffff;
-  --tag-brown-header-bg: var(--brown-4);
-  --tag-brown-header-fg: var(--brown-12);
-  --tag-brown-cell-bg: var(--brown-2);
-  --tag-brown-cell-bg-hover: var(--brown-3);
+  --tag-brown-cell-bg: var(--brown-1);
+  --tag-brown-cell-bg-hover: var(--brown-2);
 
   --chip-amber-bg: var(--amber-3);
   --chip-amber-fg: var(--amber-12);
   --chip-amber-border: var(--chip-ring);
   --swatch-amber-bg: var(--amber-9);
   --swatch-amber-fg: #3d2400;
-  --tag-amber-header-bg: var(--amber-4);
-  --tag-amber-header-fg: var(--amber-12);
-  --tag-amber-cell-bg: var(--amber-2);
-  --tag-amber-cell-bg-hover: var(--amber-3);
+  --tag-amber-cell-bg: var(--amber-1);
+  --tag-amber-cell-bg-hover: var(--amber-2);
 
   --chip-lime-bg: var(--lime-3);
   --chip-lime-fg: var(--lime-12);
   --chip-lime-border: var(--chip-ring);
   --swatch-lime-bg: var(--lime-9);
   --swatch-lime-fg: #1f2d00;
-  --tag-lime-header-bg: var(--lime-4);
-  --tag-lime-header-fg: var(--lime-12);
-  --tag-lime-cell-bg: var(--lime-2);
-  --tag-lime-cell-bg-hover: var(--lime-3);
+  --tag-lime-cell-bg: var(--lime-1);
+  --tag-lime-cell-bg-hover: var(--lime-2);
 
   --chip-teal-bg: var(--teal-3);
   --chip-teal-fg: var(--teal-12);
   --chip-teal-border: var(--chip-ring);
   --swatch-teal-bg: var(--teal-9);
   --swatch-teal-fg: #ffffff;
-  --tag-teal-header-bg: var(--teal-4);
-  --tag-teal-header-fg: var(--teal-12);
-  --tag-teal-cell-bg: var(--teal-2);
-  --tag-teal-cell-bg-hover: var(--teal-3);
+  --tag-teal-cell-bg: var(--teal-1);
+  --tag-teal-cell-bg-hover: var(--teal-2);
 
   --chip-cyan-bg: var(--cyan-3);
   --chip-cyan-fg: var(--cyan-12);
   --chip-cyan-border: var(--chip-ring);
   --swatch-cyan-bg: var(--cyan-9);
   --swatch-cyan-fg: #ffffff;
-  --tag-cyan-header-bg: var(--cyan-4);
-  --tag-cyan-header-fg: var(--cyan-12);
-  --tag-cyan-cell-bg: var(--cyan-2);
-  --tag-cyan-cell-bg-hover: var(--cyan-3);
+  --tag-cyan-cell-bg: var(--cyan-1);
+  --tag-cyan-cell-bg-hover: var(--cyan-2);
 
   --chip-sky-bg: var(--sky-3);
   --chip-sky-fg: var(--sky-12);
   --chip-sky-border: var(--chip-ring);
   --swatch-sky-bg: var(--sky-9);
   --swatch-sky-fg: #0a2a33;
-  --tag-sky-header-bg: var(--sky-4);
-  --tag-sky-header-fg: var(--sky-12);
-  --tag-sky-cell-bg: var(--sky-2);
-  --tag-sky-cell-bg-hover: var(--sky-3);
+  --tag-sky-cell-bg: var(--sky-1);
+  --tag-sky-cell-bg-hover: var(--sky-2);
 
   --chip-indigo-bg: var(--indigo-3);
   --chip-indigo-fg: var(--indigo-12);
   --chip-indigo-border: var(--chip-ring);
   --swatch-indigo-bg: var(--indigo-9);
   --swatch-indigo-fg: #ffffff;
-  --tag-indigo-header-bg: var(--indigo-4);
-  --tag-indigo-header-fg: var(--indigo-12);
-  --tag-indigo-cell-bg: var(--indigo-2);
-  --tag-indigo-cell-bg-hover: var(--indigo-3);
+  --tag-indigo-cell-bg: var(--indigo-1);
+  --tag-indigo-cell-bg-hover: var(--indigo-2);
 
   --chip-violet-bg: var(--violet-3);
   --chip-violet-fg: var(--violet-12);
   --chip-violet-border: var(--chip-ring);
   --swatch-violet-bg: var(--violet-9);
   --swatch-violet-fg: #ffffff;
-  --tag-violet-header-bg: var(--violet-4);
-  --tag-violet-header-fg: var(--violet-12);
-  --tag-violet-cell-bg: var(--violet-2);
-  --tag-violet-cell-bg-hover: var(--violet-3);
+  --tag-violet-cell-bg: var(--violet-1);
+  --tag-violet-cell-bg-hover: var(--violet-2);
 
   --chip-plum-bg: var(--plum-3);
   --chip-plum-fg: var(--plum-12);
   --chip-plum-border: var(--chip-ring);
   --swatch-plum-bg: var(--plum-9);
   --swatch-plum-fg: #ffffff;
-  --tag-plum-header-bg: var(--plum-4);
-  --tag-plum-header-fg: var(--plum-12);
-  --tag-plum-cell-bg: var(--plum-2);
-  --tag-plum-cell-bg-hover: var(--plum-3);
+  --tag-plum-cell-bg: var(--plum-1);
+  --tag-plum-cell-bg-hover: var(--plum-2);
 
   --chip-crimson-bg: var(--crimson-3);
   --chip-crimson-fg: var(--crimson-12);
   --chip-crimson-border: var(--chip-ring);
   --swatch-crimson-bg: var(--crimson-9);
   --swatch-crimson-fg: #ffffff;
-  --tag-crimson-header-bg: var(--crimson-4);
-  --tag-crimson-header-fg: var(--crimson-12);
-  --tag-crimson-cell-bg: var(--crimson-2);
-  --tag-crimson-cell-bg-hover: var(--crimson-3);
+  --tag-crimson-cell-bg: var(--crimson-1);
+  --tag-crimson-cell-bg-hover: var(--crimson-2);
 
   /* Custom-color entry point: a hue wheel built from the palette steps. */
   --swatch-custom-bg: conic-gradient(
@@ -271,50 +235,38 @@
     var(--violet-9),
     var(--red-9)
   );
+  /* SQL editor syntax colors: Radix text steps adapt to the active theme. */
+  --syntax-keyword: var(--violet-11);
+  --syntax-string: var(--green-11);
+  --syntax-number: var(--orange-11);
+  --syntax-function: var(--blue-11);
+  --syntax-type: var(--teal-11);
 }
 
 /* ---- dark palette overrides ----------------------------------------------
  *
- * Step 11 instead of 12 keeps chip/header text from glowing on the charcoal
- * canvas, while Radix still guarantees AA contrast against the tint.
+ * Step 11 instead of 12 keeps chip text from glowing on the charcoal canvas,
+ * while Radix still guarantees AA contrast against the tint.
  */
 [data-theme="dark"] {
   --chip-gray-fg: var(--gray-11);
-  --tag-gray-header-fg: var(--gray-11);
   --chip-brown-fg: var(--brown-11);
-  --tag-brown-header-fg: var(--brown-11);
   --chip-orange-fg: var(--orange-11);
-  --tag-orange-header-fg: var(--orange-11);
   --chip-amber-fg: var(--amber-11);
-  --tag-amber-header-fg: var(--amber-11);
   --chip-yellow-fg: var(--yellow-11);
-  --tag-yellow-header-fg: var(--yellow-11);
   --chip-lime-fg: var(--lime-11);
-  --tag-lime-header-fg: var(--lime-11);
   --chip-green-fg: var(--green-11);
-  --tag-green-header-fg: var(--green-11);
   --chip-teal-fg: var(--teal-11);
-  --tag-teal-header-fg: var(--teal-11);
   --chip-cyan-fg: var(--cyan-11);
-  --tag-cyan-header-fg: var(--cyan-11);
   --chip-sky-fg: var(--sky-11);
-  --tag-sky-header-fg: var(--sky-11);
   --chip-blue-fg: var(--blue-11);
-  --tag-blue-header-fg: var(--blue-11);
   --chip-indigo-fg: var(--indigo-11);
-  --tag-indigo-header-fg: var(--indigo-11);
   --chip-violet-fg: var(--violet-11);
-  --tag-violet-header-fg: var(--violet-11);
   --chip-purple-fg: var(--purple-11);
-  --tag-purple-header-fg: var(--purple-11);
   --chip-plum-fg: var(--plum-11);
-  --tag-plum-header-fg: var(--plum-11);
   --chip-pink-fg: var(--pink-11);
-  --tag-pink-header-fg: var(--pink-11);
   --chip-crimson-fg: var(--crimson-11);
-  --tag-crimson-header-fg: var(--crimson-11);
   --chip-red-fg: var(--red-11);
-  --tag-red-header-fg: var(--red-11);
 }
 
 /* ---- light theme (default) ---- */
@@ -323,7 +275,7 @@
   color-scheme: light;
 
   --bg: #ffffff;
-  --bg-side: #fafaf9;
+  --bg-side: #f7f7f5;
   --bg-hover: #f3f3f1;
   --bg-active: #eaeae7;
   --surface: #ffffff;
@@ -374,16 +326,16 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #1a1a1b;
-  --bg-side: #202021;
+  --bg: #191919;
+  --bg-side: #202020;
   --bg-hover: #2a2a2b;
   --bg-active: #343435;
   --surface: #232324;
   --surface-raised: #29292a;
   --surface-sunken: #151516;
 
-  --border: #2e2e30;
-  --border-soft: #262628;
+  --border: #2c2c2e;
+  --border-soft: #242426;
   --border-strong: #3d3d40;
   --border-overlay: rgba(255, 255, 255, 0.07);
   --chip-ring: rgba(255, 255, 255, 0.08);
@@ -391,8 +343,8 @@
   --accent-fg: #0b1c2c;
   --accent-border: rgba(74, 158, 234, 0.45);
   --danger-border: rgba(255, 115, 105, 0.35);
-  --text: #e7e7e4;
-  --text-mid: #a9a9a5;
+  --text: #dcdcd9;
+  --text-mid: #a3a39f;
   --text-weak: #8a8a86;
 
   --accent: #4a9eea;
@@ -414,122 +366,12 @@
   --welcome-bg:
     radial-gradient(900px 500px at 15% -10%, rgba(74, 158, 234, 0.12), transparent 60%),
     radial-gradient(800px 500px at 110% 110%, rgba(77, 171, 154, 0.08), transparent 55%),
-    linear-gradient(160deg, #1a1a1b 0%, #1f2226 100%);
+    linear-gradient(160deg, #191919 0%, #1f2226 100%);
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-3: 0 20px 55px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.35);
   --ring: 0 0 0 2px rgba(74, 158, 234, 0.35);
-}
-
-/* ---- Fluent scheme -------------------------------------------------------
- *
- * A Fluent 2 (Windows 11) inspired skin applied on top of either mode. Only
- * chrome tokens change: the 18-colour palette chips/tags stay on Radix so
- * user-picked colours never drift between schemes. Slightly squared corners,
- * neutral layered surfaces and crisp 2px focus rings carry the look.
- */
-[data-scheme="fluent"] {
-  --radius-sm: 2px;
-  --radius: 4px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
-}
-
-[data-scheme="fluent"][data-theme="light"] {
-  --bg: #fafafa;
-  --bg-side: #f3f2f1;
-  --bg-hover: #f0f0f0;
-  --bg-active: #e5e5e5;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-sunken: #f5f5f5;
-
-  --border: #e0e0e0;
-  --border-soft: #eaeaea;
-  --border-strong: #d1d1d1;
-  --border-overlay: rgba(0, 0, 0, 0.06);
-  --chip-ring: rgba(0, 0, 0, 0.08);
-
-  --accent-fg: #ffffff;
-  --accent-border: rgba(15, 108, 189, 0.4);
-  --danger-border: rgba(209, 52, 56, 0.35);
-  --text: #242424;
-  --text-mid: #616161;
-  --text-weak: #8a8a8a;
-
-  --accent: #0f6cbd;
-  --accent-strong: #115ea3;
-  --accent-weak: rgba(15, 108, 189, 0.12);
-  --danger: #d13438;
-  --danger-weak: rgba(209, 52, 56, 0.1);
-  --success: #107c10;
-  --success-weak: rgba(16, 124, 16, 0.12);
-
-  --selection: rgba(15, 108, 189, 0.2);
-  --scroll-thumb: rgba(0, 0, 0, 0.18);
-  --scroll-thumb-hover: rgba(0, 0, 0, 0.3);
-  --overlay: rgba(0, 0, 0, 0.4);
-  --toast-bg: #292929;
-  --toast-fg: #ffffff;
-
-  --welcome-bg:
-    radial-gradient(900px 500px at 15% -10%, rgba(15, 108, 189, 0.1), transparent 60%),
-    radial-gradient(800px 500px at 110% 110%, rgba(16, 124, 16, 0.07), transparent 55%),
-    linear-gradient(160deg, #fbfbfb 0%, #f0f3f7 100%);
-
-  --shadow-1: 0 0.3px 0.9px rgba(0, 0, 0, 0.07), 0 1.6px 3.6px rgba(0, 0, 0, 0.09);
-  --shadow-2: 0 1.6px 3.6px rgba(0, 0, 0, 0.11), 0 6.4px 14.4px rgba(0, 0, 0, 0.09);
-  --shadow-3: 0 6.4px 14.4px rgba(0, 0, 0, 0.16), 0 0.8px 1.8px rgba(0, 0, 0, 0.1);
-  --ring: 0 0 0 2px rgba(15, 108, 189, 0.45);
-}
-
-[data-scheme="fluent"][data-theme="dark"] {
-  --bg: #1f1f1f;
-  --bg-side: #252525;
-  --bg-hover: #2e2e2e;
-  --bg-active: #383838;
-  --surface: #292929;
-  --surface-raised: #2d2d2d;
-  --surface-sunken: #1a1a1a;
-
-  --border: #3a3a3a;
-  --border-soft: #333333;
-  --border-strong: #4a4a4a;
-  --border-overlay: rgba(255, 255, 255, 0.07);
-  --chip-ring: rgba(255, 255, 255, 0.08);
-
-  --accent-fg: #0b1c2c;
-  --accent-border: rgba(71, 158, 245, 0.5);
-  --danger-border: rgba(255, 107, 107, 0.4);
-  --text: #ededec;
-  --text-mid: #c2c2c2;
-  --text-weak: #949494;
-
-  --accent: #479ef5;
-  --accent-strong: #62abf5;
-  --accent-weak: rgba(71, 158, 245, 0.18);
-  --danger: #ff6b6b;
-  --danger-weak: rgba(255, 107, 107, 0.14);
-  --success: #54b054;
-  --success-weak: rgba(84, 176, 84, 0.16);
-
-  --selection: rgba(71, 158, 245, 0.3);
-  --scroll-thumb: rgba(255, 255, 255, 0.18);
-  --scroll-thumb-hover: rgba(255, 255, 255, 0.3);
-  --overlay: rgba(0, 0, 0, 0.6);
-  --toast-bg: #323232;
-  --toast-fg: #f5f5f5;
-
-  --welcome-bg:
-    radial-gradient(900px 500px at 15% -10%, rgba(71, 158, 245, 0.12), transparent 60%),
-    radial-gradient(800px 500px at 110% 110%, rgba(84, 176, 84, 0.08), transparent 55%),
-    linear-gradient(160deg, #1f1f1f 0%, #22262b 100%);
-
-  --shadow-1: 0 0.3px 0.9px rgba(0, 0, 0, 0.3), 0 1.6px 3.6px rgba(0, 0, 0, 0.3);
-  --shadow-2: 0 1.6px 3.6px rgba(0, 0, 0, 0.4), 0 6.4px 14.4px rgba(0, 0, 0, 0.35);
-  --shadow-3: 0 6.4px 14.4px rgba(0, 0, 0, 0.55), 0 0.8px 1.8px rgba(0, 0, 0, 0.4);
-  --ring: 0 0 0 2px rgba(71, 158, 245, 0.5);
 }
 
 * {
@@ -626,7 +468,6 @@ body,
   width: 248px;
   min-width: 248px;
   background: var(--bg-side);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -2417,9 +2258,8 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 6px 10px 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-side);
+  padding: 8px 16px 2px;
+  background: var(--bg);
   position: relative;
   overflow-x: auto;
 }
@@ -2428,8 +2268,8 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 5px 10px;
+  border-radius: var(--radius);
   cursor: pointer;
   font-size: 13px;
   color: var(--text-mid);
@@ -2445,11 +2285,9 @@ input[type="checkbox"] {
 }
 
 .view-tab.active {
-  background: var(--bg);
+  background: var(--bg-hover);
   color: var(--text);
   font-weight: 600;
-  margin-bottom: -1px;
-  padding-bottom: 7px;
 }
 
 .view-tab-icon {
@@ -2458,7 +2296,7 @@ input[type="checkbox"] {
 }
 
 .view-tab.active .view-tab-icon {
-  color: var(--accent);
+  color: var(--text-mid);
 }
 
 .tab-menu-btn {
@@ -2729,12 +2567,14 @@ input[type="checkbox"] {
 
 /* ---------- filter value pickers ---------- */
 
-.filter-choice-dot {
+.chip-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
   border-radius: 50%;
   flex-shrink: 0;
+  vertical-align: middle;
 }
 
 .filter-choice-trigger {
@@ -3256,20 +3096,6 @@ input[type="checkbox"] {
 .sql-editor:focus-within {
   border-color: var(--accent);
   box-shadow: var(--ring);
-}
-
-.sql-editor .cm-editor {
-  font-size: 13px;
-}
-
-.sql-editor .cm-editor.cm-focused {
-  outline: none;
-}
-
-.sql-editor .cm-gutters {
-  background: var(--surface-sunken);
-  border-right: 1px solid var(--border);
-  color: var(--text-weak);
 }
 
 .sql-result-wrap {
@@ -3975,7 +3801,9 @@ input[type="checkbox"] {
 
 .btn.danger-solid:hover {
   filter: brightness(1.06);
-}/* ---------- theme switch (sidebar footer) ---------- */
+}
+
+/* ---------- theme switch (sidebar footer) ---------- */
 
 .theme-switch {
   display: flex;
@@ -4011,13 +3839,7 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-1);
 }
 
-/* Scheme buttons carry labels instead of icons. */
-.theme-switch-btn.scheme {
-  height: 24px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}/* ---------- virtual anchors (canvas-anchored overlays) ---------- */
+/* ---------- virtual anchors (canvas-anchored overlays) ---------- */
 
 .virtual-anchor {
   position: fixed;
@@ -4093,9 +3915,9 @@ input[type="checkbox"] {
   height: 30px;
   padding: 0 8px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-mid);
-  background: var(--bg-side);
+  background: var(--bg);
   overflow: hidden;
 }
 

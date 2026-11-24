@@ -89,6 +89,8 @@ export interface ChipColors {
   color: string;
   /** Neutral hairline ring; the hue is carried by the background only. */
   borderColor: string;
+  /** Leading dot shown when an option has no emoji icon. */
+  dot: string;
 }
 
 export type ChipPalette = Record<PresetColor, ChipColors>;
@@ -106,6 +108,7 @@ function chipFromScale(scale: CustomScale): ChipColors {
     background: scale.chipBg,
     color: scale.chipFg,
     borderColor: scale.chipBorder,
+    dot: scale.chipFg,
   };
 }
 
@@ -122,6 +125,7 @@ export function readOptionPalette(dark = isDarkTheme()): OptionPalette {
         background: cssVar(`--chip-${color}-bg`),
         color: cssVar(`--chip-${color}-fg`),
         borderColor: cssVar(`--chip-${color}-border`),
+        dot: cssVar(`--chip-${color}-fg`),
       } satisfies ChipColors,
     ]),
   ) as ChipPalette;
@@ -129,6 +133,7 @@ export function readOptionPalette(dark = isDarkTheme()): OptionPalette {
     background: cssVar("--bg-hover"),
     color: cssVar("--text-mid"),
     borderColor: cssVar("--border-strong"),
+    dot: cssVar("--text-mid"),
   };
   const custom = new Map<string, ChipColors>();
   return {
@@ -165,19 +170,19 @@ export function readGridTheme(): Theme {
     fgIconHeader: cssVar("--bg"),
     bgCell: cssVar("--bg"),
     bgCellMedium: cssVar("--bg-hover"),
-    bgHeader: cssVar("--bg-side"),
-    bgHeaderHovered: cssVar("--bg-active"),
-    bgHeaderHasFocus: cssVar("--bg-active"),
+    bgHeader: cssVar("--bg"),
+    bgHeaderHovered: cssVar("--bg-hover"),
+    bgHeaderHasFocus: cssVar("--bg-hover"),
     bgBubble: cssVar("--bg-hover"),
     bgBubbleSelected: cssVar("--accent-weak"),
     bgSearchResult: cssVar("--search-highlight"),
     borderColor: cssVar("--border-soft"),
     horizontalBorderColor: cssVar("--border-soft"),
-    headerBottomBorderColor: cssVar("--border-soft"),
+    headerBottomBorderColor: cssVar("--border"),
     drilldownBorder: cssVar("--border-strong"),
     linkColor: accent,
     fontFamily: cssVar("--font"),
-    headerFontStyle: "600 12.5px",
+    headerFontStyle: "500 12px",
     baseFontStyle: "13px",
     markerFontStyle: "500 11.5px",
     headerIconSize: 15,
@@ -190,27 +195,19 @@ export function readGridTheme(): Theme {
 /**
  * Per-column theme override for a palette color.
  *
- * Header and cells are tinted, but text color is left to the base theme (the
- * palette only changes backgrounds). Hover variants are explicit — without
- * them Glide falls back to the global surface and flashes on hover.
+ * Only the cell background is tinted; the header stays neutral so the grid
+ * reads like a table rather than a spreadsheet. Hover is explicit — without it
+ * Glide falls back to the global surface and flashes on hover.
  */
 export function tagThemeOverride(color: ColumnColor): Partial<Theme> {
   if (!isPresetColor(color)) {
     const scale = customScale(color, isDarkTheme());
     return {
-      bgHeader: scale.headerBg,
-      bgHeaderHovered: scale.headerBg,
-      bgHeaderHasFocus: scale.headerBg,
-      textHeader: scale.headerFg,
       bgCell: scale.cellBg,
       bgCellMedium: scale.cellHover,
     };
   }
   return {
-    bgHeader: cssVar(`--tag-${color}-header-bg`),
-    bgHeaderHovered: cssVar(`--tag-${color}-header-bg`),
-    bgHeaderHasFocus: cssVar(`--tag-${color}-header-bg`),
-    textHeader: cssVar(`--tag-${color}-header-fg`),
     bgCell: cssVar(`--tag-${color}-cell-bg`),
     bgCellMedium: cssVar(`--tag-${color}-cell-bg-hover`),
   };
@@ -237,6 +234,15 @@ export function chipStyle(color: ColumnColor): {
   };
 }
 
+/**
+ * Leading-dot color for an option chip. It matches the chip text so the dot
+ * keeps AA contrast against the tint in both themes (Yellow's vivid step would
+ * vanish on a pale yellow chip). `null` means the option has no color at all.
+ */
+export function chipDot(color: ColumnColor | null): string {
+  return color ? chipStyle(color).color : cssVar("--text-mid");
+}
+
 /** Solid, vivid dot for the palette picker. */
 export function swatchStyle(color: ColumnColor): { background: string; color: string } {
   if (!isPresetColor(color)) {
@@ -246,18 +252,6 @@ export function swatchStyle(color: ColumnColor): { background: string; color: st
   return {
     background: cssVar(`--swatch-${color}-bg`),
     color: cssVar(`--swatch-${color}-fg`),
-  };
-}
-
-/** Grid header tint matching a palette column. */
-export function headerStyle(color: ColumnColor): { background: string; color: string } {
-  if (!isPresetColor(color)) {
-    const scale = customScale(color, isDarkTheme());
-    return { background: scale.headerBg, color: scale.headerFg };
-  }
-  return {
-    background: cssVar(`--tag-${color}-header-bg`),
-    color: cssVar(`--tag-${color}-header-fg`),
   };
 }
 

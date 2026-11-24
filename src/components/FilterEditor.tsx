@@ -16,7 +16,7 @@ import { choicesOf, colType, isFilterGroup } from "../types";
 import { IconChevronDown, IconPlus, IconSortAsc, IconSortDesc, IconX } from "./icons";
 import { Checkbox, Select } from "../ui/Field";
 import { Popover } from "../ui/Popover";
-import { chipStyle, swatchStyle } from "../theme/grid";
+import { chipDot, chipStyle } from "../theme/grid";
 import { t } from "../i18n";
 import {
   NO_VALUE_OPS,
@@ -84,7 +84,14 @@ function ChoiceChip({ choice }: { choice: Pick<Choice, "icon" | "name" | "color"
       className="filter-choice-chip"
       style={choice.color ? chipStyle(choice.color) : undefined}
     >
-      {choice.icon ? `${choice.icon} ` : ""}
+      {choice.icon ? (
+        `${choice.icon} `
+      ) : (
+        <span
+          className="chip-dot"
+          style={{ background: chipDot(choice.color ?? null) }}
+        />
+      )}
       {choice.name}
     </span>
   );
@@ -109,10 +116,10 @@ function SingleChoicePicker({
         options={choices.map((c) => ({
           value: c.name,
           label: `${c.icon ? `${c.icon} ` : ""}${c.name}`,
-          leading: c.color ? (
+          leading: !c.icon ? (
             <span
-              className="filter-choice-dot"
-              style={{ background: swatchStyle(c.color).background }}
+              className="chip-dot"
+              style={{ background: chipDot(c.color ?? null) }}
             />
           ) : undefined,
         }))}

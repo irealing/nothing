@@ -1,23 +1,14 @@
-// Appearance preferences: colour mode (light / dark / follow system) and the
-// visual scheme ("notion" is the default quiet look, "fluent" is the Windows
-// 11 inspired skin). Both are *appearance*, not workspace data, so they live in
-// localStorage instead of the encrypted database (which would need a format
-// migration — see AGENTS.md).
+// Appearance preference: colour mode only (light / dark / follow system).
+// It is *appearance*, not workspace data, so it lives in localStorage instead
+// of the encrypted database (which would need a format migration — see
+// AGENTS.md).
 
 import { create } from "zustand";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
-export type ThemeScheme = "notion" | "fluent";
 
 const STORAGE_KEY = "nothing.theme";
-
-interface StoredPrefs {
-  preference: ThemePreference;
-  scheme: ThemeScheme;
-}
-
-const DEFAULTS: StoredPrefs = { preference: "system", scheme: "notion" };
 
 function systemTheme(): ResolvedTheme {
   if (typeof window === "undefined" || !window.matchMedia) return "light";
@@ -28,26 +19,25 @@ function isPreference(value: unknown): value is ThemePreference {
   return value === "light" || value === "dark" || value === "system";
 }
 
-function readPrefs(): StoredPrefs {
+function readPreference(): ThemePreference {
+  const fallback: ThemePreference = "system";
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULTS;
-    // Older builds stored a bare preference string; keep reading it.
-    if (isPreference(raw)) return { preference: raw, scheme: "notion" };
-    const parsed = JSON.parse(raw) as Partial<StoredPrefs> | null;
-    return {
-      preference: isPreference(parsed?.preference) ? parsed.preference : DEFAULTS.preference,
-      scheme: parsed?.scheme === "fluent" ? "fluent" : "notion",
-    };
+    if (!raw) return fallback;
+    // Older builds stored a bare preference string.
+    if (isPreference(raw)) return raw;
+    // …and newer ones stored JSON that also carried a removed UI scheme.
+    const parsed = JSON.parse(raw) as { preference?: unknown } | null;
+    return isPreference(parsed?.preference) ? parsed.preference : fallback;
   } catch {
     // Storage unavailable (private mode) or malformed — fall back to defaults.
-    return DEFAULTS;
+    return fallback;
   }
 }
 
-function persist(prefs: StoredPrefs) {
+function persist(preference: ThemePreference) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    localStorage.setItem(STORAGE_KEY, preference);
   } catch {
     // ignore: preference simply won't persist
   }
@@ -57,42 +47,35 @@ export function resolveTheme(pref: ThemePreference): ResolvedTheme {
   return pref === "system" ? systemTheme() : pref;
 }
 
-/** Apply the resolved mode + scheme to the document (CSS token swap). */
-function applyResolved(theme: ResolvedTheme, scheme: ThemeScheme) {
+/** Apply the resolved mode to the document (CSS token swap). */
+function applyResolved(theme: ResolvedTheme) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.dataset.theme = theme;
-  root.dataset.scheme = scheme;
   // Radix Colors scopes its dark scales to `.dark`; keep the class in sync with
   // the `data-theme` attribute so both our tokens and the scales flip together.
   root.classList.toggle("dark", theme === "dark");
+  // Older builds also set `data-scheme`; drop it so stale skins cannot linger.
+  root.removeAttribute("data-scheme");
 }
 
-interface ThemeState extends StoredPrefs {
+interface ThemeState {
+  preference: ThemePreference;
   resolved: ResolvedTheme;
   setPreference: (preference: ThemePreference) => void;
-  setScheme: (scheme: ThemeScheme) => void;
 }
 
-const initial = readPrefs();
-applyResolved(resolveTheme(initial.preference), initial.scheme);
+const initial = readPreference();
+applyResolved(resolveTheme(initial));
 
-export const useTheme = create<ThemeState>((set, get) => ({
-  preference: initial.preference,
-  scheme: initial.scheme,
-  resolved: resolveTheme(initial.preference),
+export const useTheme = create<ThemeState>((set) => ({
+  preference: initial,
+  resolved: resolveTheme(initial),
   setPreference: (preference) => {
     const resolved = resolveTheme(preference);
-    const scheme = get().scheme;
-    persist({ preference, scheme });
-    applyResolved(resolved, scheme);
+    persist(preference);
+    applyResolved(resolved);
     set({ preference, resolved });
-  },
-  setScheme: (scheme) => {
-    const resolved = get().resolved;
-    persist({ preference: get().preference, scheme });
-    applyResolved(resolved, scheme);
-    set({ scheme });
   },
 }));
 
@@ -103,7 +86,7 @@ if (typeof window !== "undefined" && window.matchMedia) {
     const state = useTheme.getState();
     if (state.preference !== "system") return;
     const resolved = systemTheme();
-    applyResolved(resolved, state.scheme);
+    applyResolved(resolved);
     useTheme.setState({ resolved });
   };
   if (media.addEventListener) media.addEventListener("change", onChange);

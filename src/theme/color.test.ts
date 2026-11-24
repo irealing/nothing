@@ -66,17 +66,15 @@ describe("customScale", () => {
     "#e93d82",
   ];
 
-  it("keeps chip and header text at a readable contrast in both themes", () => {
+  it("keeps chip text at a readable contrast in both themes", () => {
     for (const picked of colors) {
       for (const dark of [false, true]) {
         const scale = customScale(picked, dark);
-        for (const [bg, fg] of [
-          [scale.chipBg, scale.chipFg],
-          [scale.headerBg, scale.headerFg],
-        ]) {
-          const ratio = contrastRatio(hslStringToRgb(bg), hslStringToRgb(fg));
-          expect(ratio, `${picked} dark=${dark}`).toBeGreaterThanOrEqual(4.5);
-        }
+        const ratio = contrastRatio(
+          hslStringToRgb(scale.chipBg),
+          hslStringToRgb(scale.chipFg),
+        );
+        expect(ratio, `${picked} dark=${dark}`).toBeGreaterThanOrEqual(4.5);
       }
     }
   });

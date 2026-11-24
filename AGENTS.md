@@ -44,7 +44,7 @@ src-tauri/               Tauri 薄壳：commands.rs 只做参数校验与转发�
   src/components/        业务组件（表格、视图标签、弹窗内容、筛选面板…）
   src/ui/                浮层与表单原语（Radix 驱动的 Dialog/Menu/Popover/Tooltip/Field）
   src/stores/            zustand store（workspace 数据、theme 外观偏好、侧栏布局、toast）
-  src/theme/             CSS token ↔ Glide Data Grid 主题桥接、列调色板、自定义色推导
+  src/theme/             CSS token ↔ Glide Data Grid / CodeMirror 主题桥接、列调色板、自定义色推导
   src/i18n/              唯一文案来源（zh.ts）+ t() + 日期格式化（数字保持原值）
   src/ipc/               前端唯一与后端通信的入口
 ```
@@ -100,10 +100,10 @@ src-tauri/               Tauri 薄壳：commands.rs 只做参数校验与转发�
 
 - **浮层只走 `src/ui/`**：`Dialog` / `PanelDialog` / `Menu` / `Popover` / `Tooltip` 由 Radix 提供行为（portal、焦点陷阱与归还、Esc、外点关闭、键盘导航），样式仍写在本项目 CSS。禁止在组件里手写 `modal-backdrop`、`dropdown-menu` + backdrop、`window.confirm`。canvas 网格没有 DOM 锚点，浮层用 `.virtual-anchor`（坐标处的 1×1 fixed 元素）挂到 Radix。
 - **表单优先走 `src/ui/Field.tsx`**：`Field` 管 label / hint / error，控件统一 `--control-h` 高度与 hover / focus / invalid / disabled 四态。以下是为特殊交互保留的裸 `<input>` 例外：网格 `.cell-editor`、搜索框、侧栏/视图标签的内联重命名、筛选值编辑器、CSV 表头行。新增普通表单字段仍应使用 `Field`/`Input`/`Select`。
-- **颜色只能引用 token**：组件与普通 CSS 禁止硬编码配色，一律用 `--bg / --text / --accent / --tag-*` 等变量。hex/rgba 只允许出现在 `styles.css` 的 token 定义、`src/theme/color.ts` 的自定义色推导，以及取色器的默认值常量中。主题切换同时改 `[data-theme]` 与 `[data-scheme]`（notion/fluent）；Glide 的 `Theme` 由 `src/theme/grid.ts` 从 CSS 变量推导，切主题后必须重算（`useMemo` 依赖 `resolved` 与 `scheme`）。
-- **列外观**：列节点的 `icon` 是 emoji 字符串；`color` 是 18 色预设 token（gray/brown/orange/amber/yellow/lime/green/teal/cyan/sky/blue/indigo/violet/purple/plum/pink/crimson/red）或用户用拾色器选出的 `#rrggbb`。**预设色只能引用 token**；自定义色由 `src/theme/color.ts` 按当前主题推导出 chip / swatch / 列头 / 单元格底色，组件里不写裸 hex，也不提供 hex 输入框。写入时后端严格校验，读取到未知 token 时降级为无颜色。列颜色作用于列头与单元格底色，不改变单元格文字颜色；列头文字会按对比度自动取深色或浅色。
+- **颜色只能引用 token**：组件与普通 CSS 禁止硬编码配色，一律用 `--bg / --text / --accent / --tag-* / --syntax-*` 等变量。hex/rgba 只允许出现在 `styles.css` 的 token 定义、`src/theme/color.ts` 的自定义色推导，以及取色器的默认值常量中。主题切换只改 `[data-theme]`；Glide 的 `Theme` 由 `src/theme/grid.ts` 从 CSS 变量推导，切主题后必须重算（`useMemo` 依赖 `resolved`）。SQL 编辑器主题在 `src/theme/codemirror.ts`，颜色全部走 CSS 变量，切主题无需重建编辑器。
+- **列外观**：列节点的 `icon` 是 emoji 字符串；`color` 是 18 色预设 token（gray/brown/orange/amber/yellow/lime/green/teal/cyan/sky/blue/indigo/violet/purple/plum/pink/crimson/red）或用户用拾色器选出的 `#rrggbb`。**预设色只能引用 token**；自定义色由 `src/theme/color.ts` 按当前主题推导出 chip / swatch / 单元格底色，组件里不写裸 hex，也不提供 hex 输入框。写入时后端严格校验，读取到未知 token 时降级为无颜色。列头保持中性，列颜色体现在列图标、选项胶囊与极淡的单元格底色上，不改变单元格文字颜色。没有 emoji 的选项在胶囊里显示颜色圆点（取胶囊文字色，保证两种主题下都有对比）。
 - **文案只走 `src/i18n/`**：组件禁止新增中文字面量，用 `t("ns.key")`（键由 `zh.ts` 推导，拼错 = 编译失败）。新增语言只需加 `en.ts` 并在 `i18n/index.ts` 注册。用户数据（表名/列名/选项/视图名）不翻译。日期展示走 `src/i18n/format.ts`；数字保持原值显示（存储与复制均不格式化）。
-- **本地偏好存 `localStorage`**：`nothing.theme`（明暗模式 + notion/fluent 方案）、`nothing.layout.sidebar`（侧栏折叠）、`nothing.columnIcons`（最近使用的 emoji）。这些都不是工作区数据，不进加密库，也不应触发 `format_version` 迁移。
+- **本地偏好存 `localStorage`**：`nothing.theme`（明暗模式）、`nothing.layout.sidebar`（侧栏折叠）、`nothing.columnIcons`（最近使用的 emoji）。这些都不是工作区数据，不进加密库，也不应触发 `format_version` 迁移。
 
 ## 常用命令
 

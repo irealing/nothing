@@ -66,9 +66,6 @@ export const zh = {
     themeLight: "浅色",
     themeDark: "深色",
     themeSystem: "跟随系统",
-    scheme: "界面风格",
-    schemeNotion: "简洁",
-    schemeFluent: "Fluent",
   },
   welcome: {
     tagline: "本地优先 · 端到端加密的表格工作区",

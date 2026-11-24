@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ColumnMeta } from "../types";
 import {
+  PILL_DOT_GAP,
+  PILL_DOT_SIZE,
+  PILL_PADDING_X,
   layoutOptionPills,
   optionCellFor,
   pillLabel,
@@ -28,12 +31,22 @@ describe("layoutOptionPills", () => {
 
   it("reserves room for a +N counter when the row overflows", () => {
     const pills = [pill("待办"), pill("进行中"), pill("完成")];
-    // Each label is 28px wide + 16px padding = 44px.
-    const layout = layoutOptionPills(pills, 80, measure);
+    // Each label is 21px wide + 16px padding + 11px dot space = 48px.
+    const layout = layoutOptionPills(pills, 100, measure);
     expect(layout.visible).toHaveLength(1);
     expect(layout.hidden).toBe(2);
     expect(layout.counterLabel).toBe("+2");
     expect(layout.counterWidth).toBeGreaterThan(0);
+  });
+
+  it("reserves dot space only when the option has no icon", () => {
+    const plain = layoutOptionPills([pill("待办")], 500, measure).visible[0];
+    expect(plain.width).toBe(
+      measure("待办") + PILL_PADDING_X * 2 + PILL_DOT_SIZE + PILL_DOT_GAP,
+    );
+
+    const withIcon = layoutOptionPills([pill("待办", null, "✅")], 500, measure).visible[0];
+    expect(withIcon.width).toBe(measure("✅ 待办") + PILL_PADDING_X * 2);
   });
 
   it("keeps a truncated first pill instead of showing only a counter", () => {

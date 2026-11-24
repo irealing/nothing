@@ -13,7 +13,7 @@ import { useWorkspace } from "../stores/workspace";
 import { t } from "../i18n";
 import type { ColumnMeta, Json, Row } from "../types";
 import { choicesOf } from "../types";
-import { chipStyle } from "../theme/grid";
+import { chipDot, chipStyle } from "../theme/grid";
 import { Dialog } from "../ui/Dialog";
 import { IconCheck, IconLink, IconPencil, IconSearch, IconX } from "./icons";
 
@@ -110,6 +110,12 @@ export function SelectPopover({
                   className="popover-tag"
                   style={c.color ? chipStyle(c.color) : undefined}
                 >
+                  {!c.icon && (
+                    <span
+                      className="chip-dot"
+                      style={{ background: chipDot(c.color ?? null) }}
+                    />
+                  )}
                   {c.name}
                 </span>
               </div>

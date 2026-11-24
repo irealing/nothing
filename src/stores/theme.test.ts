@@ -1,4 +1,4 @@
-// Appearance preferences: legacy storage migration, persistence shape, and the
+// Appearance preference: legacy storage migration, persistence shape, and the
 // resolved-mode helper. Document attributes are applied in `applyResolved`,
 // which is a no-op outside the browser (node test environment).
 
@@ -24,40 +24,33 @@ afterEach(() => {
 });
 
 describe("theme store", () => {
-  it("defaults to system + notion when nothing is stored", async () => {
+  it("defaults to system when nothing is stored", async () => {
     const { useTheme } = await import("./theme");
-    const s = useTheme.getState();
-    expect(s.preference).toBe("system");
-    expect(s.scheme).toBe("notion");
+    expect(useTheme.getState().preference).toBe("system");
   });
 
   it("reads the legacy bare-string preference format", async () => {
     storage.set("nothing.theme", "dark");
     const { useTheme } = await import("./theme");
     expect(useTheme.getState().preference).toBe("dark");
-    expect(useTheme.getState().scheme).toBe("notion");
   });
 
-  it("persists both dimensions as JSON", async () => {
+  it("reads the old JSON format and ignores the removed scheme field", async () => {
+    storage.set("nothing.theme", JSON.stringify({ preference: "light", scheme: "fluent" }));
     const { useTheme } = await import("./theme");
-    useTheme.getState().setScheme("fluent");
-    expect(JSON.parse(storage.get("nothing.theme") ?? "null")).toEqual({
-      preference: "system",
-      scheme: "fluent",
-    });
-
-    useTheme.getState().setPreference("light");
-    expect(JSON.parse(storage.get("nothing.theme") ?? "null")).toEqual({
-      preference: "light",
-      scheme: "fluent",
-    });
+    expect(useTheme.getState().preference).toBe("light");
   });
 
-  it("falls back to notion on unknown stored schemes", async () => {
-    storage.set("nothing.theme", JSON.stringify({ preference: "dark", scheme: "mica" }));
+  it("persists the preference as a bare string", async () => {
     const { useTheme } = await import("./theme");
-    expect(useTheme.getState().scheme).toBe("notion");
-    expect(useTheme.getState().preference).toBe("dark");
+    useTheme.getState().setPreference("dark");
+    expect(storage.get("nothing.theme")).toBe("dark");
+  });
+
+  it("falls back to system on unknown stored preferences", async () => {
+    storage.set("nothing.theme", JSON.stringify({ preference: "mica" }));
+    const { useTheme } = await import("./theme");
+    expect(useTheme.getState().preference).toBe("system");
   });
 
   it("resolveTheme resolves explicit modes without matchMedia", async () => {

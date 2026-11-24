@@ -13,7 +13,7 @@ import { t } from "../i18n";
 import { Dialog } from "../ui/Dialog";
 import { Field, Input, Select, Textarea, Checkbox, handleFormEnter } from "../ui/Field";
 import { ColorPicker, EmojiMenu, EmojiPicker } from "../ui/ColumnPickers";
-import { cellStyle, chipStyle, headerStyle, pickAutoColor } from "../theme/grid";
+import { cellStyle, chipDot, chipStyle, pickAutoColor } from "../theme/grid";
 import { ColumnTypeIcon, IconChevronDown, IconPlus, IconSigma, IconX } from "./icons";
 import type {
   ColumnAlign,
@@ -116,12 +116,11 @@ function ColumnPreview({
   color: ColumnColor | null;
   align: ColumnAlign | null;
 }) {
-  const headerColors = color ? headerStyle(color) : undefined;
   const cellColors = color ? cellStyle(color) : undefined;
   const contentAlign = previewAlign(type, resultType, align);
   return (
     <div className="column-preview" role="img" aria-label={t("column.preview")}>
-      <div className="column-preview-head" style={headerColors}>
+      <div className="column-preview-head">
         <span className="column-preview-icon">
           {icon ? <span className="column-preview-emoji">{icon}</span> : <ColumnTypeIcon type={type} size={13} />}
         </span>
@@ -139,7 +138,18 @@ function ColumnPreview({
                   : undefined
               }
             >
-              {choices[0]?.icon ? `${choices[0].icon} ` : ""}
+              {choices[0]?.icon ? (
+                `${choices[0].icon} `
+              ) : (
+                <span
+                  className="chip-dot"
+                  style={{
+                    background: chipDot(
+                      (choices[0]?.color ?? null) as ColumnColor | null,
+                    ),
+                  }}
+                />
+              )}
               {choices[0]?.name.trim() || t("column.previewUntitled")}
             </span>
           ) : (

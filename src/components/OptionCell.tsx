@@ -30,6 +30,9 @@ export const PILL_HEIGHT = 22;
 export const PILL_RADIUS = 6;
 export const PILL_PADDING_X = 8;
 export const PILL_GAP = 6;
+/** Leading dot drawn inside a pill when the option has no emoji icon. */
+export const PILL_DOT_SIZE = 6;
+export const PILL_DOT_GAP = 5;
 export const CELL_PADDING_X = 10;
 
 /** Text drawn inside a pill: icon and name with a single separating space. */
@@ -70,7 +73,8 @@ export function layoutOptionPills(
 
   const items = pills.map((pill) => {
     const label = pillLabel(pill);
-    return { pill, label, width: measure(label) + PILL_PADDING_X * 2 };
+    const dot = pill.icon ? 0 : PILL_DOT_SIZE + PILL_DOT_GAP;
+    return { pill, label, width: measure(label) + dot + PILL_PADDING_X * 2 };
   });
 
   const total = items.reduce(
@@ -167,7 +171,7 @@ export function createOptionCellRenderer(
       ctx.beginPath();
       ctx.rect(rect.x, rect.y, rect.width, rect.height);
       ctx.clip();
-      ctx.font = `600 12px ${theme.fontFamily || "sans-serif"}`;
+      ctx.font = `500 12px ${theme.fontFamily || "sans-serif"}`;
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
 
@@ -179,9 +183,13 @@ export function createOptionCellRenderer(
       let x = rect.x + CELL_PADDING_X;
 
       for (const item of layout.visible) {
-        const maxText = Math.max(0, item.width - PILL_PADDING_X * 2);
+        const dotSpace = item.pill.icon ? 0 : PILL_DOT_SIZE + PILL_DOT_GAP;
+        const textRoom = item.width - PILL_PADDING_X * 2;
+        const showDot = !item.pill.icon && textRoom - dotSpace >= 8;
+        const maxText = Math.max(0, textRoom - (showDot ? dotSpace : 0));
         const text = truncateText(ctx, item.label, maxText);
-        drawPill(ctx, x, y, item.width, text, colorsFor(item.pill, palette));
+        const colors = colorsFor(item.pill, palette);
+        drawPill(ctx, x, y, item.width, text, colors, showDot ? colors.dot : null);
         x += item.width + PILL_GAP;
       }
 
@@ -198,6 +206,7 @@ export function createOptionCellRenderer(
           layout.counterWidth,
           layout.counterLabel,
           palette.neutral,
+          null,
         );
       }
       ctx.restore();
@@ -212,6 +221,7 @@ function drawPill(
   width: number,
   label: string,
   colors: ChipColors,
+  dot: string | null,
 ) {
   pathRoundRect(ctx, x, y, width, PILL_HEIGHT, PILL_RADIUS);
   ctx.fillStyle = colors.background;
@@ -221,8 +231,21 @@ function drawPill(
     ctx.lineWidth = 1;
     ctx.stroke();
   }
+  const dotSpace = dot ? PILL_DOT_SIZE + PILL_DOT_GAP : 0;
+  if (dot) {
+    ctx.beginPath();
+    ctx.arc(
+      x + PILL_PADDING_X + PILL_DOT_SIZE / 2,
+      y + PILL_HEIGHT / 2,
+      PILL_DOT_SIZE / 2,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fillStyle = dot;
+    ctx.fill();
+  }
   ctx.fillStyle = colors.color;
-  ctx.fillText(label, x + PILL_PADDING_X, y + PILL_HEIGHT / 2 + 1);
+  ctx.fillText(label, x + PILL_PADDING_X + dotSpace, y + PILL_HEIGHT / 2 + 1);
 }
 
 function truncateText(

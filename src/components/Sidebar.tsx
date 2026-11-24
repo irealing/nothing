@@ -21,12 +21,12 @@ import {
   IconTrash,
   IconUpload,
 } from "./icons";
-import { ThemeSwitch, SchemeSwitch } from "../ui/ThemeSwitch";
+import { ThemeSwitch } from "../ui/ThemeSwitch";
 import { Tooltip } from "../ui/Tooltip";
 import { EmojiMenu, ColorSwatches } from "../ui/ColumnPickers";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { Popover } from "../ui/Popover";
-import { cellStyle, isPresetColor } from "../theme/grid";
+import { chipStyle, isPresetColor } from "../theme/grid";
 import { VersionChip } from "./AboutDialog";
 import type { ColumnColor, TableMeta } from "../types";
 
@@ -168,7 +168,7 @@ export default function Sidebar() {
         </div>
         <ul className="nav-list">
           {tables.map((table) => {
-            const tint = table.color ? cellStyle(table.color).background : undefined;
+            const tint = table.color ? chipStyle(table.color).background : undefined;
             return (
               <li
                 key={table.id}
@@ -290,7 +290,6 @@ export default function Sidebar() {
             </button>
           </Tooltip>
         </div>
-        <SchemeSwitch />
         <p className="nav-hint">{t("sidebar.renameHint")}</p>
         <div className="sidebar-foot-meta">
           <VersionChip />
