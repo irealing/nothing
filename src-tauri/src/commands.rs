@@ -165,6 +165,8 @@ pub fn workspace_change_password(state: State<AppState>, new_password: String) -
 /// the welcome screen shows it precisely when opening a workspace fails.
 #[derive(Serialize)]
 pub struct AppInfo {
+    /// Nearest `v*` tag without the `v` prefix, stamped by `build.rs`; falls
+    /// back to the manifest version when the source tree has no tags.
     pub version: &'static str,
     /// `git describe --tags --long --always --dirty` (a bare short SHA before
     /// the first tag), stamped by `build.rs`; `"unknown"` without git.
@@ -179,7 +181,7 @@ pub struct AppInfo {
 #[tauri::command]
 pub fn app_info() -> AppInfo {
     AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
+        version: env!("NOTHING_APP_VERSION"),
         git: env!("NOTHING_GIT_DESCRIBE"),
         branch: env!("NOTHING_GIT_BRANCH"),
         build_time: env!("NOTHING_BUILD_TIME"),
@@ -484,7 +486,9 @@ mod tests {
     #[test]
     fn app_info_is_stamped_by_the_build() {
         let info = app_info();
-        assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
+        assert!(!info.version.is_empty());
+        // The tag-derived version never carries the `v` prefix (the UI adds it).
+        assert!(!info.version.starts_with('v'));
         assert!(!info.git.is_empty());
         assert!(!info.branch.is_empty());
         assert!(

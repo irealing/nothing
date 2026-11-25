@@ -23,14 +23,29 @@ fn emit_build_metadata() {
     watch(Path::new("../dist"));
     watch_git();
 
+    let version = app_version();
     let describe = git(&["describe", "--tags", "--long", "--always", "--dirty"])
         .unwrap_or_else(|| UNKNOWN.into());
     let branch = git(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|| UNKNOWN.into());
     let build_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
+    println!("cargo:rustc-env=NOTHING_APP_VERSION={version}");
     println!("cargo:rustc-env=NOTHING_GIT_DESCRIBE={describe}");
     println!("cargo:rustc-env=NOTHING_GIT_BRANCH={branch}");
     println!("cargo:rustc-env=NOTHING_BUILD_TIME={build_time}");
+}
+
+/// The nearest tag is the released version (`v0.1.10` → `0.1.10`). A source
+/// tree without tags, or with a tag that is not `v`-prefixed, falls back to the
+/// manifest version so a fresh clone or tarball still reports something
+/// sensible.
+fn app_version() -> String {
+    git(&["describe", "--tags", "--abbrev=0"])
+        .as_deref()
+        .and_then(|tag| tag.strip_prefix('v'))
+        .filter(|version| !version.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| UNKNOWN.into()))
 }
 
 /// Watch a path so Cargo re-runs this script when it changes. Missing paths are

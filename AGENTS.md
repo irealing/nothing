@@ -119,7 +119,7 @@ pnpm tauri dev            # 开发运行（首次会静态编译 SQLCipher，耗
 pnpm tauri build          # 打包
 ```
 
-完成标准：`cargo test`、`pnpm test`、`pnpm build` 全绿，clippy 零 warning。打包前记得手动同步 `Cargo.toml`（根）与 `src-tauri/tauri.conf.json` 的版本号。
+完成标准：`cargo test`、`pnpm test`、`pnpm build` 全绿，clippy 零 warning。较大改动要递增 tag（如 `v0.1.10`），发版时 tag 与 `Cargo.toml`（workspace）、`src-tauri/tauri.conf.json`、`package.json` 的版本号保持一致；应用内显示版本取自最近的 `v*` tag，无 tag 时回退 manifest 版本。
 
 注意：缺少 webkit2gtk-4.1 时无法编译 Tauri 壳，但 nothing-core 与其测试完全不受影响——这正是内核独立成 crate 的原因。
 
