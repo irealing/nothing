@@ -2587,9 +2587,13 @@ input[type="checkbox"] {
   color: var(--text-weak);
 }
 
+/* Content-sized so values sit right next to their labels; `flex: 1` would
+ * stretch the legend to the container edge and strand the numbers there. */
 .pie-legend {
-  flex: 1;
-  min-width: 260px;
+  flex: 0 1 auto;
+  width: fit-content;
+  min-width: 220px;
+  max-width: 420px;
   margin: 0;
   padding: 0;
   list-style: none;
