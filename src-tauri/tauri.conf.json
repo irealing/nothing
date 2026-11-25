@@ -32,6 +32,11 @@
     "category": "Productivity",
     "shortDescription": "本地优先的加密表格工作区",
     "longDescription": "Nothing 是一款本地优先、SQLCipher 加密的 Notion 式纯表格工具，数据保存在标准 SQLite 文件中，不上传、无服务端。",
+    "windows": {
+      "wix": {
+        "language": "zh-CN"
+      }
+    },
     "fileAssociations": [
       {
         "ext": ["nothing"],
