@@ -2,11 +2,14 @@
 // which metrics a column supports, and the labels shown in the config panel.
 
 import { t } from "../i18n";
+import { formatDate, formatNumber } from "../i18n/format";
 import type {
+  AggregateColumn,
   AggregateConfig,
   AggregateMetric,
   AggregateOp,
   ColumnMeta,
+  Json,
 } from "../types";
 import { defaultAggregateConfig, effectiveType, isReverse } from "../types";
 
@@ -89,6 +92,43 @@ export function metricConfigLabel(metric: AggregateMetric, columns: ColumnMeta[]
   if (metric.op === "count_rows") return OP_LABELS.count_rows;
   const col = metricColumn(metric, columns);
   return col?.name ?? t("aggregate.unknownColumn");
+}
+
+/** Header label for one column of a summary result (table and charts). */
+export function aggregateHeaderLabel(
+  col: AggregateColumn,
+  columns: ColumnMeta[],
+): string {
+  const source = col.column_id
+    ? columns.find((c) => c.id === col.column_id)
+    : undefined;
+  if (col.kind === "group") return source?.name ?? t("aggregate.unknownColumn");
+  if (!col.op || col.op === "count_rows") return t("aggregate.ops.count_rows");
+  const opLabel = metricOpLabel(col.op, source);
+  return source ? `${source.name} · ${opLabel}` : opLabel;
+}
+
+/** Format one group value (table cell and chart label). */
+export function groupValueText(col: AggregateColumn, value: Json): string {
+  if (value === null || value === undefined) return t("aggregate.emptyValue");
+  if (col.value_type === "checkbox") {
+    return value === true || value === 1
+      ? t("aggregate.checked")
+      : t("aggregate.unchecked");
+  }
+  if (col.value_type === "date") return formatDate(value, col.format);
+  if (col.value_type === "number") return formatNumber(value, col.format);
+  const text = String(value);
+  return text === "" ? t("aggregate.emptyText") : text;
+}
+
+/** Format one metric value (table cell, chart value and tooltip). */
+export function metricValueText(col: AggregateColumn, value: Json): string {
+  if (value === null || value === undefined) return t("aggregate.noValue");
+  if (col.value_type === "date") return formatDate(value, col.format);
+  if (col.value_type === "number") return formatNumber(value, col.format);
+  const text = String(value);
+  return text === "" ? t("aggregate.noValue") : text;
 }
 
 export function cloneAggregateConfig(cfg: AggregateConfig | null | undefined): AggregateConfig {

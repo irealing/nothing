@@ -34,6 +34,19 @@ export const IconTable = (p: IconProps) => (
   </Svg>
 );
 
+export const IconChartBar = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+  </Svg>
+);
+
+export const IconChartPie = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3a9 9 0 1 0 9 9h-9Z" />
+    <path d="M15 3.5A9 9 0 0 1 20.5 9H15Z" />
+  </Svg>
+);
+
 export const IconPlus = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 5v14M5 12h14" />

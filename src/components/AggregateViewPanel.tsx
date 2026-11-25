@@ -2,9 +2,17 @@ import { useMemo, useState } from "react";
 import { useWorkspace } from "../stores/workspace";
 import type { ViewMeta } from "../types";
 import { t } from "../i18n";
-import { IconSigma, IconSliders } from "./icons";
+import {
+  IconChartBar,
+  IconChartPie,
+  IconSigma,
+  IconSliders,
+  IconTable,
+} from "./icons";
 import { metricOpLabel, OP_LABELS } from "./aggregateModel";
 import AggregateConfigPanel from "./AggregateConfigPanel";
+import AggregateChartPanel from "./AggregateChartPanel";
+import type { ChartMode } from "./aggregateChartModel";
 import AggregateResultTable from "./AggregateResultTable";
 
 /** Read-only grouped aggregate view. Configuration lives in the view metadata. */
@@ -13,6 +21,9 @@ export default function AggregateViewPanel({ view }: { view: ViewMeta }) {
   const result = useWorkspace((s) => s.aggregateResult);
   const error = useWorkspace((s) => s.error);
   const [configOpen, setConfigOpen] = useState(false);
+  // Presentation only: deliberately not persisted to `_meta` or localStorage.
+  const [mode, setMode] = useState<ChartMode>("table");
+  const [metricIndex, setMetricIndex] = useState<number | null>(null);
   const config = view.data.kind === "grid" ? view.data.aggregate ?? null : null;
 
   const summary = useMemo(() => {
@@ -35,6 +46,12 @@ export default function AggregateViewPanel({ view }: { view: ViewMeta }) {
 
   if (!config) return null;
 
+  const modes = [
+    { value: "table", label: t("aggregate.mode.table"), icon: IconTable },
+    { value: "bar", label: t("aggregate.mode.bar"), icon: IconChartBar },
+    { value: "pie", label: t("aggregate.mode.pie"), icon: IconChartPie },
+  ] as const;
+
   return (
     <div className="table-view aggregate-view">
       <div className="toolbar">
@@ -51,6 +68,26 @@ export default function AggregateViewPanel({ view }: { view: ViewMeta }) {
             {t("aggregate.baseRows", { count: result.base_rows })}
           </span>
         )}
+        <div
+          className="aggregate-mode-switch"
+          role="radiogroup"
+          aria-label={t("aggregate.mode.label")}
+        >
+          {modes.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={mode === value}
+              aria-label={label}
+              title={label}
+              className="aggregate-mode-btn"
+              onClick={() => setMode(value)}
+            >
+              <Icon size={14} />
+            </button>
+          ))}
+        </div>
         <button className="btn ghost" onClick={() => setConfigOpen(true)}>
           <IconSliders size={14} /> {t("aggregate.config")}
         </button>
@@ -69,14 +106,23 @@ export default function AggregateViewPanel({ view }: { view: ViewMeta }) {
       </div>
 
       <div className="aggregate-result-wrap">
-        {result || !error ? (
-          <AggregateResultTable result={result} columns={columns} />
-        ) : (
+        {error && !result ? (
           <div className="empty-state">
             <div className="empty-card">
               <p>{error}</p>
             </div>
           </div>
+        ) : mode === "table" ? (
+          <AggregateResultTable result={result} columns={columns} />
+        ) : (
+          <AggregateChartPanel
+            result={result}
+            columns={columns}
+            mode={mode}
+            metricIndex={metricIndex}
+            onMetricChange={setMetricIndex}
+            onConfigure={() => setConfigOpen(true)}
+          />
         )}
         {result && result.rows.length > 0 && result.rows.length < result.total_groups && (
           <div className="aggregate-truncated">
