@@ -1,4 +1,4 @@
-/* nothing — Notion-inspired light theme
+/* Nothing — Notion-inspired light theme
  *
  * Design tokens first, then surfaces. Everything is intentionally quiet:
  * 1px hairline borders, soft shadows, a single blue accent.
@@ -2140,6 +2140,20 @@ input[type="checkbox"] {
 }
 
 /* ---------- about dialog ---------- */
+
+.about-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.about-brand h4 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
 
 .about-list {
   display: grid;

@@ -167,6 +167,7 @@ describe("openWorkspace", () => {
     expect(s.total).toBe(1);
     expect(s.rowsCache.get(0)?.rid).toBe("r1");
     expect(ipc.viewRun).toHaveBeenCalledWith("v1", PAGE_SIZE, 0);
+    expect(ipc.setWindowTitle).toHaveBeenCalledWith("a.nothing — Nothing");
   });
 
   it("loads every view for the sidebar tree", async () => {
@@ -697,6 +698,7 @@ describe("scratch query", () => {
     await useWorkspace.getState().closeWorkspace();
 
     expect(useWorkspace.getState().scratch).toEqual({ open: false, statement: "SELECT " });
+    expect(ipc.setWindowTitle).toHaveBeenLastCalledWith("Nothing");
   });
 });
 

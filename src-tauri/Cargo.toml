@@ -1,6 +1,6 @@
 [package]
 name = "nothing-app"
-description = "nothing — encrypted Notion-style table workspaces (Tauri shell)"
+description = "Nothing — encrypted Notion-style table workspaces (Tauri shell)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

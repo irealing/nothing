@@ -106,7 +106,7 @@ export default function Welcome() {
         <div className="welcome-brand">
           <img className="brand-logo" src="/icon.png" alt="" />
           <div className="welcome-brand-text">
-            <h1>nothing</h1>
+            <h1>Nothing</h1>
             <p className="brand-sub">{t("welcome.tagline")}</p>
           </div>
         </div>

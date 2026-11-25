@@ -55,7 +55,7 @@ export function shortRev(git: string): string {
 /** Plain-text block for bug reports: stable ASCII, no UI copy to translate. */
 function diagnostics(info: AppInfo, formatVersion: number | null): string {
   const lines = [
-    `nothing ${info.version}`,
+    `Nothing ${info.version}`,
     `commit ${info.git} (${info.branch})`,
     `built ${info.build_time}`,
     `platform ${info.platform} · tauri ${info.tauri_version}`,
@@ -99,6 +99,13 @@ export function AboutDialog({
 
   return (
     <Dialog title={t("about.title")} onClose={onClose}>
+      <div className="about-brand">
+        <img className="brand-logo" src="/icon.png" alt="" />
+        <div>
+          <h4>Nothing</h4>
+          <p className="brand-sub">{t("welcome.tagline")}</p>
+        </div>
+      </div>
       {info ? (
         <dl className="about-list">
           <dt>{t("about.version")}</dt>

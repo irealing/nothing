@@ -10,13 +10,13 @@ pub enum AppError {
     #[error("密码错误，无法解密该文件")]
     WrongPassword,
 
-    /// The file decrypted fine but is not a nothing workspace
+    /// The file decrypted fine but is not a Nothing workspace
     /// (`_nothing` manifest missing or magic mismatch).
-    #[error("不是 nothing 数据库文件")]
+    #[error("不是 Nothing 数据库文件")]
     NotANothingDb,
 
     /// The workspace format version is newer than this app supports.
-    #[error("数据库格式版本过新（{0}），请升级 nothing")]
+    #[error("数据库格式版本过新（{0}），请升级 Nothing")]
     FormatTooNew(u32),
 
     /// The workspace uses an obsolete format version (pre-release v1–v3).

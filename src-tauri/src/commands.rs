@@ -189,6 +189,17 @@ pub fn app_info() -> AppInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Window chrome
+// ---------------------------------------------------------------------------
+
+/// Mirror the open workspace in the native title bar. Best effort: the UI copy
+/// already lives in `document.title`, so a failed title change is not an error.
+#[tauri::command]
+pub fn window_set_title(window: tauri::WebviewWindow, title: String) {
+    let _ = window.set_title(&title);
+}
+
+// ---------------------------------------------------------------------------
 // App settings (recent files, last table/view) & shell open requests
 // ---------------------------------------------------------------------------
 

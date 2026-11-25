@@ -1,6 +1,6 @@
 [package]
 name = "nothing-core"
-description = "Storage kernel for nothing: encrypted SQLite workspaces with Notion-style tables, columns and views"
+description = "Storage kernel for Nothing: encrypted SQLite workspaces with Notion-style tables, columns and views"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

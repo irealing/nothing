@@ -70,6 +70,20 @@ export const workspaceChangePassword = (newPassword: string) =>
 
 export const appInfo = () => call<AppInfo>("app_info");
 
+// ---- window chrome ----
+
+/**
+ * Mirror the open workspace in the native title bar. Cosmetic and best-effort:
+ * browser dev builds keep `document.title`, which the caller sets anyway.
+ */
+export async function setWindowTitle(title: string): Promise<void> {
+  try {
+    await call<void>("window_set_title", { title });
+  } catch {
+    // A title that failed to update must never surface as a workspace error.
+  }
+}
+
 // ---- app settings & shell open requests ----
 
 export const settingsGet = () => call<SettingsView>("settings_get");

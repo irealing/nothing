@@ -46,7 +46,7 @@ export const zh = {
     pastedRows: "已新增 {count} 行并粘贴数据",
   },
   about: {
-    title: "关于 nothing",
+    title: "关于 Nothing",
     open: "版本与构建信息",
     version: "版本",
     commit: "提交",
@@ -477,7 +477,7 @@ export const zh = {
   },
   errors: {
     WrongPassword: "密码不正确",
-    NotANothingDb: "这不是一个 nothing 工作区文件",
+    NotANothingDb: "这不是一个 Nothing 工作区文件",
     FormatTooNew: "工作区格式版本过新，请升级应用",
     NotFound: "找不到对应的数据",
     AlreadyExists: "名称已存在，请换一个",

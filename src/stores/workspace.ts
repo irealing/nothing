@@ -506,8 +506,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
   /** Window title mirrors the open file so the taskbar is meaningful. */
   function syncTitle(info: WorkspaceInfo | null) {
-    if (typeof document === "undefined") return;
-    document.title = info ? `${baseName(info.path)} — nothing` : "nothing";
+    const title = info ? `${baseName(info.path)} — Nothing` : "Nothing";
+    if (typeof document !== "undefined") document.title = title;
+    void ipc.setWindowTitle(title);
   }
 
   /** After a write: drop the cache and re-prime the current source. */

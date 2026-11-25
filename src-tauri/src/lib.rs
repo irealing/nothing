@@ -1,4 +1,4 @@
-//! Tauri shell for nothing.
+//! Tauri shell for Nothing.
 //!
 //! Thin by design (AGENTS.md): commands validate parameters, forward to
 //! `nothing_core`, and map errors. All logic lives in the core crate; the only
@@ -50,6 +50,8 @@ pub fn run() {
             commands::workspace_change_password,
             // build metadata
             commands::app_info,
+            // window chrome
+            commands::window_set_title,
             // app settings & shell open requests
             commands::settings_get,
             commands::settings_ui,
@@ -92,5 +94,5 @@ pub fn run() {
             commands::csv_import,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running nothing");
+        .expect("error while running Nothing");
 }

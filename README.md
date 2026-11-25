@@ -1,10 +1,10 @@
-# nothing
+# Nothing
 
 > 一个本地优先的加密数据表格工具。
 
 在线多维表格（Notion、飞书多维表格等）把数据托管在服务端：导出后在别处分析成本较高，筛选与排序只能使用产品提供的操作，AI 等能力的上线时间与定价也由厂商决定。桌面数据库（如 Access）解决了本地存储与查询的问题，但对个人用户而言门槛偏高。
 
-nothing 取两者之间：交互层仍是表格，存储层是一个标准、加密的 SQLite 文件。日常操作不必写 SQL，数据可以用任何支持 SQLCipher 的工具直接读取。没有服务端，没有账号，文件的同步与后续处理由使用者自行安排。
+Nothing 取两者之间：交互层仍是表格，存储层是一个标准、加密的 SQLite 文件。日常操作不必写 SQL，数据可以用任何支持 SQLCipher 的工具直接读取。没有服务端，没有账号，文件的同步与后续处理由使用者自行安排。
 
 ## 我们在坚持什么
 
@@ -88,9 +88,9 @@ pnpm install
 pnpm tauri build
 ```
 
-产物在 workspace 根的 `target\release\bundle\`：`msi\`（MSI 安装包）与 `nsis\`（NSIS 安装程序）。绿色版可执行文件在 `target\release\nothing-app.exe`。
+产物在 workspace 根的 `target\release\bundle\`：`msi\`（MSI 安装包）与 `nsis\`（NSIS 安装程序）。绿色版可执行文件在 `target\release\Nothing.exe`。
 
-> **文件关联只由安装包建立**，开发运行与绿色版都不写注册表。安装后 `.nothing` 会关联到 nothing，双击即打开（NSIS 安装程序在安装时写入 `HKCU\Software\Classes\.nothing`，卸载时自动清除）；MSI 只把 nothing 注册为「打开方式」候选，若系统里 `.nothing` 已被其它程序占用，需要在 Windows 设置里手动指定默认应用。
+> **文件关联只由安装包建立**，开发运行与绿色版都不写注册表。安装后 `.nothing` 会关联到 Nothing，双击即打开（NSIS 安装程序在安装时写入 `HKCU\Software\Classes\.nothing`，卸载时自动清除）；MSI 只把 Nothing 注册为「打开方式」候选，若系统里 `.nothing` 已被其它程序占用，需要在 Windows 设置里手动指定默认应用。
 >
 > 最近打开的工作区与每个工作区上次停留的表 / 视图记录在 `%APPDATA%\app.nothing.desktop\settings.json`（明文，等同于系统「最近使用的文档」）。删掉该文件只会丢失最近列表，不影响任何工作区数据。
 
@@ -146,7 +146,7 @@ r_xxxx          关联表（每个关联列一张，含级联外键）
 
 SQL 视图没有物理对象：语句只保存在 `_meta` 中，执行时直接跑在只读连接上。
 
-打开文件时，nothing 先解密、再校验 `_nothing.magic`，能明确区分"密码错误"与"不是 nothing 的文件"。当前格式版本为 v5：v4 库会在一个事务内自动补上 `_meta.format` / `_meta.frozen` 两列并升级版本号（幂等，可重复打开）；v1–v3 旧库会被明确拒绝并要求新建工作区，比当前版本新的文件会提示升级 nothing。
+打开文件时，Nothing 先解密、再校验 `_nothing.magic`，能明确区分"密码错误"与"不是 Nothing 的文件"。当前格式版本为 v5：v4 库会在一个事务内自动补上 `_meta.format` / `_meta.frozen` 两列并升级版本号（幂等，可重复打开）；v1–v3 旧库会被明确拒绝并要求新建工作区，比当前版本新的文件会提示升级 Nothing。
 
 因为底层是标准 SQLite 结构，你随时可以拿着密码、用任何支持 SQLCipher 的工具打开自己的数据——**数据属于你，不被应用绑架**。
 

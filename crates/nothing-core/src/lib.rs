@@ -1,4 +1,4 @@
-//! nothing-core: storage kernel for the nothing app.
+//! nothing-core: storage kernel for the Nothing app.
 //!
 //! Encrypted SQLite (SQLCipher) workspaces with Notion-style tables mapped to
 //! real SQLite constructs: typed columns, CHECK constraints, generated columns

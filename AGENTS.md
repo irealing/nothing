@@ -1,10 +1,10 @@
 # AGENTS.md
 
-本文件是 AI 协作代理（及人类开发者）在 nothing 代码库中工作的规范。**违反"铁律"章节的规则可能直接导致用户数据损坏，任何改动前请先通读。**
+本文件是 AI 协作代理（及人类开发者）在 Nothing 代码库中工作的规范。**违反"铁律"章节的规则可能直接导致用户数据损坏，任何改动前请先通读。**
 
 ## 项目简介
 
-nothing 是一个 Tauri v2 桌面应用：本地优先、SQLCipher 加密的 Notion 式**纯表格**工具。核心思想是把 Notion 的表格体验映射到真实 SQLite 特性上（真实列类型、CHECK 约束、Generated Column、FTS5、真外键级联、只读 SQL 查询），拒绝 EAV 反模式。
+Nothing 是一个 Tauri v2 桌面应用：本地优先、SQLCipher 加密的 Notion 式**纯表格**工具。核心思想是把 Notion 的表格体验映射到真实 SQLite 特性上（真实列类型、CHECK 约束、Generated Column、FTS5、真外键级联、只读 SQL 查询），拒绝 EAV 反模式。
 
 产品范围：**只做表格**。不要引入文档、看板、日历等其他 block 类型的功能。
 
