@@ -20,13 +20,14 @@ pub use db::{Workspace, MAGIC};
 pub use error::AppError;
 pub use import::{read_csv_preview, CsvPreview, ImportCsvOptions, ImportReport};
 pub use query::{
-    Cells, DeleteSnapshot, LinkSnapshot, Row, RowDetail, RowPage, RowSnapshot, SqlColumn,
-    SqlResult, ViewResult,
+    AggregateColumn, AggregateColumnKind, AggregateResult, AggregateValueType, Cells,
+    DeleteSnapshot, LinkSnapshot, Row, RowDetail, RowPage, RowSnapshot, SqlColumn, SqlResult,
+    ViewResult,
 };
 pub use schema::{
-    ColumnAlign, ColumnColor, ColumnData, ColumnFormat, ColumnMeta, ColumnPatch, ColumnType,
-    Currency, DateStyle, FilterNode, FilterOp, FilterRule, FormulaData, FormulaResultType,
-    GridConfig, LogicOp, NewChoice, NewColumn, NewView, NumberStyle, OptionMeta, RelationData,
-    SortSpec, SqlConfig, TableMeta, ViewColumnMeta, ViewColumnPatch, ViewData, ViewKind, ViewMeta,
-    ViewPatch, COLUMN_COLOR_TOKENS,
+    AggregateConfig, AggregateMetric, AggregateOp, AggregateSort, ColumnAlign, ColumnColor,
+    ColumnData, ColumnFormat, ColumnMeta, ColumnPatch, ColumnType, Currency, DateStyle, FilterNode,
+    FilterOp, FilterRule, FormulaData, FormulaResultType, GridConfig, LogicOp, NewChoice,
+    NewColumn, NewView, NumberStyle, OptionMeta, RelationData, SortSpec, SqlConfig, TableMeta,
+    ViewColumnMeta, ViewColumnPatch, ViewData, ViewKind, ViewMeta, ViewPatch, COLUMN_COLOR_TOKENS,
 };

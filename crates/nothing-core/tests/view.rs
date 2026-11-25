@@ -55,6 +55,7 @@ fn grid_view_crud_and_validation() {
                     column_id: title_col.clone(),
                     desc: false,
                 }],
+                aggregate: None,
             },
         ))
         .unwrap();
@@ -111,6 +112,7 @@ fn grid_view_crud_and_validation() {
                         column_id: hours_col.clone(),
                         desc: true,
                     }],
+                    aggregate: None,
                 })),
                 columns: Some(vec![ViewColumnPatch {
                     column_id: hours_col.clone(),

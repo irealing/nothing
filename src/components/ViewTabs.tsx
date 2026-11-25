@@ -15,10 +15,11 @@ import {
   IconPencil,
   IconPlus,
   IconPlay,
+  IconSigma,
   IconTrash,
   IconX,
 } from "./icons";
-import type { ViewMeta } from "../types";
+import { isAggregateView, type ViewMeta } from "../types";
 
 /**
  * View tab bar: the active table's grid views, a separator, then all
@@ -34,11 +35,13 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
   const activeTableId = useWorkspace((s) => s.activeTableId);
   const selectView = useWorkspace((s) => s.selectView);
   const createGridView = useWorkspace((s) => s.createGridView);
+  const createAggregateView = useWorkspace((s) => s.createAggregateView);
   const createSqlView = useWorkspace((s) => s.createSqlView);
   const updateView = useWorkspace((s) => s.updateView);
   const deleteView = useWorkspace((s) => s.deleteView);
 
   const [gridDialog, setGridDialog] = useState(false);
+  const [aggregateDialog, setAggregateDialog] = useState(false);
   const [sqlDialog, setSqlDialog] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -53,16 +56,19 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
       <span className="view-tab-emoji">{view.icon}</span>
     ) : view.kind === "sql" ? (
       <IconCode size={13} />
+    ) : isAggregateView(view) ? (
+      <IconSigma size={13} />
     ) : (
       <IconGridView size={13} />
     );
 
   const gridViews = views.filter((v) => v.kind === "grid");
+  const dataGridViews = gridViews.filter((v) => !isAggregateView(v));
   const sqlViews = views.filter((v) => v.kind === "sql");
   // A table's implicit default view is recreated on demand. Deleting the last
-  // grid view would just bring it back under the default name, so there is
-  // nothing meaningful to offer there.
-  const canDeleteGrid = gridViews.length > 1;
+  // *editable* grid view would just bring it back under the default name, so
+  // there is nothing meaningful to offer there (summary views are exempt).
+  const canDeleteGrid = dataGridViews.length > 1;
 
   if (!activeTableId && sqlViews.length === 0) return null;
 
@@ -71,6 +77,14 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
     setGridDialog(false);
     setNameInput("");
     await createGridView(name);
+  };
+
+  const submitNewAggregate = async () => {
+    const name =
+      nameInput.trim() || `${t("aggregate.title")} ${gridViews.length + 1}`;
+    setAggregateDialog(false);
+    setNameInput("");
+    await createAggregateView(name);
   };
 
   const startRename = (v: ViewMeta) => {
@@ -172,7 +186,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
               <MenuItem onSelect={() => startRename(v)}>
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>
-              {canDeleteGrid && (
+              {isAggregateView(v) || canDeleteGrid ? (
                 <>
                   <MenuSeparator />
                   <MenuItem
@@ -191,7 +205,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
                     <IconTrash size={14} /> {t("view.delete")}
                   </MenuItem>
                 </>
-              )}
+              ) : null}
             </Menu>
           )}
         </div>
@@ -255,14 +269,24 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
           }
         >
           {hasTable && activeTableId && (
-            <MenuItem
-              onSelect={() => {
-                setNameInput("");
-                setGridDialog(true);
-              }}
-            >
-              <IconGridView size={14} /> {t("view.newGrid")}
-            </MenuItem>
+            <>
+              <MenuItem
+                onSelect={() => {
+                  setNameInput("");
+                  setGridDialog(true);
+                }}
+              >
+                <IconGridView size={14} /> {t("view.newGrid")}
+              </MenuItem>
+              <MenuItem
+                onSelect={() => {
+                  setNameInput("");
+                  setAggregateDialog(true);
+                }}
+              >
+                <IconSigma size={14} /> {t("aggregate.newTitle")}
+              </MenuItem>
+            </>
           )}
           <MenuItem
             onSelect={() => {
@@ -296,6 +320,37 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
             <div className="modal-actions">
               <div className="toolbar-spacer" />
               <button type="button" className="btn" onClick={() => setGridDialog(false)}>
+                {t("common.cancel")}
+              </button>
+              <button type="submit" className="btn primary">
+                {t("view.create")}
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {aggregateDialog && (
+        <Dialog title={t("aggregate.newTitle")} onClose={() => setAggregateDialog(false)}>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitNewAggregate();
+            }}
+          >
+            <Field label={t("view.name")}>
+              <Input
+                autoFocus
+                value={nameInput}
+                placeholder={t("aggregate.namePlaceholder")}
+                onChange={(e) => setNameInput(e.target.value)}
+              />
+            </Field>
+            <p className="hint">{t("aggregate.createHint")}</p>
+            <div className="modal-actions">
+              <div className="toolbar-spacer" />
+              <button type="button" className="btn" onClick={() => setAggregateDialog(false)}>
                 {t("common.cancel")}
               </button>
               <button type="submit" className="btn primary">

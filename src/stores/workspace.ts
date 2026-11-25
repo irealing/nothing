@@ -11,6 +11,7 @@ import { create } from "zustand";
 import * as ipc from "../ipc";
 import { toast } from "./toast";
 import type {
+  AggregateResult,
   Cells,
   ColumnColor,
   ColumnMeta,
@@ -34,10 +35,17 @@ import type {
   WorkspaceInfo,
   WorkspaceUiState,
 } from "../types";
-import { colType, isReverse } from "../types";
+import {
+  colType,
+  defaultAggregateConfig,
+  isAggregateView,
+  isReverse,
+} from "../types";
 import { useHistory } from "./history";
 
 export const PAGE_SIZE = 200;
+/** Summary views are returned in one page; beyond this the UI warns. */
+export const AGGREGATE_LIMIT = 2000;
 
 /** Deletes above this many rows are not pushed onto the undo stack. */
 export const UNDO_BULK_LIMIT = 500;
@@ -73,7 +81,7 @@ export function samePath(a: string, b: string): boolean {
 }
 
 export function defaultGridConfig(): GridConfig {
-  return { filters: null, sorts: [] };
+  return { filters: null, sorts: [], aggregate: null };
 }
 
 /** Insert or replace one view in a list without touching the others. */
@@ -169,6 +177,8 @@ interface WorkspaceState {
   titles: Record<string, string>;
 
   sqlResult: SqlResult | null;
+  /** Result of the active read-only summary view (never windowed). */
+  aggregateResult: AggregateResult | null;
   searchQuery: string;
   /** Session-only scratch SQL console; never written to the workspace file. */
   scratch: { open: boolean; statement: string };
@@ -212,6 +222,7 @@ interface WorkspaceState {
 
   // views
   createGridView: (name: string) => Promise<void>;
+  createAggregateView: (name: string) => Promise<void>;
   createSqlView: (name: string, statement: string) => Promise<void>;
   updateView: (viewId: string, patch: ViewPatch) => Promise<void>;
   /** Immediate drag feedback: patches the rendered width without any I/O. */
@@ -404,10 +415,26 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       rowsCache: new Map(),
       total: 0,
       titles: {},
+      aggregateResult: null,
       dataVersion: s.dataVersion + 1,
       rowsVersion: s.rowsVersion + 1,
     }));
     await fetchWindowInternal(0, PAGE_SIZE);
+  }
+
+  /** Run a summary view and park its result (it has no row window). */
+  async function loadAggregate(viewId: string): Promise<void> {
+    const result = await ipc.viewRun(viewId, AGGREGATE_LIMIT, 0);
+    if (result.kind !== "aggregate") return;
+    set({
+      aggregateResult: result,
+      sqlResult: null,
+      source: { kind: "none" },
+      rowsCache: new Map(),
+      total: 0,
+      titles: {},
+      searchQuery: "",
+    });
   }
 
   /** Refresh the recent-file snapshot from the settings file. */
@@ -454,6 +481,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       allViews: mergeFetchedViews(s.allViews, tableId, views),
       activeViewId: viewId,
       sqlResult: null,
+      aggregateResult: null,
       searchQuery: "",
     }));
     // Record the choice before running the view: if the query itself fails the
@@ -464,9 +492,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (view?.kind === "sql") {
         const result = await ipc.viewRun(viewId, 1000, 0);
         if (result.kind === "sql") {
-          set({ sqlResult: result, source: { kind: "none" }, rowsCache: new Map(), total: 0 });
+          set({
+            sqlResult: result,
+            aggregateResult: null,
+            source: { kind: "none" },
+            rowsCache: new Map(),
+            total: 0,
+          });
           return;
         }
+      }
+      if (isAggregateView(view)) {
+        await loadAggregate(viewId);
+        return;
       }
       if (view?.kind === "grid") {
         await prime({ kind: "view", viewId });
@@ -488,7 +526,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       scratch: { ...s.scratch, open: false },
     }));
     let gridViews = views.filter((v) => v.kind === "grid");
-    if (gridViews.length === 0) {
+    let dataGridViews = gridViews.filter((v) => !isAggregateView(v));
+    if (dataGridViews.length === 0) {
       await ipc.viewCreate({
         table_id: tableId,
         name: t("view.defaultName"),
@@ -498,10 +537,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       views = await ipc.viewList(tableId);
       set((s) => ({ views, allViews: mergeFetchedViews(s.allViews, tableId, views) }));
       gridViews = views.filter((v) => v.kind === "grid");
+      dataGridViews = gridViews.filter((v) => !isAggregateView(v));
     }
     // Restored selection wins when it still exists; otherwise the first grid view.
     const preferred = preferredViewId ? views.find((v) => v.id === preferredViewId) : undefined;
-    await loadTableData(tableId, preferred?.id ?? gridViews[0]?.id ?? null);
+    await loadTableData(
+      tableId,
+      preferred?.id ?? dataGridViews[0]?.id ?? gridViews[0]?.id ?? null,
+    );
   }
 
   /** Window title mirrors the open file so the taskbar is meaningful. */
@@ -523,6 +566,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     if (view?.kind === "sql") {
       const result = await ipc.viewRun(view.id, 1000, 0);
       if (result.kind === "sql") set({ sqlResult: result });
+      return;
+    }
+    if (isAggregateView(view)) {
+      await loadAggregate(view.id);
+      // Column deletion/type changes can prune the summary config; refresh the
+      // view metadata so the summary bar and config panel stay in sync.
+      if (activeTableId) {
+        const views = await ipc.viewList(activeTableId);
+        set((s) => ({
+          views,
+          allViews: mergeFetchedViews(s.allViews, activeTableId, views),
+        }));
+      }
       return;
     }
     if (view?.kind === "grid") {
@@ -552,6 +608,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     dataVersion: 0,
     titles: {},
     sqlResult: null,
+    aggregateResult: null,
     searchQuery: "",
     scratch: { open: false, statement: "SELECT " },
     loading: false,
@@ -603,6 +660,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           total: 0,
           titles: {},
           sqlResult: null,
+          aggregateResult: null,
           source: { kind: "none" },
           pendingPath: null,
           scratch: { open: false, statement: "SELECT " },
@@ -635,6 +693,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           total: 0,
           titles: {},
           sqlResult: null,
+          aggregateResult: null,
           searchQuery: "",
           source: { kind: "none" },
           pendingPath: null,
@@ -662,6 +721,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           total: 0,
           titles: {},
           sqlResult: null,
+          aggregateResult: null,
           searchQuery: "",
           source: { kind: "none" },
           scratch: { open: false, statement: "SELECT " },
@@ -694,6 +754,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           set((s) => ({
             activeViewId: view.id,
             sqlResult: null,
+            aggregateResult: null,
             searchQuery: "",
             views: s.activeTableId ? s.views : s.allViews,
           }));
@@ -773,6 +834,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
             total: 0,
             titles: {},
             sqlResult: null,
+            aggregateResult: null,
             source: { kind: "none" },
           });
           if (next) await activateTable(next);
@@ -893,6 +955,33 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       });
     },
 
+    createAggregateView: async (name) => {
+      await guard(set, get, async () => {
+        const { activeTableId, activeViewId, views } = get();
+        if (!activeTableId) return;
+        // Starting from a grid view is a common "summarize what I am looking
+        // at" flow: inherit its filters, but never its row sorts.
+        const current = views.find((v) => v.id === activeViewId);
+        const filters =
+          current && current.kind === "grid" && current.data.kind === "grid"
+            ? current.data.filters
+            : null;
+        const v = await ipc.viewCreate({
+          table_id: activeTableId,
+          name,
+          kind: "grid",
+          data: {
+            kind: "grid",
+            filters,
+            sorts: [],
+            aggregate: defaultAggregateConfig(),
+          },
+        });
+        set((s) => ({ allViews: upsertView(s.allViews, v) }));
+        await loadTableData(activeTableId, v.id);
+      });
+    },
+
     createSqlView: async (name, statement) => {
       await guard(set, get, async () => {
         const v = await ipc.viewCreate({
@@ -910,7 +999,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         if (activeTableId) set({ views: await ipc.viewList(activeTableId) });
         const result = await ipc.viewRun(v.id, 1000, 0);
         if (result.kind === "sql") {
-          set({ sqlResult: result, source: { kind: "none" }, rowsCache: new Map(), total: 0 });
+          set({
+            sqlResult: result,
+            aggregateResult: null,
+            source: { kind: "none" },
+            rowsCache: new Map(),
+            total: 0,
+          });
         }
         await persistUi();
       });
@@ -1006,7 +1101,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const { activeTableId, activeViewId } = get();
         if (!activeTableId) {
           if (activeViewId === viewId) {
-            set({ activeViewId: null, sqlResult: null, source: { kind: "none" } });
+            set({ activeViewId: null, sqlResult: null, aggregateResult: null, source: { kind: "none" } });
           }
           return;
         }
@@ -1139,7 +1234,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           await loadTableData(activeTableId, activeViewId);
           return;
         }
-        set({ searchQuery: query, sqlResult: null });
+        set({ searchQuery: query, sqlResult: null, aggregateResult: null });
         await prime({ kind: "search", tableId: activeTableId, query });
       });
     },

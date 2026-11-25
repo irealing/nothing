@@ -31,6 +31,7 @@ export default function FilterSortPanel({ view, onClose }: { view: ViewMeta; onC
         kind: "grid",
         filters: pruneFilters(draft.filters),
         sorts: draft.sorts,
+        aggregate: draft.aggregate ?? null,
       },
     });
     onClose();

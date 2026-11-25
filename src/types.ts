@@ -246,6 +246,64 @@ export interface SortSpec {
 export interface GridConfig {
   filters: FilterNode | null;
   sorts: SortSpec[];
+  /** Present on a read-only summary view; absent/null on a normal grid. */
+  aggregate?: AggregateConfig | null;
+}
+
+// ---- summary views ----
+
+export type AggregateOp =
+  | "count_rows"
+  | "count_non_empty"
+  | "count_distinct"
+  | "sum"
+  | "avg"
+  | "min"
+  | "max";
+
+export interface AggregateMetric {
+  op: AggregateOp;
+  /** Source column id; `null` only for `count_rows`. */
+  column_id: string | null;
+}
+
+export interface AggregateSort {
+  /** Index into `metrics`; `null` sorts by the group fields. */
+  metric: number | null;
+  desc: boolean;
+}
+
+export interface AggregateConfig {
+  group_by: string[];
+  metrics: AggregateMetric[];
+  sort: AggregateSort | null;
+}
+
+/** Default summary: no grouping, one row count metric. */
+export function defaultAggregateConfig(): AggregateConfig {
+  return {
+    group_by: [],
+    metrics: [{ op: "count_rows", column_id: null }],
+    sort: null,
+  };
+}
+
+export type AggregateColumnKind = "group" | "metric";
+export type AggregateValueType = "text" | "number" | "date" | "checkbox";
+
+export interface AggregateColumn {
+  kind: AggregateColumnKind;
+  column_id: string | null;
+  op: AggregateOp | null;
+  value_type: AggregateValueType;
+  format: ColumnFormat | null;
+}
+
+export interface AggregateResult {
+  columns: AggregateColumn[];
+  rows: Json[][];
+  total_groups: number;
+  base_rows: number;
 }
 
 export interface SqlConfig {
@@ -286,6 +344,23 @@ export interface ViewMeta {
   created_at: string;
   data: ViewData;
   columns: ViewColumnMeta[];
+}
+
+/** A grid view that renders grouped aggregate rows instead of table rows. */
+export type AggregateView = ViewMeta & {
+  kind: "grid";
+  data: { kind: "grid" } & GridConfig & { aggregate: AggregateConfig };
+};
+
+export function isAggregateView(
+  view: ViewMeta | null | undefined,
+): view is AggregateView {
+  return (
+    !!view &&
+    view.kind === "grid" &&
+    view.data.kind === "grid" &&
+    !!view.data.aggregate
+  );
 }
 
 export interface NewView {
@@ -363,7 +438,8 @@ export interface SqlResult {
 
 export type ViewResult =
   | ({ kind: "grid" } & RowPage)
-  | ({ kind: "sql" } & SqlResult);
+  | ({ kind: "sql" } & SqlResult)
+  | ({ kind: "aggregate" } & AggregateResult);
 
 export interface WorkspaceInfo {
   path: string;

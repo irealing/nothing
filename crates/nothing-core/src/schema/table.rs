@@ -758,6 +758,14 @@ impl Workspace {
             // explicit clear always wins, and an inherited format is dropped
             // when a type change makes it meaningless.
             let effective_type = new_meta.effective_type();
+            if type_changed || formula_changed {
+                super::view::ensure_aggregate_column_compatible(
+                    conn,
+                    table_id,
+                    col_id,
+                    effective_type,
+                )?;
+            }
             if patch.clear_format {
                 new_meta.format = None;
             } else if let Some(format) = &patch.format {
@@ -916,6 +924,10 @@ impl Workspace {
                     )));
                 }
             }
+
+            // Summary views are metadata, not SQL text: drop the column from
+            // their config instead of blocking (a row-count metric remains).
+            super::view::prune_aggregate_column(conn, table_id, col_id)?;
 
             if col.col_type() == ColumnType::Relation && !col.is_reverse() {
                 // 铁律 6: junction table + reverse columns, same tx. Reverse

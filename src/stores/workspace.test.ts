@@ -17,7 +17,7 @@ import type {
   ViewMeta,
   ViewResult,
 } from "../types";
-import { PAGE_SIZE, useWorkspace } from "./workspace";
+import { AGGREGATE_LIMIT, PAGE_SIZE, useWorkspace } from "./workspace";
 import { useHistory } from "./history";
 
 const T1: TableMeta = {
@@ -84,6 +84,38 @@ const SQL_V: ViewMeta = {
   columns: [],
   position: 0,
   created_at: "",
+};
+
+const AGG_V: ViewMeta = {
+  ...GRID_V,
+  id: "va",
+  name: "汇总",
+  data: {
+    kind: "grid",
+    filters: null,
+    sorts: [],
+    aggregate: {
+      group_by: [],
+      metrics: [{ op: "count_rows", column_id: null }],
+      sort: null,
+    },
+  },
+};
+
+const AGG_RESULT: ViewResult = {
+  kind: "aggregate",
+  columns: [
+    {
+      kind: "metric",
+      column_id: null,
+      op: "count_rows",
+      value_type: "number",
+      format: null,
+    },
+  ],
+  rows: [[5]],
+  total_groups: 1,
+  base_rows: 5,
 };
 
 function row(rid: string, value = "a"): Row {
@@ -574,6 +606,72 @@ describe("view actions", () => {
     expect(s.activeViewId).toBe("vs");
     expect(s.sqlResult?.rows).toEqual([[1]]);
     expect(ipc.settingsSetUi).toHaveBeenCalledWith("/a.nothing", "t1", "vs");
+  });
+
+  it("createAggregateView inherits the current grid filters and runs it", async () => {
+    const filteredGrid: ViewMeta = {
+      ...GRID_V,
+      data: {
+        kind: "grid",
+        filters: { column_id: "c1", op: "contains", value: "x" },
+        sorts: [],
+      },
+    };
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      columns: [COL],
+      views: [filteredGrid],
+      activeViewId: "v1",
+    });
+    vi.mocked(ipc.viewCreate).mockResolvedValue(AGG_V);
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([filteredGrid, AGG_V]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(AGG_RESULT);
+
+    await useWorkspace.getState().createAggregateView("汇总");
+
+    expect(ipc.viewCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        table_id: "t1",
+        name: "汇总",
+        kind: "grid",
+        data: expect.objectContaining({
+          filters: filteredGrid.data.kind === "grid" ? filteredGrid.data.filters : null,
+          sorts: [],
+          aggregate: expect.objectContaining({
+            group_by: [],
+            metrics: [{ op: "count_rows", column_id: null }],
+          }),
+        }),
+      }),
+    );
+    const s = useWorkspace.getState();
+    expect(s.activeViewId).toBe("va");
+    expect(s.aggregateResult?.base_rows).toBe(5);
+  });
+
+  it("selectView runs a summary view on its own read path", async () => {
+    useWorkspace.setState({
+      ...dataState,
+      info: { path: "/a.nothing", format_version: 1 },
+      allViews: [AGG_V],
+      views: [AGG_V],
+      activeTableId: "t1",
+      activeViewId: null,
+    });
+    vi.mocked(ipc.columnList).mockResolvedValue([COL]);
+    vi.mocked(ipc.viewList).mockResolvedValue([AGG_V]);
+    vi.mocked(ipc.viewRun).mockResolvedValue(AGG_RESULT);
+
+    await useWorkspace.getState().selectView("va");
+
+    const s = useWorkspace.getState();
+    expect(s.activeViewId).toBe("va");
+    expect(s.aggregateResult?.rows).toEqual([[5]]);
+    expect(s.source).toEqual({ kind: "none" });
+    expect(ipc.viewRun).toHaveBeenCalledWith("va", AGGREGATE_LIMIT, 0);
   });
 
   it("selectView records the new active view for the workspace", async () => {

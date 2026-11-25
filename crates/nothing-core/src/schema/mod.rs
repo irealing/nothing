@@ -888,12 +888,93 @@ pub struct SortSpec {
     pub desc: bool,
 }
 
+/// Aggregation applied by a summary view.
+///
+/// `count_rows` is the only op without a source column; every other op
+/// references a physical (or formula) column by its stable metadata id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AggregateOp {
+    CountRows,
+    CountNonEmpty,
+    CountDistinct,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+impl AggregateOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AggregateOp::CountRows => "count_rows",
+            AggregateOp::CountNonEmpty => "count_non_empty",
+            AggregateOp::CountDistinct => "count_distinct",
+            AggregateOp::Sum => "sum",
+            AggregateOp::Avg => "avg",
+            AggregateOp::Min => "min",
+            AggregateOp::Max => "max",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        Ok(match s {
+            "count_rows" => AggregateOp::CountRows,
+            "count_non_empty" => AggregateOp::CountNonEmpty,
+            "count_distinct" => AggregateOp::CountDistinct,
+            "sum" => AggregateOp::Sum,
+            "avg" => AggregateOp::Avg,
+            "min" => AggregateOp::Min,
+            "max" => AggregateOp::Max,
+            other => return Err(AppError::InvalidInput(format!("未知的汇总方式: {other}"))),
+        })
+    }
+
+    /// Whether this op needs a source column.
+    pub fn needs_column(self) -> bool {
+        !matches!(self, AggregateOp::CountRows)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AggregateMetric {
+    pub op: AggregateOp,
+    /// Source column id; `None` only for [`AggregateOp::CountRows`].
+    #[serde(default)]
+    pub column_id: Option<String>,
+}
+
+/// Result ordering of a summary view. `metric: None` sorts by the group
+/// columns; `Some(i)` sorts by `metrics[i]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AggregateSort {
+    #[serde(default)]
+    pub metric: Option<usize>,
+    #[serde(default)]
+    pub desc: bool,
+}
+
+/// Structured summary configuration stored on a grid view. When present the
+/// view is read-only and renders grouped aggregate rows instead of table rows.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AggregateConfig {
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    #[serde(default)]
+    pub metrics: Vec<AggregateMetric>,
+    #[serde(default)]
+    pub sort: Option<AggregateSort>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GridConfig {
     #[serde(default)]
     pub filters: Option<FilterNode>,
     #[serde(default)]
     pub sorts: Vec<SortSpec>,
+    /// `Some` turns this grid view into a read-only summary view.
+    #[serde(default)]
+    pub aggregate: Option<AggregateConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -938,6 +1019,13 @@ pub struct ViewMeta {
     pub columns: Vec<ViewColumnMeta>,
 }
 
+impl ViewMeta {
+    /// A grid view that renders grouped aggregate rows instead of table rows.
+    pub fn is_aggregate(&self) -> bool {
+        matches!(&self.data, ViewData::Grid(g) if g.aggregate.is_some())
+    }
+}
+
 /// `ViewMeta.color` is the same palette token as columns; keep the alias so
 /// the shared type stays obvious in the public API.
 pub type ColorAlias = ColumnColor;
@@ -978,7 +1066,7 @@ pub struct ViewPatch {
 // Raw row mapping
 // ---------------------------------------------------------------------------
 
-pub(crate) const META_COLS: &str = r#""id","parent_id","kind","name","position","icon","color","width","created_at","updated_at","sql_name","title_col_id","col_type","align","default_value","target_table_id","single","origin_id","formula_expr","formula_result_type","view_kind","filters","sorts","statement","ref_id","hidden","frozen","format""#;
+pub(crate) const META_COLS: &str = r#""id","parent_id","kind","name","position","icon","color","width","created_at","updated_at","sql_name","title_col_id","col_type","align","default_value","target_table_id","single","origin_id","formula_expr","formula_result_type","view_kind","filters","sorts","statement","ref_id","hidden","frozen","format","aggregate""#;
 
 #[derive(Debug, Clone)]
 pub(crate) struct RawMeta {
@@ -1010,6 +1098,7 @@ pub(crate) struct RawMeta {
     pub hidden: Option<i64>,
     pub frozen: Option<i64>,
     pub format: Option<String>,
+    pub aggregate: Option<String>,
 }
 
 pub(crate) fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawMeta> {
@@ -1042,6 +1131,7 @@ pub(crate) fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawMeta> {
         hidden: r.get("hidden")?,
         frozen: r.get("frozen")?,
         format: r.get("format")?,
+        aggregate: r.get("aggregate")?,
     })
 }
 
@@ -1209,7 +1299,19 @@ pub(crate) fn view_from_raw(
                 Some(raw) => serde_json::from_str(raw).map_err(|e| internal(e.to_string()))?,
                 None => Vec::new(),
             };
-            ViewData::Grid(GridConfig { filters, sorts })
+            // Lenient on read: an aggregate written by a newer build that no
+            // longer parses simply degrades to a normal grid, never blocks the
+            // whole workspace.
+            let aggregate = r
+                .aggregate
+                .as_deref()
+                .filter(|raw| !raw.trim().is_empty())
+                .and_then(|raw| serde_json::from_str::<AggregateConfig>(raw).ok());
+            ViewData::Grid(GridConfig {
+                filters,
+                sorts,
+                aggregate,
+            })
         }
         ViewKind::Sql => ViewData::Sql(SqlConfig {
             statement: r.statement.ok_or_else(|| internal("SQL 视图缺少语句"))?,
@@ -1575,6 +1677,14 @@ pub(crate) fn insert_view_node(conn: &Connection, v: &ViewMeta) -> Result<()> {
         None,
         None,
     )?;
+    if let ViewData::Grid(g) = &v.data {
+        if let Some(agg) = &g.aggregate {
+            conn.execute(
+                r#"UPDATE "_meta" SET "aggregate" = ?1 WHERE "id" = ?2 AND "kind" = 'view'"#,
+                rusqlite::params![serde_json::to_string(agg)?, v.id],
+            )?;
+        }
+    }
     for wc in &v.columns {
         insert_view_column(
             conn,

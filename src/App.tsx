@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import * as ipc from "./ipc";
 import { baseName, samePath, useWorkspace } from "./stores/workspace";
+import { isAggregateView } from "./types";
 import { useTheme } from "./stores/theme";
 import { confirm } from "./ui/ConfirmDialog";
 import { t } from "./i18n";
@@ -8,6 +9,7 @@ import Welcome from "./components/Welcome";
 import Sidebar from "./components/Sidebar";
 import TableView from "./components/TableView";
 import SqlViewPanel from "./components/SqlViewPanel";
+import AggregateViewPanel from "./components/AggregateViewPanel";
 import ScratchQueryPanel from "./components/ScratchQueryPanel";
 import ViewTabs from "./components/ViewTabs";
 import Toasts from "./components/Toasts";
@@ -87,6 +89,8 @@ export default function App() {
             <ScratchQueryPanel />
           ) : activeView?.kind === "sql" ? (
             <SqlViewPanel view={activeView} />
+          ) : isAggregateView(activeView) ? (
+            <AggregateViewPanel view={activeView} />
           ) : (
             <TableView />
           )}

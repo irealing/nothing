@@ -467,7 +467,8 @@ fn v4_workspace_migrates_in_place_and_is_idempotent() {
         let conn = raw(&path);
         conn.execute_batch(
             r#"ALTER TABLE "_meta" DROP COLUMN "format";
-               ALTER TABLE "_meta" DROP COLUMN "frozen";"#,
+               ALTER TABLE "_meta" DROP COLUMN "frozen";
+               ALTER TABLE "_meta" DROP COLUMN "aggregate";"#,
         )
         .unwrap();
         conn.execute(
@@ -478,7 +479,10 @@ fn v4_workspace_migrates_in_place_and_is_idempotent() {
     }
 
     let ws = Workspace::open(&path, PASSWORD).unwrap();
-    assert_eq!(ws.format_version().unwrap(), 5);
+    assert_eq!(
+        ws.format_version().unwrap(),
+        nothing_core::CURRENT_FORMAT_VERSION
+    );
     assert_eq!(ws.list_tables().unwrap()[0].id, table.id);
     let cols = ws.list_columns(&table.id).unwrap();
     assert_eq!(cols[0].name, "Title");
@@ -489,11 +493,42 @@ fn v4_workspace_migrates_in_place_and_is_idempotent() {
     let names = table_info(&conn, "_meta");
     assert!(names.iter().any(|c| c == "format"), "{names:?}");
     assert!(names.iter().any(|c| c == "frozen"), "{names:?}");
+    assert!(names.iter().any(|c| c == "aggregate"), "{names:?}");
     drop(conn);
 
-    // Re-opening a v5 file must not try to add the columns again.
+    // Re-opening an up-to-date file must not try to add the columns again.
     let ws = Workspace::open(&path, PASSWORD).unwrap();
-    assert_eq!(ws.format_version().unwrap(), 5);
+    assert_eq!(
+        ws.format_version().unwrap(),
+        nothing_core::CURRENT_FORMAT_VERSION
+    );
+}
+
+#[test]
+fn v5_workspace_gains_the_aggregate_column() {
+    let (dir, ws) = common::create_ws("v5.nothing");
+    let path = db_path(&dir, "v5.nothing");
+    drop(ws);
+    {
+        let conn = raw(&path);
+        conn.execute_batch(r#"ALTER TABLE "_meta" DROP COLUMN "aggregate";"#)
+            .unwrap();
+        conn.execute(
+            r#"UPDATE "_nothing" SET "value" = '5' WHERE "key" = 'format_version'"#,
+            [],
+        )
+        .unwrap();
+    }
+
+    let ws = Workspace::open(&path, PASSWORD).unwrap();
+    assert_eq!(
+        ws.format_version().unwrap(),
+        nothing_core::CURRENT_FORMAT_VERSION
+    );
+    drop(ws);
+    let conn = raw(&path);
+    let names = table_info(&conn, "_meta");
+    assert!(names.iter().any(|c| c == "aggregate"), "{names:?}");
 }
 
 #[test]

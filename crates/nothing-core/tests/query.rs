@@ -85,6 +85,7 @@ fn run_grid(ws: &nothing_core::Workspace, view_id: &str) -> nothing_core::RowPag
     match ws.run_view(view_id, None, None).unwrap() {
         ViewResult::Grid(page) => page,
         ViewResult::Sql(_) => panic!("expected grid result"),
+        ViewResult::Aggregate(_) => panic!("expected grid result"),
     }
 }
 
@@ -374,6 +375,7 @@ fn grid_view_filters_sorts_hidden_and_pagination() {
                 column_id: f.c("工时").to_string(),
                 desc: true,
             }],
+            aggregate: None,
         },
     );
     ws.update_view_column(
@@ -410,6 +412,7 @@ fn grid_view_filters_sorts_hidden_and_pagination() {
                 column_id: f.c("工时").to_string(),
                 desc: true,
             }],
+            aggregate: None,
         },
     );
     let page = run_grid(&ws, &view2);
@@ -1071,6 +1074,7 @@ fn perf_100k_rows_grid_view() {
                 column_id: f.c("工时").to_string(),
                 desc: true,
             }],
+            aggregate: None,
         },
     );
     let start = std::time::Instant::now();

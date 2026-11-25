@@ -49,6 +49,13 @@ export function editableConfig(cfg: GridConfig): GridConfig {
   return {
     filters: normalizeFilters(cfg.filters),
     sorts: cfg.sorts.map((sort) => ({ ...sort })),
+    aggregate: cfg.aggregate
+      ? {
+          group_by: [...cfg.aggregate.group_by],
+          metrics: cfg.aggregate.metrics.map((metric) => ({ ...metric })),
+          sort: cfg.aggregate.sort ? { ...cfg.aggregate.sort } : null,
+        }
+      : null,
   };
 }
 
@@ -309,12 +316,15 @@ export default function FilterEditor({
   columns,
   onFiltersChange,
   onSortsChange,
+  showSorts = true,
 }: {
   filters: FilterNode | null;
   sorts: GridConfig["sorts"];
   columns: ColumnMeta[];
   onFiltersChange: (filters: FilterNode | null) => void;
   onSortsChange: (sorts: GridConfig["sorts"]) => void;
+  /** Summary views have their own result ordering; hide the grid sorts UI. */
+  showSorts?: boolean;
 }) {
   const addRule = (path: number[]) => {
     const col = columns[0];
@@ -518,60 +528,62 @@ export default function FilterEditor({
         )}
       </section>
 
-      <section>
-        <h4>{t("filter.sorts")}</h4>
-        {sorts.map((s, i) => (
-          <div className="filter-rule" key={i}>
-            <select
-              className="filter-col"
-              value={s.column_id}
-              onChange={(e) => {
-                const next = [...sorts];
-                next[i] = { ...s, column_id: e.target.value };
-                onSortsChange(next);
-              }}
-            >
-              {columns
-                .filter((c) => colType(c) !== "relation")
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {colLabel(c)}
-                  </option>
-                ))}
-            </select>
-            <button
-              className="btn sort-dir"
-              title={s.desc ? t("filter.toggleDesc") : t("filter.toggleAsc")}
-              onClick={() => {
-                const next = [...sorts];
-                next[i] = { ...s, desc: !s.desc };
-                onSortsChange(next);
-              }}
-            >
-              {s.desc ? <IconSortDesc size={14} /> : <IconSortAsc size={14} />}
-              {s.desc ? t("filter.desc") : t("filter.asc")}
-            </button>
-            <button
-              className="btn-icon danger"
-              title={t("filter.deleteSort")}
-              onClick={() => onSortsChange(sorts.filter((_, j) => j !== i))}
-            >
-              <IconX size={13} />
-            </button>
-          </div>
-        ))}
-        <button
-          className="btn dashed"
-          onClick={() => {
-            const first = columns.find((c) => colType(c) !== "relation");
-            if (first) {
-              onSortsChange([...sorts, { column_id: first.id, desc: false }]);
-            }
-          }}
-        >
-          <IconPlus size={14} /> {t("filter.addSort")}
-        </button>
-      </section>
+      {showSorts && (
+        <section>
+          <h4>{t("filter.sorts")}</h4>
+          {sorts.map((s, i) => (
+            <div className="filter-rule" key={i}>
+              <select
+                className="filter-col"
+                value={s.column_id}
+                onChange={(e) => {
+                  const next = [...sorts];
+                  next[i] = { ...s, column_id: e.target.value };
+                  onSortsChange(next);
+                }}
+              >
+                {columns
+                  .filter((c) => colType(c) !== "relation")
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {colLabel(c)}
+                    </option>
+                  ))}
+              </select>
+              <button
+                className="btn sort-dir"
+                title={s.desc ? t("filter.toggleDesc") : t("filter.toggleAsc")}
+                onClick={() => {
+                  const next = [...sorts];
+                  next[i] = { ...s, desc: !s.desc };
+                  onSortsChange(next);
+                }}
+              >
+                {s.desc ? <IconSortDesc size={14} /> : <IconSortAsc size={14} />}
+                {s.desc ? t("filter.desc") : t("filter.asc")}
+              </button>
+              <button
+                className="btn-icon danger"
+                title={t("filter.deleteSort")}
+                onClick={() => onSortsChange(sorts.filter((_, j) => j !== i))}
+              >
+                <IconX size={13} />
+              </button>
+            </div>
+          ))}
+          <button
+            className="btn dashed"
+            onClick={() => {
+              const first = columns.find((c) => colType(c) !== "relation");
+              if (first) {
+                onSortsChange([...sorts, { column_id: first.id, desc: false }]);
+              }
+            }}
+          >
+            <IconPlus size={14} /> {t("filter.addSort")}
+          </button>
+        </section>
+      )}
     </div>
   );
 }

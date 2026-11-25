@@ -492,6 +492,7 @@ mod tests {
                 value: serde_json::Value::String(evil.into()),
             })),
             sorts: vec![],
+            aggregate: None,
         };
         let c = compile(&table(), &cols, &cfg).unwrap();
         // The evil string is NOT part of the SQL text…
@@ -515,6 +516,7 @@ mod tests {
                 value: serde_json::json!("100%_\\x"),
             })),
             sorts: vec![],
+            aggregate: None,
         };
         let c = compile(&table(), &cols, &cfg).unwrap();
         match &c.where_params[0] {
@@ -559,6 +561,7 @@ mod tests {
                 column_id: "n".into(),
                 desc: true,
             }],
+            aggregate: None,
         };
         let c = compile(&table(), &cols, &cfg).unwrap();
         assert_eq!(

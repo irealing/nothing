@@ -16,6 +16,7 @@ import {
   IconLogout,
   IconPencil,
   IconPlus,
+  IconSigma,
   IconSidebarCollapse,
   IconSidebarExpand,
   IconTable,
@@ -30,7 +31,7 @@ import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { Popover } from "../ui/Popover";
 import { chipStyle, isPresetColor } from "../theme/grid";
 import { VersionChip } from "./AboutDialog";
-import type { ColumnColor, TableMeta, ViewMeta } from "../types";
+import { isAggregateView, type ColumnColor, type TableMeta, type ViewMeta } from "../types";
 
 export default function Sidebar() {
   const info = useWorkspace((s) => s.info);
@@ -192,6 +193,8 @@ export default function Sidebar() {
                 <span className="nav-emoji">{view.icon}</span>
               ) : view.kind === "sql" ? (
                 <IconCode size={13} />
+              ) : isAggregateView(view) ? (
+                <IconSigma size={13} />
               ) : (
                 <IconGridView size={13} />
               )}

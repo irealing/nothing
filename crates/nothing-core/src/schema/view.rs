@@ -12,8 +12,9 @@ use super::ident::{new_id, now_iso, validate_user_name};
 use super::table::map_sqlite_err;
 use super::{
     load_table, load_view, load_view_columns, next_position, normalize_color, raw_from_row,
-    view_column_from_raw, view_from_raw, FilterNode, GridConfig, NewView, RawMeta, ViewColumnMeta,
-    ViewColumnPatch, ViewData, ViewKind, ViewMeta, ViewPatch,
+    view_column_from_raw, view_from_raw, AggregateConfig, AggregateOp, ColumnMeta, ColumnType,
+    FilterNode, GridConfig, NewView, RawMeta, ViewColumnMeta, ViewColumnPatch, ViewData, ViewKind,
+    ViewMeta, ViewPatch,
 };
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
@@ -91,6 +92,234 @@ fn validate_grid_config(conn: &Connection, table_id: &str, cfg: &GridConfig) -> 
             .unwrap_or(false);
         if !found {
             return Err(AppError::NotFound(format!("视图引用的列 {id}")));
+        }
+    }
+    if let Some(aggregate) = &cfg.aggregate {
+        validate_aggregate_config(conn, table_id, aggregate)?;
+    }
+    Ok(())
+}
+
+/// Whether a column's effective value can be a `GROUP BY` key in a summary
+/// view. Relations and multi-selects are intentionally excluded: grouping them
+/// would either join a junction table or split one row across several groups.
+fn is_aggregate_groupable(col_type: ColumnType) -> bool {
+    matches!(
+        col_type,
+        ColumnType::Text
+            | ColumnType::Number
+            | ColumnType::Select
+            | ColumnType::Date
+            | ColumnType::Checkbox
+    )
+}
+
+fn metric_allowed(op: AggregateOp, col_type: ColumnType) -> bool {
+    match op {
+        AggregateOp::CountRows => true,
+        AggregateOp::CountNonEmpty | AggregateOp::CountDistinct => is_aggregate_groupable(col_type),
+        AggregateOp::Sum => {
+            matches!(col_type, ColumnType::Number | ColumnType::Checkbox)
+        }
+        AggregateOp::Avg => col_type == ColumnType::Number,
+        AggregateOp::Min | AggregateOp::Max => {
+            matches!(col_type, ColumnType::Number | ColumnType::Date)
+        }
+    }
+}
+
+fn validate_aggregate_config(
+    conn: &Connection,
+    table_id: &str,
+    cfg: &AggregateConfig,
+) -> Result<()> {
+    if cfg.metrics.is_empty() {
+        return Err(AppError::InvalidInput("汇总视图至少需要一个指标".into()));
+    }
+    if cfg.metrics.len() > 8 {
+        return Err(AppError::InvalidInput("汇总指标最多 8 个".into()));
+    }
+    if cfg.group_by.len() > 3 {
+        return Err(AppError::InvalidInput("分组字段最多 3 个".into()));
+    }
+
+    let cols = super::load_columns(conn, table_id)?;
+    let by_id: std::collections::HashMap<&str, &ColumnMeta> =
+        cols.iter().map(|c| (c.id.as_str(), c)).collect();
+    let column = |id: &str| {
+        by_id
+            .get(id)
+            .copied()
+            .ok_or_else(|| AppError::NotFound(format!("汇总视图引用的列 {id}")))
+    };
+
+    let mut seen_groups = std::collections::HashSet::new();
+    for id in &cfg.group_by {
+        if !seen_groups.insert(id.as_str()) {
+            return Err(AppError::InvalidInput(format!("分组字段重复: {id}")));
+        }
+        let col = column(id)?;
+        if !is_aggregate_groupable(col.effective_type()) {
+            return Err(AppError::InvalidInput(format!(
+                "列「{}」不能作为分组字段",
+                col.name
+            )));
+        }
+    }
+
+    let mut seen_metrics = std::collections::HashSet::new();
+    for metric in &cfg.metrics {
+        let column_id = metric.column_id.as_deref().filter(|s| !s.is_empty());
+        if metric.op == AggregateOp::CountRows {
+            if column_id.is_some() {
+                return Err(AppError::InvalidInput("「行数」指标不能指定列".into()));
+            }
+        } else {
+            let id = column_id.ok_or_else(|| {
+                AppError::InvalidInput(format!("指标「{}」必须选择一列", metric.op.as_str()))
+            })?;
+            let col = column(id)?;
+            if !metric_allowed(metric.op, col.effective_type()) {
+                return Err(AppError::InvalidInput(format!(
+                    "列「{}」不支持「{}」汇总",
+                    col.name,
+                    metric.op.as_str()
+                )));
+            }
+        }
+        if !seen_metrics.insert((metric.op, column_id.map(str::to_string))) {
+            return Err(AppError::InvalidInput("汇总指标重复".into()));
+        }
+    }
+
+    if let Some(sort) = &cfg.sort {
+        if let Some(index) = sort.metric {
+            if index >= cfg.metrics.len() {
+                return Err(AppError::InvalidInput("汇总排序引用了不存在的指标".into()));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Refuse a column type change that would make an existing summary view
+/// invalid. Deleting a column is handled by [`prune_aggregate_column`] instead:
+/// a summary can lose a metric without losing the view itself.
+pub(crate) fn ensure_aggregate_column_compatible(
+    conn: &Connection,
+    table_id: &str,
+    column_id: &str,
+    new_type: ColumnType,
+) -> Result<()> {
+    let mut stmt = conn.prepare(
+        r#"SELECT "name", "aggregate" FROM "_meta"
+           WHERE "kind" = 'view' AND "parent_id" = ?1 AND "aggregate" IS NOT NULL"#,
+    )?;
+    let rows = stmt.query_map([table_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut invalid = Vec::new();
+    for row in rows {
+        let (name, raw) = row?;
+        let Ok(cfg) = serde_json::from_str::<AggregateConfig>(&raw) else {
+            continue;
+        };
+        if cfg.group_by.iter().any(|id| id == column_id) && !is_aggregate_groupable(new_type) {
+            invalid.push(name);
+            continue;
+        }
+        let bad_metric = cfg
+            .metrics
+            .iter()
+            .any(|m| m.column_id.as_deref() == Some(column_id) && !metric_allowed(m.op, new_type));
+        if bad_metric {
+            invalid.push(name);
+        }
+    }
+    if invalid.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Rejected(format!(
+            "以下汇总视图依赖该列：{}；请先调整这些视图再修改列类型",
+            invalid.join("、")
+        )))
+    }
+}
+
+/// Remove a deleted column from every summary view of the table. The view is
+/// kept usable: if the column was its only metric, a row-count metric remains.
+pub(crate) fn prune_aggregate_column(
+    conn: &Connection,
+    table_id: &str,
+    column_id: &str,
+) -> Result<()> {
+    let mut stmt = conn.prepare(
+        r#"SELECT "id", "aggregate" FROM "_meta"
+           WHERE "kind" = 'view' AND "parent_id" = ?1 AND "aggregate" IS NOT NULL"#,
+    )?;
+    let raws = stmt
+        .query_map([table_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    for (view_id, raw) in raws {
+        let Ok(mut cfg) = serde_json::from_str::<AggregateConfig>(&raw) else {
+            continue;
+        };
+        let mut changed = false;
+
+        let before = cfg.group_by.len();
+        cfg.group_by.retain(|id| id != column_id);
+        changed |= cfg.group_by.len() != before;
+
+        let old_metrics = std::mem::take(&mut cfg.metrics);
+        let mut removed_indexes = Vec::new();
+        for (i, metric) in old_metrics.iter().enumerate() {
+            if metric.column_id.as_deref() == Some(column_id) {
+                removed_indexes.push(i);
+            } else {
+                cfg.metrics.push(metric.clone());
+            }
+        }
+        changed |= !removed_indexes.is_empty();
+        if cfg.metrics.is_empty() {
+            cfg.metrics.push(super::AggregateMetric {
+                op: super::AggregateOp::CountRows,
+                column_id: None,
+            });
+            changed = true;
+        }
+        if let Some((index, desc)) = cfg
+            .sort
+            .as_ref()
+            .and_then(|s| s.metric.map(|i| (i, s.desc)))
+        {
+            if removed_indexes.contains(&index) {
+                cfg.sort = None;
+                changed = true;
+            } else {
+                let shift = removed_indexes.iter().filter(|&&i| i < index).count();
+                if shift > 0 {
+                    cfg.sort = Some(super::AggregateSort {
+                        metric: Some(index - shift),
+                        desc,
+                    });
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            conn.execute(
+                r#"UPDATE "_meta" SET "aggregate" = ?1, "updated_at" = ?2
+                   WHERE "id" = ?3 AND "kind" = 'view'"#,
+                rusqlite::params![
+                    serde_json::to_string(&cfg)?,
+                    super::ident::now_iso(),
+                    view_id
+                ],
+            )?;
         }
     }
     Ok(())
@@ -338,7 +567,7 @@ impl Workspace {
             let position = patch.position.unwrap_or(old.position);
 
             let tx = conn.transaction()?;
-            let (filters, sorts, statement) = match &data {
+            let (filters, sorts, statement, aggregate) = match &data {
                 ViewData::Grid(cfg) => {
                     let table_id = old.table_id.as_deref().unwrap();
                     validate_grid_config(&tx, table_id, cfg)?;
@@ -349,19 +578,23 @@ impl Workspace {
                             .transpose()?,
                         Some(serde_json::to_string(&cfg.sorts)?),
                         None,
+                        cfg.aggregate
+                            .as_ref()
+                            .map(serde_json::to_string)
+                            .transpose()?,
                     )
                 }
                 ViewData::Sql(cfg) => {
                     let statement = validate_sql_statement(&tx, &cfg.statement)?;
-                    (None, None, Some(statement))
+                    (None, None, Some(statement), None)
                 }
             };
             tx.execute(
                 r#"UPDATE "_meta" SET
                      "name" = ?1, "icon" = ?2, "color" = ?3, "position" = ?4,
                      "filters" = ?5, "sorts" = ?6, "statement" = ?7,
-                     "updated_at" = ?8
-                   WHERE "id" = ?9 AND "kind" = 'view'"#,
+                     "aggregate" = ?8, "updated_at" = ?9
+                   WHERE "id" = ?10 AND "kind" = 'view'"#,
                 rusqlite::params![
                     name,
                     icon,
@@ -370,6 +603,7 @@ impl Workspace {
                     filters,
                     sorts,
                     statement,
+                    aggregate,
                     now_iso(),
                     view_id
                 ],

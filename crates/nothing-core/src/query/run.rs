@@ -10,8 +10,8 @@ use serde::Serialize;
 use super::compiler::{compile, like_escape};
 use super::rows::{in_placeholders, IN_CHUNK};
 use super::{
-    clamp_pagination, stored_to_json, valueref_to_json, Row, RowDetail, RowPage, SqlColumn,
-    SqlResult,
+    aggregate, clamp_pagination, stored_to_json, valueref_to_json, AggregateResult, Row, RowDetail,
+    RowPage, SqlColumn, SqlResult,
 };
 use crate::db::Workspace;
 use crate::error::{AppError, Result};
@@ -30,6 +30,7 @@ use crate::schema::{
 pub enum ViewResult {
     Grid(RowPage),
     Sql(SqlResult),
+    Aggregate(AggregateResult),
 }
 
 /// Base columns in definition order (default layout for a raw table/search).
@@ -138,6 +139,70 @@ fn fetch_page(
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok((rows, total))
+}
+
+/// Execute a summary view: one grouped SELECT plus the two count queries the
+/// UI needs for its "N groups / M rows" summary.
+fn fetch_aggregate(
+    conn: &Connection,
+    table: &TableMeta,
+    cols: &[ColumnMeta],
+    cfg: &GridConfig,
+    limit: i64,
+    offset: i64,
+) -> Result<AggregateResult> {
+    let aggregate_cfg = cfg
+        .aggregate
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("汇总视图缺少配置".into()))?;
+    // Reuse the grid compiler for the filter tree; sorts are irrelevant before
+    // grouping and are deliberately not applied.
+    let filtered = compile(
+        table,
+        cols,
+        &GridConfig {
+            filters: cfg.filters.clone(),
+            sorts: Vec::new(),
+            aggregate: None,
+        },
+    )?;
+    let compiled = aggregate::compile(table, cols, aggregate_cfg, &filtered.where_sql)?;
+
+    let base_rows: i64 = conn.query_row(
+        &compiled.base_rows_sql,
+        rusqlite::params_from_iter(filtered.where_params.iter()),
+        |r| r.get(0),
+    )?;
+    let total_groups: i64 = match &compiled.groups_sql {
+        Some(sql) => conn.query_row(
+            sql,
+            rusqlite::params_from_iter(filtered.where_params.iter()),
+            |r| r.get(0),
+        )?,
+        None => 1,
+    };
+
+    let mut params: Vec<Value> = filtered.where_params;
+    params.push(Value::Integer(limit));
+    params.push(Value::Integer(offset));
+    let mut stmt = conn.prepare(&compiled.select_sql)?;
+    let width = compiled.columns.len();
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(params.iter()), |r| {
+            let mut row = Vec::with_capacity(width);
+            for i in 0..width {
+                row.push(valueref_to_json(r.get_ref(i)?));
+            }
+            Ok(row)
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(AggregateResult {
+        columns: compiled.columns,
+        rows,
+        total_groups,
+        base_rows,
+    })
 }
 
 /// Fill relation/reverse cells for a page of rows with **one query per
@@ -369,6 +434,10 @@ impl Workspace {
                         .ok_or_else(|| AppError::Internal("网格视图缺少 table_id".into()))?;
                     let table = load_table(conn, table_id)?;
                     let cols = load_columns(conn, table_id)?;
+                    if cfg.aggregate.is_some() {
+                        let result = fetch_aggregate(conn, &table, &cols, cfg, limit, offset)?;
+                        return Ok(ViewResult::Aggregate(result));
+                    }
                     let visible = view_columns(&cols, &view.columns, true);
                     let page = self.page_rows(conn, &table, &cols, &visible, cfg, limit, offset)?;
                     Ok(ViewResult::Grid(page))

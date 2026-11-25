@@ -23,7 +23,7 @@ Cargo.toml               workspace 根
 crates/nothing-core/     存储内核（纯 Rust）
   src/
     db/                  Workspace：加密连接管理（单写连接 + 单一只读连接）、密码
-      manifest.rs        _nothing 清单表、format v5 单表 _meta schema、版本校验与 v4→v5 迁移
+      manifest.rs        _nothing 清单表、format v6 单表 _meta schema、版本校验与 v4→v6 迁移
     schema/
       ident.rs           ULID、t_/c_/r_ 物理命名、quote_ident/quote_literal（唯二转义原语）
       mod.rs             元数据类型（TableMeta/ColumnMeta/OptionMeta/ViewMeta、ColumnData/ViewData、GridConfig/SqlConfig）
@@ -34,6 +34,7 @@ crates/nothing-core/     存储内核（纯 Rust）
       view.rs            grid/SQL 视图 CRUD、SQL 语句白名单校验
     query/
       mod.rs             Row/RowPage/SqlResult 类型、JSON↔SQLite 值转换
+      aggregate.rs       汇总视图编译器（分组/指标 → 参数化 SQL）
       compiler.rs        grid 视图筛选树/排序 → 参数化 SQL（值永不进 SQL 文本）
       rows.rs            行 CRUD、junction 关系写入、批量更新
       run.rs             run_view/run_sql/search、关联批量标题解析（防 N+1）
@@ -69,10 +70,10 @@ src-tauri/               Tauri 薄壳：commands.rs 只做参数校验与转发�
 - `table` 节点：`sql_name`（`t_xxxx`）、`title_col_id`（自引用 FK，标题列）、`icon`/`color`
 - `column` 节点：`col_type`、`sql_name`（**仅物理列**，关联/反向列为 NULL）、`align`、`default_value`、`formula_expr`/`formula_result_type`；`target_table_id`/`single`/`origin_id` 仅关联列使用
 - `option` 节点：选项的 `name`/`icon`/`color`/`position`，不再是 `opts` JSON 数组
-- `view` 节点：`view_kind`，`filters`/`sorts` 只存筛选树与排序；`sql` 视图只存 `statement`
+- `view` 节点：`view_kind`，`filters`/`sorts` 只存筛选树与排序；`sql` 视图只存 `statement`；`aggregate` 存汇总视图配置（仍属于 grid 视图，存在即为只读汇总）
 - `view_column` 节点：`ref_id`（基列）、`width`、`position`、`hidden`。**宽度/顺序/隐藏按视图隔离**，同一列在不同视图互不影响
 - 反向关联列：`origin_id` 指向源关联列（FK `ON DELETE CASCADE`），与源列共享同一张 `r_xxxx` 表
-- 其余 JSON 仅三处：`default_value`（单元格值）、`filters`、`sorts`
+- JSON 字段：`default_value`（单元格值）、`filters`、`sorts`、`aggregate`（汇总配置）、`format`（列展示格式）
 
 ## 铁律（数据安全，不可违反）
 
@@ -82,7 +83,7 @@ src-tauri/               Tauri 薄壳：commands.rs 只做参数校验与转发�
 4. **生成 SQL 只能通过视图编译器 / 白名单模板，一律参数绑定**。禁止把用户输入（筛选值、搜索词、单元格内容）字符串拼接进 SQL。SQL 视图语句必须校验（SELECT/WITH 开头 + EXPLAIN 试跑）且只在 `PRAGMA query_only = ON` 的独立只读连接上执行。
 5. **每个数据库连接必须设置**：`PRAGMA foreign_keys = ON`、`PRAGMA busy_timeout`；写连接必须 WAL 模式。
 6. **删除关联列 = 同事务内 `DROP TABLE r_xxxx`**；反向列由 `origin_id` 上的 `ON DELETE CASCADE` 清理，源列与反向列共享同一张 `r_xxxx` 表。
-7. **`_nothing.format_version` 的任何变更必须附带对应的迁移脚本**，且迁移必须幂等、事务化、可从任意旧版本逐级升级。当前格式版本为 v5：v4 库在打开时事务内补上 `_meta.format` / `_meta.frozen` 两列并升级版本号；v1–v3（三张独立元数据表）仍明确拒绝、不提供数据迁移。
+7. **`_nothing.format_version` 的任何变更必须附带对应的迁移脚本**，且迁移必须幂等、事务化、可从任意旧版本逐级升级。当前格式版本为 v6：v4 库在打开时事务内补上 `_meta.format` / `_meta.frozen` 两列，v5 库补上 `_meta.aggregate` 列，然后升级版本号；v1–v3（三张独立元数据表）仍明确拒绝、不提供数据迁移。
 8. **公式列编译只放行白名单**：列引用、字面量、四则运算、白名单 SQL 函数。禁止用户公式注入子查询或任意 SQL。
 9. 写操作走**单一写连接 + 队列**（Rust 侧 `Mutex<Connection>`），读操作走**单一只读连接**（`PRAGMA query_only = ON`，同样由 `Mutex` 串行化）。禁止多个连接并发写。
 
@@ -124,7 +125,7 @@ pnpm tauri build          # 打包
 
 ## 测试要求
 
-- **存储内核（schema/ 与 query/）的任何改动必须有 Rust 集成测试**，测试直接操作临时加密库文件，覆盖：DDL 事务回滚、列类型迁移、外键级联删除（含 `origin_id` 反向列）、视图编译器输出正确性、`_meta` 单表节点约束、v4→v5 迁移与格式校验。
+- **存储内核（schema/ 与 query/）的任何改动必须有 Rust 集成测试**，测试直接操作临时加密库文件，覆盖：DDL 事务回滚、列类型迁移、外键级联删除（含 `origin_id` 反向列）、视图编译器输出正确性、`_meta` 单表节点约束、v4→v6 迁移与格式校验。
 - 视图编译器测试需包含恶意输入用例（引号、`--`、`;`、SQL 关键字），验证参数绑定不被绕过。
 - 前端对 stores 和 ipc 层做单测；UI 组件测试非强制。
 

@@ -23,7 +23,10 @@ use crate::schema::ident::now_iso;
 /// v5 added two presentation-only metadata columns: `_meta.format` (JSON cell
 /// format for number/date columns) and `_meta.frozen` (view-column freeze
 /// flag). Both are additive `ALTER TABLE`s, so the migration is cheap.
-pub const CURRENT_FORMAT_VERSION: u32 = 5;
+///
+/// v6 adds `_meta.aggregate`, the JSON configuration of a read-only summary
+/// view. Also additive.
+pub const CURRENT_FORMAT_VERSION: u32 = 6;
 
 /// Oldest format this build can migrate. v1–v3 used three separate metadata
 /// tables and are rejected instead of migrated.
@@ -87,6 +90,9 @@ CREATE TABLE "_meta" (
   "hidden" INTEGER CHECK ("hidden" IS NULL OR "hidden" IN (0,1)),
   -- v5: left-prefix freeze flag for this view's column
   "frozen" INTEGER,
+
+  -- v6: read-only summary view configuration (JSON object)
+  "aggregate" TEXT,
 
   -- column: presentation-only number/date format (JSON object)
   "format" TEXT,
@@ -212,6 +218,10 @@ pub fn migrate(conn: &mut Connection) -> Result<u32> {
     if from < 5 {
         add_column_if_missing(&tx, "format", "TEXT")?;
         add_column_if_missing(&tx, "frozen", "INTEGER")?;
+        applied += 1;
+    }
+    if from < 6 {
+        add_column_if_missing(&tx, "aggregate", "TEXT")?;
         applied += 1;
     }
     tx.execute(

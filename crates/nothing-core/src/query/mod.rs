@@ -5,6 +5,7 @@
 //! bound (values) — 铁律 4. All user-facing reads run on the workspace's
 //! dedicated `query_only` connection.
 
+pub(crate) mod aggregate;
 pub(crate) mod compiler;
 pub(crate) mod rows;
 pub(crate) mod run;
@@ -17,7 +18,7 @@ use rusqlite::types::ValueRef;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
-use crate::schema::{ColumnMeta, ColumnType};
+use crate::schema::{AggregateOp, ColumnFormat, ColumnMeta, ColumnType};
 
 /// Cell values keyed by column id.
 pub type Cells = HashMap<String, serde_json::Value>;
@@ -93,6 +94,47 @@ pub struct SqlColumn {
 pub struct SqlResult {
     pub columns: Vec<SqlColumn>,
     pub rows: Vec<Vec<serde_json::Value>>,
+}
+
+/// Role of one column in a summary result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AggregateColumnKind {
+    Group,
+    Metric,
+}
+
+/// How the frontend should format a summary result cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AggregateValueType {
+    Text,
+    Number,
+    Date,
+    Checkbox,
+}
+
+/// Descriptor of one group/metric column in a summary result.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AggregateColumn {
+    pub kind: AggregateColumnKind,
+    /// Source column id; `None` only for the row-count metric.
+    pub column_id: Option<String>,
+    pub op: Option<AggregateOp>,
+    pub value_type: AggregateValueType,
+    pub format: Option<ColumnFormat>,
+}
+
+/// Grouped result of a summary view.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AggregateResult {
+    pub columns: Vec<AggregateColumn>,
+    /// Row values in `columns` order.
+    pub rows: Vec<Vec<serde_json::Value>>,
+    /// Number of groups after filters (1 when there is no group field).
+    pub total_groups: i64,
+    /// Number of source rows after filters, before grouping.
+    pub base_rows: i64,
 }
 
 /// Hard caps for page sizes coming over IPC.

@@ -73,6 +73,7 @@ export default function ViewConfigBar({
           kind: "grid",
           filters: pruneFilters(draft.filters),
           sorts: draft.sorts,
+          aggregate: draft.aggregate ?? null,
         },
       });
       setOpen(false);
