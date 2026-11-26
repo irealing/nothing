@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { useWorkspace } from "../stores/workspace";
 import { Dialog } from "../ui/Dialog";
 import { Field, Input } from "../ui/Field";
@@ -46,6 +46,8 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [nameInput, setNameInput] = useState("");
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const skipRenameBlur = useRef(false);
 
   const pickViewIcon = (view: ViewMeta, icon: string | null) =>
@@ -69,6 +71,91 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
   // *editable* grid view would just bring it back under the default name, so
   // there is nothing meaningful to offer there (summary views are exempt).
   const canDeleteGrid = dataGridViews.length > 1;
+
+  /** Move `v` by `delta` inside its own group (grid or SQL tabs). */
+  const moveView = (v: ViewMeta, siblings: ViewMeta[], delta: number) => {
+    const from = siblings.findIndex((x) => x.id === v.id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= siblings.length) return;
+    void updateView(v.id, { position: to });
+  };
+
+  const moveMenu = (v: ViewMeta, siblings: ViewMeta[]) => {
+    const index = siblings.findIndex((x) => x.id === v.id);
+    return (
+      <>
+        <MenuSeparator />
+        <MenuItem disabled={index <= 0} onSelect={() => moveView(v, siblings, -1)}>
+          {t("view.moveLeft")}
+        </MenuItem>
+        <MenuItem
+          disabled={index < 0 || index >= siblings.length - 1}
+          onSelect={() => moveView(v, siblings, 1)}
+        >
+          {t("view.moveRight")}
+        </MenuItem>
+      </>
+    );
+  };
+
+  const clearDrag = () => {
+    setDragId(null);
+    setDropTarget(null);
+  };
+
+  const tabClass = (v: ViewMeta) =>
+    [
+      "view-tab",
+      v.id === activeViewId ? "active" : "",
+      dragId === v.id ? "dragging" : "",
+      dropTarget?.id === v.id ? (dropTarget.after ? "drop-after" : "drop-before") : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+  /** HTML5 drag-and-drop: only within the same view kind (grid ↔ grid,
+   * SQL ↔ SQL), and never while the tab is being renamed. */
+  const dragProps = (v: ViewMeta) => ({
+    draggable: renamingId !== v.id,
+    onDragStart: (e: DragEvent<HTMLDivElement>) => {
+      setDragId(v.id);
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", v.id);
+      }
+    },
+    onDragOver: (e: DragEvent<HTMLDivElement>) => {
+      const source = views.find((x) => x.id === dragId);
+      if (!source || source.kind !== v.kind) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      const rect = e.currentTarget.getBoundingClientRect();
+      const after = e.clientX > rect.left + rect.width / 2;
+      setDropTarget((prev) =>
+        prev?.id === v.id && prev.after === after ? prev : { id: v.id, after },
+      );
+    },
+    onDrop: (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const source = views.find((x) => x.id === dragId);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const after =
+        dropTarget?.id === v.id ? dropTarget.after : e.clientX > rect.left + rect.width / 2;
+      clearDrag();
+      if (!source || source.id === v.id || source.kind !== v.kind) return;
+      const siblings = v.kind === "grid" ? gridViews : sqlViews;
+      const from = siblings.findIndex((x) => x.id === source.id);
+      const over = siblings.findIndex((x) => x.id === v.id);
+      if (from < 0 || over < 0) return;
+      // Backend removes the view first, then inserts at `target`.
+      let to = over + (after ? 1 : 0);
+      if (from < to) to -= 1;
+      if (to === from) return;
+      void updateView(source.id, { position: to });
+    },
+    onDragEnd: clearDrag,
+  });
 
   if (!activeTableId && sqlViews.length === 0) return null;
 
@@ -163,7 +250,8 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
       {gridViews.map((v) => (
         <div
           key={v.id}
-          className={v.id === activeViewId ? "view-tab active" : "view-tab"}
+          className={tabClass(v)}
+          {...dragProps(v)}
           onClick={() => void selectView(v.id)}
         >
           <span className="view-tab-icon">{tabIcon(v)}</span>
@@ -186,6 +274,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
               <MenuItem onSelect={() => startRename(v)}>
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>
+              {moveMenu(v, gridViews)}
               {isAggregateView(v) || canDeleteGrid ? (
                 <>
                   <MenuSeparator />
@@ -214,7 +303,8 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
       {sqlViews.map((v) => (
         <div
           key={v.id}
-          className={v.id === activeViewId ? "view-tab active" : "view-tab"}
+          className={tabClass(v)}
+          {...dragProps(v)}
           onClick={() => void selectView(v.id)}
           title={t("view.sqlBadge")}
         >
@@ -237,6 +327,7 @@ export default function ViewTabs({ hasTable }: { hasTable: boolean }) {
               <MenuItem onSelect={() => startRename(v)}>
                 <IconPencil size={14} /> {t("view.rename")}
               </MenuItem>
+              {moveMenu(v, sqlViews)}
               <MenuSeparator />
               <MenuItem
                 danger

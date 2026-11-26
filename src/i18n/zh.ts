@@ -310,6 +310,8 @@ export const zh = {
     gridHint: "网格视图保存自己的筛选、排序与隐藏列，数据与主表共享。",
     rename: "重命名",
     renameTitle: "重命名视图",
+    moveLeft: "向左移动",
+    moveRight: "向右移动",
     icon: "修改视图图标",
     delete: "删除视图",
     deleteTitle: "删除视图",

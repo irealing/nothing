@@ -409,3 +409,128 @@ fn view_column_freeze_round_trips_and_is_per_view() {
         .unwrap();
     assert!(!thawed.frozen);
 }
+
+#[test]
+fn view_position_patch_reorders_within_scope() {
+    let (_dir, ws) = common::create_ws("reorder-views.nothing");
+    let f = emp_task_fixture(&ws);
+    let table_id = f.task_table.id.clone();
+    let other_table_id = f.emp_table.id.clone();
+
+    let a = ws
+        .create_view(grid_view(
+            "A",
+            Some(table_id.clone()),
+            GridConfig::default(),
+        ))
+        .unwrap();
+    let b = ws
+        .create_view(grid_view(
+            "B",
+            Some(table_id.clone()),
+            GridConfig::default(),
+        ))
+        .unwrap();
+    let c = ws
+        .create_view(grid_view(
+            "C",
+            Some(table_id.clone()),
+            GridConfig::default(),
+        ))
+        .unwrap();
+    let other = ws
+        .create_view(grid_view(
+            "其他表",
+            Some(other_table_id.clone()),
+            GridConfig::default(),
+        ))
+        .unwrap();
+    let sql_a = ws
+        .create_view(sql_view("SQL A", "SELECT 1".into()))
+        .unwrap();
+    let sql_b = ws
+        .create_view(sql_view("SQL B", "SELECT 2".into()))
+        .unwrap();
+
+    let grid_names = |table_id: &str| -> Vec<String> {
+        ws.list_views(Some(table_id))
+            .unwrap()
+            .into_iter()
+            .filter(|v| v.kind == ViewKind::Grid)
+            .map(|v| v.name)
+            .collect()
+    };
+    let grid_positions = |table_id: &str| -> Vec<i64> {
+        ws.list_views(Some(table_id))
+            .unwrap()
+            .into_iter()
+            .filter(|v| v.kind == ViewKind::Grid)
+            .map(|v| v.position)
+            .collect()
+    };
+
+    // C to the front, then A to the end (over-large target clamps).
+    ws.update_view(
+        &c.id,
+        ViewPatch {
+            position: Some(0),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(grid_names(&table_id), ["C", "A", "B"]);
+    let positions = grid_positions(&table_id);
+    assert_eq!(positions, [0, 1, 2], "positions stay dense");
+
+    ws.update_view(
+        &a.id,
+        ViewPatch {
+            position: Some(99),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(grid_names(&table_id), ["C", "B", "A"]);
+
+    // SQL views are a separate scope: reordering them must not touch table
+    // views, and other tables stay untouched.
+    ws.update_view(
+        &sql_b.id,
+        ViewPatch {
+            position: Some(0),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let sql_names: Vec<String> = ws
+        .list_views(None)
+        .unwrap()
+        .into_iter()
+        .filter(|v| v.kind == ViewKind::Sql)
+        .map(|v| v.name)
+        .collect();
+    assert_eq!(sql_names, ["SQL B", "SQL A"]);
+    assert_eq!(grid_names(&table_id), ["C", "B", "A"]);
+    assert_eq!(grid_names(&other_table_id), ["其他表"]);
+    assert_eq!(
+        ws.get_view(&other.id).unwrap().position,
+        0,
+        "another table's view keeps its position"
+    );
+    assert_eq!(ws.get_view(&sql_a.id).unwrap().position, 1);
+
+    // Unknown views are rejected.
+    let err = ws
+        .update_view(
+            "GHOST",
+            ViewPatch {
+                position: Some(0),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(err, AppError::NotFound(_)), "{err:?}");
+
+    // Sanity: B starts between C and A.
+    assert_eq!(ws.get_view(&b.id).unwrap().position, 1);
+}

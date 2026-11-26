@@ -353,6 +353,48 @@ fn load_view_column(conn: &Connection, view_id: &str, column_id: &str) -> Result
     Ok(view_column_from_raw(raw)?)
 }
 
+/// Move a view to `target` within its own scope (a table's grid views, or the
+/// workspace-level SQL views) and renumber that scope densely.
+fn reorder_views(
+    conn: &Connection,
+    view_id: &str,
+    parent_id: Option<&str>,
+    target: i64,
+) -> Result<()> {
+    let mut ids: Vec<String> = match parent_id {
+        Some(p) => conn
+            .prepare(
+                r#"SELECT "id" FROM "_meta"
+                   WHERE "kind" = 'view' AND "parent_id" = ?1
+                   ORDER BY "position", "created_at", "id""#,
+            )?
+            .query_map([p], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?,
+        None => conn
+            .prepare(
+                r#"SELECT "id" FROM "_meta"
+                   WHERE "kind" = 'view' AND "parent_id" IS NULL
+                   ORDER BY "position", "created_at", "id""#,
+            )?
+            .query_map([], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?,
+    };
+    let idx = ids
+        .iter()
+        .position(|id| id == view_id)
+        .ok_or_else(|| AppError::NotFound(format!("视图 {view_id}")))?;
+    let moved = ids.remove(idx);
+    let target = target.clamp(0, ids.len() as i64) as usize;
+    ids.insert(target, moved);
+    for (i, id) in ids.iter().enumerate() {
+        conn.execute(
+            r#"UPDATE "_meta" SET "position" = ?1 WHERE "id" = ?2 AND "kind" = 'view'"#,
+            rusqlite::params![i as i64, id],
+        )?;
+    }
+    Ok(())
+}
+
 /// Move one view column to `target` and renumber the layout densely.
 fn reorder_view_columns(
     conn: &Connection,
@@ -564,8 +606,6 @@ impl Workspace {
                 Some(raw) => normalize_color(Some(raw))?,
                 None => old.color,
             };
-            let position = patch.position.unwrap_or(old.position);
-
             let tx = conn.transaction()?;
             let (filters, sorts, statement, aggregate) = match &data {
                 ViewData::Grid(cfg) => {
@@ -591,15 +631,14 @@ impl Workspace {
             };
             tx.execute(
                 r#"UPDATE "_meta" SET
-                     "name" = ?1, "icon" = ?2, "color" = ?3, "position" = ?4,
-                     "filters" = ?5, "sorts" = ?6, "statement" = ?7,
-                     "aggregate" = ?8, "updated_at" = ?9
-                   WHERE "id" = ?10 AND "kind" = 'view'"#,
+                     "name" = ?1, "icon" = ?2, "color" = ?3,
+                     "filters" = ?4, "sorts" = ?5, "statement" = ?6,
+                     "aggregate" = ?7, "updated_at" = ?8
+                   WHERE "id" = ?9 AND "kind" = 'view'"#,
                 rusqlite::params![
                     name,
                     icon,
                     color.as_ref().map(|c| c.as_str()),
-                    position,
                     filters,
                     sorts,
                     statement,
@@ -609,6 +648,10 @@ impl Workspace {
                 ],
             )
             .map_err(map_sqlite_err)?;
+
+            if let Some(target) = patch.position {
+                reorder_views(&tx, view_id, old.table_id.as_deref(), target)?;
+            }
 
             if let Some(cols) = &patch.columns {
                 if old.kind != ViewKind::Grid {

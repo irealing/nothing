@@ -2771,6 +2771,31 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
+.view-tab.dragging {
+  opacity: 0.45;
+}
+
+/* Insertion indicator while dragging a tab: a short accent bar between tabs. */
+.view-tab.drop-before::before,
+.view-tab.drop-after::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.view-tab.drop-before::before {
+  left: -2px;
+}
+
+.view-tab.drop-after::after {
+  right: -2px;
+}
+
 .view-tab-icon {
   color: var(--text-weak);
   display: inline-flex;

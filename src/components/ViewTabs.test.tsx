@@ -29,6 +29,21 @@ function gridView(id: string, name: string, position: number): ViewMeta {
 const V1 = gridView("v1", "默认视图", 0);
 const V2 = gridView("v2", "本周", 1);
 
+function sqlView(id: string, name: string, position: number): ViewMeta {
+  return {
+    id,
+    table_id: null,
+    name,
+    kind: "sql",
+    icon: null,
+    color: null,
+    position,
+    created_at: "",
+    data: { kind: "sql", statement: "SELECT 1" },
+    columns: [],
+  };
+}
+
 beforeAll(() => {
   class ResizeObserverStub {
     observe() {}
@@ -86,5 +101,58 @@ describe("ViewTabs grid view menu", () => {
     useWorkspace.setState({ views: [{ ...V1, icon: "📊" }] });
     render(<ViewTabs hasTable />);
     expect(screen.getByText("📊")).toBeTruthy();
+  });
+
+  it("moves the active view with the tab menu", async () => {
+    const updateView = vi.fn().mockResolvedValue(undefined);
+    useWorkspace.setState({ views: [V1, V2], updateView });
+    const user = userEvent.setup();
+    render(<ViewTabs hasTable />);
+    await user.click(screen.getByRole("button", { name: "重命名" }));
+
+    const left = await screen.findByRole("menuitem", { name: "向左移动" });
+    expect(left.getAttribute("aria-disabled")).toBe("true");
+    await user.click(screen.getByRole("menuitem", { name: "向右移动" }));
+    expect(updateView).toHaveBeenCalledWith(V1.id, { position: 1 });
+  });
+
+  it("disables moving the last view to the right", async () => {
+    const updateView = vi.fn().mockResolvedValue(undefined);
+    useWorkspace.setState({ views: [V1, V2], activeViewId: V2.id, updateView });
+    const user = userEvent.setup();
+    render(<ViewTabs hasTable />);
+    await user.click(screen.getByRole("button", { name: "重命名" }));
+
+    const right = await screen.findByRole("menuitem", { name: "向右移动" });
+    expect(right.getAttribute("aria-disabled")).toBe("true");
+    await user.click(screen.getByRole("menuitem", { name: "向左移动" }));
+    expect(updateView).toHaveBeenCalledWith(V2.id, { position: 0 });
+  });
+
+  it("reorders SQL views separately from grid views", async () => {
+    const updateView = vi.fn().mockResolvedValue(undefined);
+    const S1 = sqlView("s1", "统计", 0);
+    const S2 = sqlView("s2", "明细", 1);
+    useWorkspace.setState({ views: [V1, S1, S2], activeViewId: S1.id, updateView });
+    const user = userEvent.setup();
+    render(<ViewTabs hasTable />);
+    await user.click(screen.getByRole("button", { name: "重命名" }));
+
+    await user.click(await screen.findByRole("menuitem", { name: "向右移动" }));
+    expect(updateView).toHaveBeenCalledWith(S1.id, { position: 1 });
+  });
+
+  it("reorders tabs by drag and drop", () => {
+    const updateView = vi.fn().mockResolvedValue(undefined);
+    useWorkspace.setState({ views: [V1, V2], updateView });
+    render(<ViewTabs hasTable />);
+
+    const first = screen.getByText(V1.name).closest(".view-tab")!;
+    const second = screen.getByText(V2.name).closest(".view-tab")!;
+    fireEvent.dragStart(second);
+    fireEvent.dragOver(first, { clientX: 0 });
+    fireEvent.drop(first, { clientX: 0 });
+
+    expect(updateView).toHaveBeenCalledWith(V2.id, { position: 0 });
   });
 });

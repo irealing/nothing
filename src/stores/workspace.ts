@@ -1020,8 +1020,24 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           views: s.views.some((v) => v.id === viewId) ? upsertView(s.views, updated) : s.views,
           allViews: upsertView(s.allViews, updated),
         }));
-        // Presentation-only edits (icon / name / colour / position) do not
-        // change rows, so patching the metadata in place avoids a full reload.
+        // A position patch renumbers every sibling view, so pull the scoped
+        // list once instead of trying to patch the array in place.
+        if (patch.position !== undefined) {
+          const { activeTableId } = get();
+          if (activeTableId) {
+            const views = await ipc.viewList(activeTableId);
+            set((s) => ({
+              views,
+              allViews: mergeFetchedViews(s.allViews, activeTableId, views),
+            }));
+          } else {
+            const all = await ipc.viewList();
+            set({ views: all.filter((v) => v.kind === "sql"), allViews: all });
+          }
+          return;
+        }
+        // Presentation-only edits (icon / name / colour) do not change rows,
+        // so patching the metadata in place avoids a full reload.
         const metaOnly = patch.data === undefined && patch.columns === undefined;
         if (metaOnly) return;
         const { activeTableId, activeViewId } = get();

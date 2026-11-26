@@ -749,6 +749,32 @@ describe("view actions", () => {
     expect(ipc.viewRun).not.toHaveBeenCalled();
     expect(ipc.columnList).not.toHaveBeenCalled();
   });
+
+  it("a view position patch adopts the renumbered backend order", async () => {
+    useWorkspace.setState({
+      info: { path: "/a.nothing", format_version: 1 },
+      tables: [T1],
+      activeTableId: "t1",
+      activeViewId: "v1",
+      columns: [COL],
+      views: [GRID_V, GRID_V2],
+      allViews: [GRID_V, GRID_V2],
+      source: { kind: "view", viewId: "v1" },
+    });
+    const moved: ViewMeta = { ...GRID_V, position: 1 };
+    const other: ViewMeta = { ...GRID_V2, position: 0 };
+    vi.mocked(ipc.viewUpdate).mockResolvedValue(moved);
+    vi.mocked(ipc.viewList).mockResolvedValue([other, moved]);
+
+    await useWorkspace.getState().updateView("v1", { position: 1 });
+
+    expect(ipc.viewUpdate).toHaveBeenCalledWith("v1", { position: 1 });
+    expect(ipc.viewList).toHaveBeenCalledWith("t1");
+    const s = useWorkspace.getState();
+    expect(s.views.map((v) => v.id)).toEqual(["v2", "v1"]);
+    expect(s.allViews.map((v) => v.id)).toEqual(["v2", "v1"]);
+    expect(ipc.viewRun).not.toHaveBeenCalled();
+  });
 });
 
 describe("scratch query", () => {
