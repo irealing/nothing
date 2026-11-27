@@ -29,6 +29,10 @@
 - 回调一览（`API.md` 的 “Full API Docs” 比 `d.ts` 更好搜）：`getCellContent`、`onCellEdited`、`onCellsEdited`、`onCellClicked`、`onCellActivated`、`onCellContextMenu`、`onPaste`、`onDelete`、`onHeaderClicked`、`onHeaderContextMenu`、`onHeaderMenuClick`、`onColumnResize(Start|End)`、`onColumnMoved`、`onVisibleRegionChanged`、`onItemHovered`、`onRowAppended`、`onGridSelectionChange`、`customRenderers`、`rowMarkers`、`freezeColumns`。
 - 列头三角菜单：必须是列定义 `hasMenu: true` **且** 传 `onHeaderMenuClick`；缺任一都不会有反馈（只在 `hasMenu` 为真时渲染三角）。
 - 编辑器：默认 overlay 编辑器（`provideEditor`）在中文 IME 下不可用，本项目所有可编辑列 `allowOverlay: false`，改用 `GridEditors.tsx` 浮层输入框。要加新列类型时先确认这一条。
+- IME 两个坑（改编辑器前必读）：
+  1. Chromium 在 `<input>` 内容溢出时会**在 input 自身派发 `scroll`**；`window` 捕获监听会把它当成“网格滚动”。滚动提交必须限定在网格容器内（`scrollHost.contains(e.target)`）。
+  2. Chromium 会**先发 `compositionend` 再发确认候选的 `keydown`**，此时 `isComposing` 已为 `false`（`keyCode` 也未必是 229）。只靠 `isComposing` 会把拼音写进单元格，需再加“组合刚结束”的时间窗（本项目 80ms）。
+  - 结论：提交值一律读 `input.value`（非受控），组合中禁止提交。
 - `Theme` 全部字段在 `src/common/styles.ts:51`；默认值由 `getDataEditorTheme` 提供，经 `src/index.ts:41` 重导出为 `getDefaultTheme`。Glide 不读 CSS 变量，切主题必须重算 `Theme`（`TableView.tsx` 的 `useMemo(..., [resolvedTheme])`）。
 - Custom cell：`isMatch` 只按 `cell.kind === GridCellKind.Custom` + `data.kind` 判别；`copyData` 决定复制到剪贴板的内容；`draw` 里的 `args.theme` 是合并后的主题，`rect` 已含单元格边界。
 - `src/docs/*.stories.tsx` 是官方示例（编辑、主题、菜单、搜索、复制粘贴），查用法比读 `data-editor.tsx` 快一个数量级。

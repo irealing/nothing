@@ -1452,6 +1452,7 @@ export default function TableView() {
           onCommit={(v) => void updateCell(editor.rid, editorCol.id, v)}
           onClose={closeEditor}
           onMove={moveEditor}
+          scrollHost={wrapRef}
         />
       )}
 

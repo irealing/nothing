@@ -68,6 +68,7 @@ src/                       前端（React + TS + Vite）：components/（网格�
 - **错误处理**：Rust 侧统一 `Result<T, AppError>`，`AppError` 携带用户可读消息与错误码（命令层映射为 `kind`）；前端 ipc 层统一转 `IpcError`，由 store 或调用方转 toast，组件不重复处理。
 - **网格取关联数据防 N+1**：`run_view` 返回一页行后，收集本页全部关联 rid，一次 `WHERE ... IN` 批量取标题映射随结果返回。前端禁止逐行发起关联查询。
 - **网格单元格编辑必须用真实 `<input>`**：Glide Data Grid 自带的 overlay 编辑器（`allowOverlay: true`）在中文输入法下不可用（editOnType 只识别 ASCII，IME 确认候选词的回车会被当作提交）。因此所有可编辑列的单元格均为 `allowOverlay: false`，编辑由 `GridEditors.tsx` 的浮动输入框完成；单击即进入编辑，提交后由 `updateCell` 写库。
+- **单元格提交不得写入 IME 组合中的文本**：输入框是非受控的，提交值只读 `input.value`；`compositionstart` 到 `compositionend`（外加确认候选的那次按键，Chromium 会先发 `compositionend`）之间禁止提交。Chromium 还会在 input 自身溢出滚动时派发 `scroll`，所以“滚动结束编辑”只能响应网格容器内的滚动，禁止监听 `window` 上的全部 `scroll`。
 - **应用级设置在加密库外**：`settings.json`（最近文件、上次表/视图）明文存储，因为它要在输入密码前可读；损坏时降级默认值、绝不阻塞启动，也不得触发 `format_version` 迁移。
 - **汇总视图与图表**：汇总仍是 `grid` 视图 + `_meta.aggregate`，存在即为只读；图表是前端从 `AggregateResult` 派生的展示层，后端 `ViewKind` 只有 `grid`/`sql`，不新增 chart 类型、不持久化图表配置，图表模式仅会话内。
 - **撤销/重做是会话内栈**（上限 50，不落库）：列类型/选项/公式变更、删列删表、切工作区会清栈；删除的撤销用快照原样恢复 `_rid` 与关联。新增写操作要明确记录逆操作或清栈。
